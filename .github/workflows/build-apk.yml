@@ -29,7 +29,7 @@ jobs:
             pkg-config \
             zlib1g-dev \
             libncurses5-dev \
-            libncursesw5-dev \
+            libncurses5 \
             cmake \
             libffi-dev \
             libssl-dev
@@ -41,7 +41,9 @@ jobs:
 
       - name: Accept Android SDK licenses
         run: |
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          mkdir -p $ANDROID_HOME/licenses
+          echo "24333f15598d1a03f4f61f74d64234038a8f15d2" > $ANDROID_HOME/licenses/android-sdk-license
+          echo "d56f5187479451eabf01fb78af6dfcb131a648b0" >> $ANDROID_HOME/licenses/android-sdk-license
 
       - name: Build APK
         run: |
@@ -52,3 +54,4 @@ jobs:
         with:
           name: My-Voice-Assistant-APK
           path: bin/*.apk
+          
