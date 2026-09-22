@@ -11,7 +11,7 @@ jobs:
       - name: Get source code
         uses: actions/checkout@v4
 
-      - name: Setup Python
+      - name: Setup Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -40,12 +40,7 @@ jobs:
           pip install buildozer==1.5.0
           pip install cython==0.29.34
 
-      - name: Build APK
+      - name: Check Python versions
         run: |
-          buildozer -v android debug
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: My-Voice-Assistant-APK
-          path: bin/*.apk
+          python --version
+          cy
