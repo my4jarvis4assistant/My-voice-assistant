@@ -39,18 +39,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install buildozer cython
 
-      - name: Setup Android SDK manually
-        run: |
-          mkdir -p $HOME/.buildozer/android/platform/android-sdk
-          cd $HOME/.buildozer/android/platform/android-sdk
-          wget https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
-          unzip -q commandlinetools-linux-9477386_latest.zip
-          mkdir -p tools
-          cp -r cmdline-tools/* tools/
-          mkdir -p licenses
-          echo "24333f15598d1a03f4f61f74d64234038a8f15d2" > licenses/android-sdk-license
-          echo "d56f5187479451eabf01fb78af6dfcb131a648b0" >> licenses/android-sdk-license
-
       - name: Build APK
         run: |
           buildozer -v android debug
@@ -60,6 +48,7 @@ jobs:
         with:
           name: My-Voice-Assistant-APK
           path: bin/*.apk
+          
           
           
           
