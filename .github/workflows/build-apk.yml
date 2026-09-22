@@ -34,33 +34,11 @@ jobs:
             libffi-dev \
             libssl-dev
 
-      - name: Install Buildozer and Cython
+      - name: Install Buildozer
         run: |
           python -m pip install --upgrade pip
-          pip install --upgrade buildozer cython
-
-      - name: Force Accept All Android Licenses & Setup Tools
-        run: |
-          ANDROID_HOME=$HOME/.buildozer/android/platform/android-sdk
-          mkdir -p $ANDROID_HOME/licenses
-          
-          echo "24333f15598d1a03f4f61f74d64234038a8f15d2" > $ANDROID_HOME/licenses/android-sdk-license
-          echo "d56f5187479451eabf01fb78af6dfcb131a648b0" >> $ANDROID_HOME/licenses/android-sdk-license
-          echo "84831b9409646a918e30573bab4c9c91346d8abd" >> $ANDROID_HOME/licenses/android-sdk-license
-          echo "24333f15598d1a03f4f61f74d64234038a8f15d2" >> $ANDROID_HOME/licenses/android-sdk-license
-
-          mkdir -p $ANDROID_HOME/cmdline-tools/latest
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O cmdline-tools.zip
-          unzip -q cmdline-tools.zip
-          cp -r cmdline-tools/* $ANDROID_HOME/cmdline-tools/latest/
-          rm -rf cmdline-tools cmdline-tools.zip
-
-          mkdir -p $ANDROID_HOME/tools
-          cp -r $ANDROID_HOME/cmdline-tools/latest/* $ANDROID_HOME/tools/
-
-          export PATH=$PATH:$ANDROID_HOME/tools/bin:$ANDROID_HOME/platform-tools
-          yes | sdkmanager --sdk_root=$ANDROID_HOME --licenses || true
-          sdkmanager --sdk_root=$ANDROID_HOME "build-tools;37.0.0" "platforms;android-33" "platform-tools"
+          pip install buildozer==1.5.0
+          pip install cython==0.29.34
 
       - name: Build APK
         run: |
@@ -71,4 +49,3 @@ jobs:
         with:
           name: My-Voice-Assistant-APK
           path: bin/*.apk
-          
