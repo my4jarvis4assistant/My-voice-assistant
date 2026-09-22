@@ -49,14 +49,17 @@ jobs:
           echo "84831b9409646a918e30573bab4c9c91346d8abd" >> $ANDROID_HOME/licenses/android-sdk-license
           echo "24333f15598d1a03f4f61f74d64234038a8f15d2" >> $ANDROID_HOME/licenses/android-sdk-license
 
-          mkdir -p $ANDROID_HOME/cmdline-tools
+          mkdir -p $ANDROID_HOME/cmdline-tools/latest
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O cmdline-tools.zip
           unzip -q cmdline-tools.zip
-          rm -rf $ANDROID_HOME/cmdline-tools/latest
-          mv cmdline-tools $ANDROID_HOME/cmdline-tools/latest
-          rm cmdline-tools.zip
+          cp -r cmdline-tools/* $ANDROID_HOME/cmdline-tools/latest/
+          rm -rf cmdline-tools cmdline-tools.zip
 
-          export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools
+          # Mirror to the exact legacy path Buildozer checks internally
+          mkdir -p $ANDROID_HOME/tools
+          cp -r $ANDROID_HOME/cmdline-tools/latest/* $ANDROID_HOME/tools/
+
+          export PATH=$PATH:$ANDROID_HOME/tools/bin:$ANDROID_HOME/platform-tools
           yes | sdkmanager --sdk_root=$ANDROID_HOME --licenses || true
           sdkmanager --sdk_root=$ANDROID_HOME "build-tools;37.0.0" "platforms;android-33" "platform-tools"
 
