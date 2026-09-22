@@ -55,7 +55,6 @@ jobs:
           cp -r cmdline-tools/* $ANDROID_HOME/cmdline-tools/latest/
           rm -rf cmdline-tools cmdline-tools.zip
 
-          # Mirror to the exact legacy path Buildozer checks internally
           mkdir -p $ANDROID_HOME/tools
           cp -r $ANDROID_HOME/cmdline-tools/latest/* $ANDROID_HOME/tools/
 
@@ -63,8 +62,9 @@ jobs:
           yes | sdkmanager --sdk_root=$ANDROID_HOME --licenses || true
           sdkmanager --sdk_root=$ANDROID_HOME "build-tools;37.0.0" "platforms;android-33" "platform-tools"
 
-      - name: Build APK
+      - name: Clean and Build APK
         run: |
+          buildozer android clean
           buildozer -v android debug
 
       - name: Upload APK
