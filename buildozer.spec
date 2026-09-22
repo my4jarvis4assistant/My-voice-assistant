@@ -24,7 +24,6 @@ android.permissions = android.permission.RECORD_AUDIO
 # Android settings
 android.api = 33
 android.min_api = 21
-android.sdk = 33
 android.arch = arm64-v8a
 
 [buildozer]
