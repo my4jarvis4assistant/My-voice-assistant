@@ -8,10 +8,21 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Get source code
+      - name: Checkout project
         uses: actions/checkout@v4
 
-      - name: Setup Python 3.11
+      - name: Check project files
+        run: |
+          echo "Project root:"
+          pwd
+          echo ""
+          echo "Files:"
+          ls -la
+          echo ""
+          echo "Git tracked files:"
+          git ls-files
+
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
