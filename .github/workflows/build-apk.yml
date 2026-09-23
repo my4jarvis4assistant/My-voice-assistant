@@ -11,16 +11,59 @@ jobs:
       - name: Checkout project
         uses: actions/checkout@v4
 
-      - name: Check project files
+      - name: Fix and check project files
         run: |
-          echo "Project root:"
+          echo "Current directory:"
           pwd
+
           echo ""
-          echo "Files:"
+          echo "Files after checkout:"
           ls -la
+
           echo ""
           echo "Git tracked files:"
           git ls-files
+
+          echo ""
+          echo "Checking Python entry file..."
+
+          # If Git checkout still contains Main.py,
+          # remove it after confirming main.py exists.
+          if [ -f "Main.py" ] && [ -f "main.py" ]; then
+            echo "Both Main.py and main.py found."
+            echo "Keeping main.py and removing Main.py."
+            rm -f "Main.py"
+          fi
+
+          # If only Main.py exists, rename it for the build.
+          if [ -f "Main.py" ] && [ ! -f "main.py" ]; then
+            echo "Main.py found. Renaming it to main.py..."
+            mv "Main.py" "main.py"
+          fi
+
+          echo ""
+          echo "Final project files:"
+          ls -la
+
+          echo ""
+          echo "Checking main.py..."
+
+          if [ ! -f "main.py" ]; then
+            echo "ERROR: main.py was not found!"
+            exit 1
+          fi
+
+          echo "SUCCESS: main.py found."
+
+          echo ""
+          echo "Checking buildozer.spec..."
+
+          if [ ! -f "buildozer.spec" ]; then
+            echo "ERROR: buildozer.spec was not found!"
+            exit 1
+          fi
+
+          echo "SUCCESS: buildozer.spec found."
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -30,6 +73,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
+
           sudo apt-get install -y \
             git \
             zip \
@@ -54,7 +98,9 @@ jobs:
       - name: Build APK
         run: |
           set -o pipefail
+
           buildozer -v android debug 2>&1 | tee build.log
+
           exit ${PIPESTATUS[0]}
 
       - name: Upload Build Log
