@@ -60,54 +60,81 @@ class VoiceAssistant(App):
             font_size="22sp"
         )
 
+        self.PythonActivity = autoclass(
+            "org.kivy.android.PythonActivity"
+        )
+
+        self.SpeechRecognizer = autoclass(
+            "android.speech.SpeechRecognizer"
+        )
+
+        self.RecognizerIntent = autoclass(
+            "android.content.Intent"
+        )
+
+        self.listener = RecognitionListener(self)
+
+        Clock.schedule_once(
+            self.setup_speech,
+            0.5
+        )
+
+        return self.label
+
+    def setup_speech(self, dt):
+
         try:
-            self.SpeechRecognizer = autoclass(
-                "android.speech.SpeechRecognizer"
-            )
+            activity = self.PythonActivity.mActivity
 
-            self.RecognizerIntent = autoclass(
-                "android.content.Intent"
-            )
+            def create_recognizer():
 
-            self.PythonActivity = autoclass(
-                "org.kivy.android.PythonActivity"
-            )
+                try:
+                    self.recognizer = (
+                        self.SpeechRecognizer
+                        .createSpeechRecognizer(activity)
+                    )
 
-            self.listener = RecognitionListener(self)
+                    self.recognizer.setRecognitionListener(
+                        self.listener
+                    )
 
-            # Correct way to create SpeechRecognizer
-            self.recognizer = self.SpeechRecognizer.createSpeechRecognizer(
-                self.PythonActivity.mActivity
-            )
+                    self.intent = self.RecognizerIntent(
+                        "android.speech.action.RECOGNIZE_SPEECH"
+                    )
 
-            # Set listener separately
-            self.recognizer.setRecognitionListener(
-                self.listener
-            )
+                    self.intent.putExtra(
+                        "android.speech.extra.LANGUAGE_MODEL",
+                        "free_form"
+                    )
 
-            self.intent = self.RecognizerIntent(
-                "android.speech.action.RECOGNIZE_SPEECH"
-            )
+                    self.intent.putExtra(
+                        "android.speech.extra.LANGUAGE",
+                        "hi-IN"
+                    )
 
-            self.intent.putExtra(
-                "android.speech.extra.LANGUAGE_MODEL",
-                "free_form"
-            )
+                    self.label.text = (
+                        "🎤 Voice Assistant\n\n"
+                        "2 second baad boliye..."
+                    )
 
-            self.intent.putExtra(
-                "android.speech.extra.LANGUAGE",
-                "hi-IN"
-            )
+                    Clock.schedule_once(
+                        self.start_listening,
+                        2
+                    )
 
-            Clock.schedule_once(
-                self.start_listening,
-                2
+                except Exception as e:
+                    self.label.text = (
+                        "Speech Setup Error:\n" + str(e)
+                    )
+
+            activity.runOnUiThread(
+                create_recognizer
             )
 
         except Exception as e:
-            self.label.text = "ERROR:\n" + str(e)
-
-        return self.label
+            self.label.text = (
+                "Thread Error:\n" + str(e)
+            )
 
     def start_listening(self, dt):
 
@@ -119,7 +146,9 @@ class VoiceAssistant(App):
             )
 
         except Exception as e:
-            self.label.text = "START ERROR:\n" + str(e)
+            self.label.text = (
+                "Start Error:\n" + str(e)
+            )
 
 
 VoiceAssistant().run()
