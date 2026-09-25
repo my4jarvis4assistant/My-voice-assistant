@@ -374,7 +374,6 @@ class VoiceAssistant(App):
                 self.activity.getPackageManager()
             )
 
-            # Common Android Calculator packages
             calculator_packages = [
 
                 "com.google.android.calculator",
@@ -439,6 +438,44 @@ class VoiceAssistant(App):
 
             self.label.text = (
                 "Calculator Error:\n" +
+                str(e)
+            )
+
+            Clock.schedule_once(
+                self.listen_again,
+                2
+            )
+
+    # -------------------------
+    # OPEN CAMERA
+    # -------------------------
+
+    def open_camera(self, dt):
+
+        try:
+
+            self.external_action = True
+
+            self.stop_listening()
+
+            self.label.text = (
+                "📷 Camera khol raha hoon..."
+            )
+
+            intent = self.RecognizerIntent(
+                "android.media.action.IMAGE_CAPTURE"
+            )
+
+            self.activity.startActivity(
+                intent
+            )
+
+        except Exception as e:
+
+            self.external_action = False
+
+            self.label.text = (
+                "Camera Error:\n" +
                 str(e)
             )
 
@@ -565,6 +602,31 @@ class VoiceAssistant(App):
 
             Clock.schedule_once(
                 self.open_calculator,
+                2.5
+            )
+
+        # CAMERA
+
+        elif (
+            "camera kholo" in command
+            or "camera khol" in command
+            or "camera open karo" in command
+            or "open camera" in command
+            or "camera open" in command
+            or command == "camera"
+        ):
+
+            self.external_action = True
+
+            self.stop_listening()
+
+            self.speak(
+                "Camera khol raha hoon.",
+                restart=False
+            )
+
+            Clock.schedule_once(
+                self.open_camera,
                 2.5
             )
 
