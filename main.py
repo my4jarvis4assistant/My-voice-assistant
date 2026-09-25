@@ -159,7 +159,6 @@ class VoiceAssistant(App):
     def start_setup(self, dt):
 
         try:
-
             self.activity.runOnUiThread(
                 self.setup_runnable
             )
@@ -297,16 +296,12 @@ class VoiceAssistant(App):
     def stop_listening(self):
 
         try:
-
             self.recognizer.stopListening()
-
         except Exception:
             pass
 
         try:
-
             self.recognizer.cancel()
-
         except Exception:
             pass
 
@@ -319,7 +314,6 @@ class VoiceAssistant(App):
         try:
 
             self.external_action = True
-
             self.stop_listening()
 
             self.label.text = (
@@ -363,7 +357,6 @@ class VoiceAssistant(App):
         try:
 
             self.external_action = True
-
             self.stop_listening()
 
             self.label.text = (
@@ -455,7 +448,6 @@ class VoiceAssistant(App):
         try:
 
             self.external_action = True
-
             self.stop_listening()
 
             self.label.text = (
@@ -476,6 +468,80 @@ class VoiceAssistant(App):
 
             self.label.text = (
                 "Camera Error:\n" +
+                str(e)
+            )
+
+            Clock.schedule_once(
+                self.listen_again,
+                2
+            )
+
+    # -------------------------
+    # OPEN CHROME
+    # -------------------------
+
+    def open_chrome(self, dt):
+
+        try:
+
+            self.external_action = True
+            self.stop_listening()
+
+            self.label.text = (
+                "🌐 Chrome khol raha hoon..."
+            )
+
+            package_manager = (
+                self.activity.getPackageManager()
+            )
+
+            chrome_packages = [
+                "com.android.chrome"
+            ]
+
+            launched = False
+
+            for package_name in chrome_packages:
+
+                try:
+
+                    launch_intent = (
+                        package_manager
+                        .getLaunchIntentForPackage(
+                            package_name
+                        )
+                    )
+
+                    if launch_intent is not None:
+
+                        self.activity.startActivity(
+                            launch_intent
+                        )
+
+                        launched = True
+                        break
+
+                except Exception:
+                    pass
+
+            if not launched:
+
+                self.external_action = False
+
+                self.label.text = (
+                    "❌ Chrome app nahi mili."
+                )
+
+                self.speak(
+                    "Chrome app nahi mili."
+                )
+
+        except Exception as e:
+
+            self.external_action = False
+
+            self.label.text = (
+                "Chrome Error:\n" +
                 str(e)
             )
 
@@ -567,7 +633,6 @@ class VoiceAssistant(App):
         ):
 
             self.external_action = True
-
             self.stop_listening()
 
             self.speak(
@@ -592,7 +657,6 @@ class VoiceAssistant(App):
         ):
 
             self.external_action = True
-
             self.stop_listening()
 
             self.speak(
@@ -617,7 +681,6 @@ class VoiceAssistant(App):
         ):
 
             self.external_action = True
-
             self.stop_listening()
 
             self.speak(
@@ -627,6 +690,30 @@ class VoiceAssistant(App):
 
             Clock.schedule_once(
                 self.open_camera,
+                2.5
+            )
+
+        # CHROME
+
+        elif (
+            "chrome kholo" in command
+            or "chrome khol" in command
+            or "chrome open karo" in command
+            or "open chrome" in command
+            or "chrome open" in command
+            or command == "chrome"
+        ):
+
+            self.external_action = True
+            self.stop_listening()
+
+            self.speak(
+                "Chrome khol raha hoon.",
+                restart=False
+            )
+
+            Clock.schedule_once(
+                self.open_chrome,
                 2.5
             )
 
@@ -642,11 +729,7 @@ class VoiceAssistant(App):
     # SPEAK
     # -------------------------
 
-    def speak(
-        self,
-        text,
-        restart=True
-    ):
+    def speak(self, text, restart=True):
 
         try:
 
