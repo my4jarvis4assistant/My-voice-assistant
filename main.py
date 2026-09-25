@@ -48,7 +48,9 @@ class RecognitionListener(PythonJavaClass):
 
     @java_method('(ILjava/lang/String;)V')
     def onError(self, error):
-        self.app.label.text = "❌ Speech Error: " + str(error)
+        self.app.label.text = (
+            "❌ Speech Error: " + str(error)
+        )
 
         Clock.schedule_once(
             self.app.listen_again,
@@ -90,6 +92,7 @@ class VoiceAssistant(App):
             font_size="22sp"
         )
 
+        # Android classes
         self.PythonActivity = autoclass(
             "org.kivy.android.PythonActivity"
         )
@@ -106,13 +109,17 @@ class VoiceAssistant(App):
             "android.speech.tts.TextToSpeech"
         )
 
+        self.Uri = autoclass(
+            "android.net.Uri"
+        )
+
         self.Locale = autoclass(
             "java.util.Locale"
         )
 
         self.activity = self.PythonActivity.mActivity
 
-        # Text to Speech
+        # Text To Speech
         self.tts = self.TextToSpeech(
             self.activity,
             None
@@ -122,10 +129,9 @@ class VoiceAssistant(App):
             self.Locale.US
         )
 
-        # Speech Recognition listener
+        # Speech Recognition
         self.listener = RecognitionListener(self)
 
-        # Main thread setup
         self.setup_runnable = MainThreadRunnable(
             self.setup_speech
         )
@@ -250,25 +256,53 @@ class VoiceAssistant(App):
                 str(e)
             )
 
+    # --------------------------------
+    # Android action: Open YouTube
+    # --------------------------------
+
+    def open_youtube(self):
+
+        try:
+
+            self.label.text = (
+                "📺 YouTube khol raha hoon..."
+            )
+
+            uri = self.Uri.parse(
+                "https://www.youtube.com/"
+            )
+
+            intent = self.RecognizerIntent(
+                "android.intent.action.VIEW"
+            )
+
+            intent.setData(uri)
+
+            self.activity.startActivity(intent)
+
+        except Exception as e:
+
+            self.label.text = (
+                "YouTube Error:\n" + str(e)
+            )
+
     def process_command(self, text):
 
         command = text.lower().strip()
 
-        # -------------------------
+        # --------------------------------
         # 1. Hello Jarvis
-        # -------------------------
+        # --------------------------------
 
-        if (
-            "hello jarvis" in command
-        ):
+        if "hello jarvis" in command:
 
             self.speak(
                 "Hello! Main ready hoon."
             )
 
-        # -------------------------
+        # --------------------------------
         # 2. Name
-        # -------------------------
+        # --------------------------------
 
         elif (
             "tumhara naam kya hai" in command
@@ -280,9 +314,9 @@ class VoiceAssistant(App):
                 "Mera naam JARVIS hai."
             )
 
-        # -------------------------
+        # --------------------------------
         # 3. Time
-        # -------------------------
+        # --------------------------------
 
         elif (
             "time kya hai" in command
@@ -299,9 +333,9 @@ class VoiceAssistant(App):
                 + current_time
             )
 
-        # -------------------------
+        # --------------------------------
         # 4. Date
-        # -------------------------
+        # --------------------------------
 
         elif (
             "date kya hai" in command
@@ -327,9 +361,32 @@ class VoiceAssistant(App):
                 + " hai."
             )
 
-        # -------------------------
-        # 5. Unknown command
-        # -------------------------
+        # --------------------------------
+        # 5. Open YouTube
+        # --------------------------------
+
+        elif (
+            "youtube kholo" in command
+            or "youtube khol" in command
+            or "youtube open karo" in command
+            or "open youtube" in command
+            or "youtube open" in command
+            or "youtube" == command
+        ):
+
+            self.speak(
+                "YouTube khol raha hoon."
+            )
+
+            # Thoda delay, taaki TTS response complete ho
+            Clock.schedule_once(
+                self.open_youtube,
+                2.5
+            )
+
+        # --------------------------------
+        # 6. Unknown command
+        # --------------------------------
 
         else:
 
@@ -351,7 +408,6 @@ class VoiceAssistant(App):
                 None
             )
 
-            # Answer ke baad dobara sunega
             Clock.schedule_once(
                 self.listen_again,
                 3
