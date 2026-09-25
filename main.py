@@ -122,10 +122,7 @@ class VoiceAssistant(App):
 
         self.activity = self.PythonActivity.mActivity
 
-        # -------------------------
-        # TEXT TO SPEECH
-        # -------------------------
-
+        # TTS
         self.tts = self.TextToSpeech(
             self.activity,
             None
@@ -135,11 +132,10 @@ class VoiceAssistant(App):
             self.Locale.US
         )
 
-        # -------------------------
-        # SPEECH RECOGNITION
-        # -------------------------
-
-        self.listener = RecognitionListener(self)
+        # Speech Listener
+        self.listener = RecognitionListener(
+            self
+        )
 
         self.setup_runnable = MainThreadRunnable(
             self.setup_speech
@@ -151,10 +147,6 @@ class VoiceAssistant(App):
         )
 
         return self.label
-
-    # -------------------------
-    # START SETUP
-    # -------------------------
 
     def start_setup(self, dt):
 
@@ -168,10 +160,6 @@ class VoiceAssistant(App):
             self.label.text = (
                 "Thread Error:\n" + str(e)
             )
-
-    # -------------------------
-    # SPEECH SETUP
-    # -------------------------
 
     def setup_speech(self):
 
@@ -219,13 +207,9 @@ class VoiceAssistant(App):
         except Exception as e:
 
             self.label.text = (
-                "Speech Setup Error:\n" +
-                str(e)
+                "Speech Setup Error:\n"
+                + str(e)
             )
-
-    # -------------------------
-    # START LISTENING
-    # -------------------------
 
     def start_listening_request(self, dt):
 
@@ -241,8 +225,8 @@ class VoiceAssistant(App):
         except Exception as e:
 
             self.label.text = (
-                "Listening Thread Error:\n" +
-                str(e)
+                "Listening Thread Error:\n"
+                + str(e)
             )
 
     def start_listening(self):
@@ -263,13 +247,9 @@ class VoiceAssistant(App):
         except Exception as e:
 
             self.label.text = (
-                "Start Error:\n" +
-                str(e)
+                "Start Error:\n"
+                + str(e)
             )
-
-    # -------------------------
-    # LISTEN AGAIN
-    # -------------------------
 
     def listen_again(self, dt):
 
@@ -285,13 +265,9 @@ class VoiceAssistant(App):
         except Exception as e:
 
             self.label.text = (
-                "Restart Error:\n" +
-                str(e)
+                "Restart Error:\n"
+                + str(e)
             )
-
-    # -------------------------
-    # STOP LISTENING
-    # -------------------------
 
     def stop_listening(self):
 
@@ -305,9 +281,9 @@ class VoiceAssistant(App):
         except Exception:
             pass
 
-    # -------------------------
-    # OPEN YOUTUBE
-    # -------------------------
+    # -----------------------------
+    # YOUTUBE
+    # -----------------------------
 
     def open_youtube(self, dt):
 
@@ -339,8 +315,8 @@ class VoiceAssistant(App):
             self.external_action = False
 
             self.label.text = (
-                "YouTube Error:\n" +
-                str(e)
+                "YouTube Error:\n"
+                + str(e)
             )
 
             Clock.schedule_once(
@@ -348,9 +324,9 @@ class VoiceAssistant(App):
                 2
             )
 
-    # -------------------------
-    # OPEN CALCULATOR
-    # -------------------------
+    # -----------------------------
+    # CALCULATOR
+    # -----------------------------
 
     def open_calculator(self, dt):
 
@@ -363,55 +339,36 @@ class VoiceAssistant(App):
                 "🧮 Calculator khol raha hoon..."
             )
 
-            package_manager = (
-                self.activity.getPackageManager()
+            PackageManager = autoclass(
+                "android.content.pm.PackageManager"
             )
 
+            pm = self.activity.getPackageManager()
+
             calculator_packages = [
-
                 "com.google.android.calculator",
-
-                "com.google.android.calculator2",
-
-                "com.miui.calculator",
-
-                "com.sec.android.app.popupcalculator",
-
-                "com.oneplus.calculator",
-
-                "com.coloros.calculator",
-
-                "com.oppo.calculator",
-
-                "com.vivo.calculator",
-
-                "com.transsion.calculator"
+                "com.android.calculator2",
+                "com.miui.calculator"
             ]
 
             launched = False
 
             for package_name in calculator_packages:
 
-                try:
+                intent = (
+                    pm.getLaunchIntentForPackage(
+                        package_name
+                    )
+                )
 
-                    launch_intent = (
-                        package_manager
-                        .getLaunchIntentForPackage(
-                            package_name
-                        )
+                if intent is not None:
+
+                    self.activity.startActivity(
+                        intent
                     )
 
-                    if launch_intent is not None:
-
-                        self.activity.startActivity(
-                            launch_intent
-                        )
-
-                        launched = True
-                        break
-
-                except Exception:
-                    pass
+                    launched = True
+                    break
 
             if not launched:
 
@@ -425,13 +382,18 @@ class VoiceAssistant(App):
                     "Calculator app nahi mili."
                 )
 
+                Clock.schedule_once(
+                    self.listen_again,
+                    3
+                )
+
         except Exception as e:
 
             self.external_action = False
 
             self.label.text = (
-                "Calculator Error:\n" +
-                str(e)
+                "Calculator Error:\n"
+                + str(e)
             )
 
             Clock.schedule_once(
@@ -439,9 +401,9 @@ class VoiceAssistant(App):
                 2
             )
 
-    # -------------------------
-    # OPEN CAMERA
-    # -------------------------
+    # -----------------------------
+    # CAMERA
+    # -----------------------------
 
     def open_camera(self, dt):
 
@@ -467,8 +429,8 @@ class VoiceAssistant(App):
             self.external_action = False
 
             self.label.text = (
-                "Camera Error:\n" +
-                str(e)
+                "Camera Error:\n"
+                + str(e)
             )
 
             Clock.schedule_once(
@@ -476,9 +438,9 @@ class VoiceAssistant(App):
                 2
             )
 
-    # -------------------------
-    # OPEN CHROME
-    # -------------------------
+    # -----------------------------
+    # CHROME
+    # -----------------------------
 
     def open_chrome(self, dt):
 
@@ -491,40 +453,26 @@ class VoiceAssistant(App):
                 "🌐 Chrome khol raha hoon..."
             )
 
-            package_manager = (
-                self.activity.getPackageManager()
+            PackageManager = autoclass(
+                "android.content.pm.PackageManager"
             )
 
-            chrome_packages = [
-                "com.android.chrome"
-            ]
+            pm = self.activity.getPackageManager()
 
-            launched = False
+            intent = (
+                pm.getLaunchIntentForPackage(
+                    "com.android.chrome"
+                )
+            )
 
-            for package_name in chrome_packages:
+            if intent is not None:
 
-                try:
+                self.activity.startActivity(
+                    intent
 
-                    launch_intent = (
-                        package_manager
-                        .getLaunchIntentForPackage(
-                            package_name
-                        )
-                    )
+                )
 
-                    if launch_intent is not None:
-
-                        self.activity.startActivity(
-                            launch_intent
-                        )
-
-                        launched = True
-                        break
-
-                except Exception:
-                    pass
-
-            if not launched:
+            else:
 
                 self.external_action = False
 
@@ -536,13 +484,18 @@ class VoiceAssistant(App):
                     "Chrome app nahi mili."
                 )
 
+                Clock.schedule_once(
+                    self.listen_again,
+                    3
+                )
+
         except Exception as e:
 
             self.external_action = False
 
             self.label.text = (
-                "Chrome Error:\n" +
-                str(e)
+                "Chrome Error:\n"
+                + str(e)
             )
 
             Clock.schedule_once(
@@ -550,16 +503,79 @@ class VoiceAssistant(App):
                 2
             )
 
-    # -------------------------
-    # PROCESS COMMAND
-    # -------------------------
+    # -----------------------------
+    # WHATSAPP - VERSION 0.8
+    # -----------------------------
+
+    def open_whatsapp(self, dt):
+
+        try:
+
+            self.external_action = True
+            self.stop_listening()
+
+            self.label.text = (
+                "💬 WhatsApp khol raha hoon..."
+            )
+
+            PackageManager = autoclass(
+                "android.content.pm.PackageManager"
+            )
+
+            pm = self.activity.getPackageManager()
+
+            intent = (
+                pm.getLaunchIntentForPackage(
+                    "com.whatsapp"
+                )
+            )
+
+            if intent is not None:
+
+                self.activity.startActivity(
+                    intent
+                )
+
+            else:
+
+                self.external_action = False
+
+                self.label.text = (
+                    "❌ WhatsApp app nahi mili."
+                )
+
+                self.speak(
+                    "WhatsApp app nahi mili."
+                )
+
+                Clock.schedule_once(
+                    self.listen_again,
+                    3
+                )
+
+        except Exception as e:
+
+            self.external_action = False
+
+            self.label.text = (
+                "WhatsApp Error:\n"
+                + str(e)
+            )
+
+            Clock.schedule_once(
+                self.listen_again,
+                2
+            )
+
+    # -----------------------------
+    # COMMAND PROCESSING
+    # -----------------------------
 
     def process_command(self, text):
 
         command = text.lower().strip()
 
         # HELLO
-
         if "hello jarvis" in command:
 
             self.speak(
@@ -567,7 +583,6 @@ class VoiceAssistant(App):
             )
 
         # NAME
-
         elif (
             "tumhara naam kya hai" in command
             or "what is your name" in command
@@ -579,7 +594,6 @@ class VoiceAssistant(App):
             )
 
         # TIME
-
         elif (
             "time kya hai" in command
             or "what time is it" in command
@@ -596,7 +610,6 @@ class VoiceAssistant(App):
             )
 
         # DATE
-
         elif (
             "date kya hai" in command
             or "aaj ki date" in command
@@ -622,7 +635,6 @@ class VoiceAssistant(App):
             )
 
         # YOUTUBE
-
         elif (
             "youtube kholo" in command
             or "youtube khol" in command
@@ -646,7 +658,6 @@ class VoiceAssistant(App):
             )
 
         # CALCULATOR
-
         elif (
             "calculator kholo" in command
             or "calculator khol" in command
@@ -670,7 +681,6 @@ class VoiceAssistant(App):
             )
 
         # CAMERA
-
         elif (
             "camera kholo" in command
             or "camera khol" in command
@@ -694,7 +704,6 @@ class VoiceAssistant(App):
             )
 
         # CHROME
-
         elif (
             "chrome kholo" in command
             or "chrome khol" in command
@@ -717,17 +726,39 @@ class VoiceAssistant(App):
                 2.5
             )
 
-        # UNKNOWN COMMAND
+        # WHATSAPP - VERSION 0.8
+        elif (
+            "whatsapp kholo" in command
+            or "whatsapp khol" in command
+            or "whatsapp open karo" in command
+            or "open whatsapp" in command
+            or "whatsapp open" in command
+            or command == "whatsapp"
+        ):
 
+            self.external_action = True
+            self.stop_listening()
+
+            self.speak(
+                "WhatsApp khol raha hoon.",
+                restart=False
+            )
+
+            Clock.schedule_once(
+                self.open_whatsapp,
+                2.5
+            )
+
+        # UNKNOWN COMMAND
         else:
 
             self.speak(
                 "Maine suna: " + text
             )
 
-    # -------------------------
-    # SPEAK
-    # -------------------------
+    # -----------------------------
+    # TEXT TO SPEECH
+    # -----------------------------
 
     def speak(self, text, restart=True):
 
@@ -743,10 +774,7 @@ class VoiceAssistant(App):
                 None
             )
 
-            if (
-                restart
-                and not self.external_action
-            ):
+            if restart and not self.external_action:
 
                 Clock.schedule_once(
                     self.listen_again,
@@ -756,8 +784,7 @@ class VoiceAssistant(App):
         except Exception as e:
 
             self.label.text = (
-                "TTS Error:\n" +
-                str(e)
+                "TTS Error:\n" + str(e)
             )
 
 
