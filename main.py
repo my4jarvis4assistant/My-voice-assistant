@@ -5,7 +5,6 @@ from kivy.clock import Clock
 from jnius import autoclass, PythonJavaClass, java_method
 
 
-# Android Main Thread ke liye Runnable
 class MainThreadRunnable(PythonJavaClass):
 
     __javainterfaces__ = ['java/lang/Runnable']
@@ -20,7 +19,6 @@ class MainThreadRunnable(PythonJavaClass):
         self.function()
 
 
-# Speech Recognition Listener
 class RecognitionListener(PythonJavaClass):
 
     __javainterfaces__ = ['android/speech/RecognitionListener']
@@ -36,7 +34,7 @@ class RecognitionListener(PythonJavaClass):
 
     @java_method('()V')
     def onBeginningOfSpeech(self):
-        self.app.label.text = "🎤 Sun raha hoon..."
+        self.app.label.text = "👂 Sun raha hoon..."
 
     @java_method('(F)V')
     def onRmsChanged(self, rmsdB):
@@ -48,7 +46,7 @@ class RecognitionListener(PythonJavaClass):
 
     @java_method('()V')
     def onEndOfSpeech(self):
-        self.app.label.text = "⏳ Samajh raha hoon..."
+        self.app.label.text = "🧠 Samajh raha hoon..."
 
     @java_method('(ILjava/lang/String;)V')
     def onError(self, error):
@@ -62,12 +60,18 @@ class RecognitionListener(PythonJavaClass):
         )
 
         if matches and matches.size() > 0:
+
             text = matches.get(0)
 
             self.app.label.text = (
                 "Aapne kaha:\n" + text
             )
+
+            # Recognized text ko JARVIS ke brain me bhejna
+            self.app.process_command(text)
+
         else:
+
             self.app.label.text = (
                 "Kuch samajh nahi aaya."
             )
@@ -78,7 +82,7 @@ class VoiceAssistant(App):
     def build(self):
 
         self.label = Label(
-            text="🎤 Voice Assistant\n\nStarting...",
+            text="🤖 JARVIS\n\nStarting...",
             font_size="22sp"
         )
 
@@ -94,10 +98,29 @@ class VoiceAssistant(App):
             "android.content.Intent"
         )
 
-        # Listener ko reference me rakhna zaroori hai
+        self.TextToSpeech = autoclass(
+            "android.speech.tts.TextToSpeech"
+        )
+
+        self.Locale = autoclass(
+            "java.util.Locale"
+        )
+
+        self.activity = self.PythonActivity.mActivity
+
+        # TTS
+        self.tts = self.TextToSpeech(
+            self.activity,
+            None
+        )
+
+        self.tts.setLanguage(
+            self.Locale.US
+        )
+
+        # Speech listener
         self.listener = RecognitionListener(self)
 
-        # Runnable ko reference me rakhna
         self.setup_runnable = MainThreadRunnable(
             self.setup_speech
         )
@@ -114,10 +137,7 @@ class VoiceAssistant(App):
 
         try:
 
-            activity = self.PythonActivity.mActivity
-
-            # Android Main Thread par setup
-            activity.runOnUiThread(
+            self.activity.runOnUiThread(
                 self.setup_runnable
             )
 
@@ -132,22 +152,17 @@ class VoiceAssistant(App):
 
         try:
 
-            activity = self.PythonActivity.mActivity
-
-            # SpeechRecognizer Main Thread par create hoga
             self.recognizer = (
                 self.SpeechRecognizer
                 .createSpeechRecognizer(
-                    activity
+                    self.activity
                 )
             )
 
-            # Listener set karna
             self.recognizer.setRecognitionListener(
                 self.listener
             )
 
-            # Voice recognition intent
             self.intent = self.RecognizerIntent(
                 "android.speech.action.RECOGNIZE_SPEECH"
             )
@@ -163,11 +178,10 @@ class VoiceAssistant(App):
             )
 
             self.label.text = (
-                "🎤 Voice Assistant\n\n"
+                "🤖 JARVIS\n\n"
                 "2 second baad boliye..."
             )
 
-            # Listening bhi Main Thread par
             self.listen_runnable = MainThreadRunnable(
                 self.start_listening
             )
@@ -188,9 +202,7 @@ class VoiceAssistant(App):
 
         try:
 
-            activity = self.PythonActivity.mActivity
-
-            activity.runOnUiThread(
+            self.activity.runOnUiThread(
                 self.listen_runnable
             )
 
@@ -218,6 +230,44 @@ class VoiceAssistant(App):
 
             self.label.text = (
                 "Start Error:\n" + str(e)
+            )
+
+
+    def process_command(self, text):
+
+        command = text.lower().strip()
+
+        if "hello jarvis" in command:
+
+            self.speak(
+                "Hello! Main ready hoon."
+            )
+
+        else:
+
+            self.speak(
+                "Maine suna: " + text
+            )
+
+
+    def speak(self, text):
+
+        try:
+
+            self.label.text = (
+                "🔊 JARVIS:\n" + text
+            )
+
+            self.tts.speak(
+                text,
+                self.TextToSpeech.QUEUE_FLUSH,
+                None
+            )
+
+        except Exception as e:
+
+            self.label.text = (
+                "TTS Error:\n" + str(e)
             )
 
 
