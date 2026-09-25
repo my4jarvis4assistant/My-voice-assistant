@@ -50,8 +50,10 @@ class RecognitionListener(PythonJavaClass):
     def onError(self, error):
         self.app.label.text = "❌ Speech Error: " + str(error)
 
-        # Error ke baad dobara listening
-        Clock.schedule_once(self.app.listen_again, 1)
+        Clock.schedule_once(
+            self.app.listen_again,
+            1
+        )
 
     @java_method('(Landroid/os/Bundle;)V')
     def onResults(self, results):
@@ -69,10 +71,13 @@ class RecognitionListener(PythonJavaClass):
             self.app.process_command(text)
 
         else:
-            self.app.label.text = "Kuch samajh nahi aaya."
+            self.app.label.text = (
+                "Kuch samajh nahi aaya."
+            )
 
             Clock.schedule_once(
-                self.app.listen_again, 1
+                self.app.listen_again,
+                1
             )
 
 
@@ -107,7 +112,7 @@ class VoiceAssistant(App):
 
         self.activity = self.PythonActivity.mActivity
 
-        # TTS
+        # Text to Speech
         self.tts = self.TextToSpeech(
             self.activity,
             None
@@ -117,10 +122,10 @@ class VoiceAssistant(App):
             self.Locale.US
         )
 
-        # Speech listener
+        # Speech Recognition listener
         self.listener = RecognitionListener(self)
 
-        # Main-thread setup
+        # Main thread setup
         self.setup_runnable = MainThreadRunnable(
             self.setup_speech
         )
@@ -135,6 +140,7 @@ class VoiceAssistant(App):
     def start_setup(self, dt):
 
         try:
+
             self.activity.runOnUiThread(
                 self.setup_runnable
             )
@@ -248,17 +254,22 @@ class VoiceAssistant(App):
 
         command = text.lower().strip()
 
-        # 1. Hello
+        # -------------------------
+        # 1. Hello Jarvis
+        # -------------------------
+
         if (
             "hello jarvis" in command
-            or "hello jarvis" == command
         ):
 
             self.speak(
                 "Hello! Main ready hoon."
             )
 
+        # -------------------------
         # 2. Name
+        # -------------------------
+
         elif (
             "tumhara naam kya hai" in command
             or "what is your name" in command
@@ -269,11 +280,14 @@ class VoiceAssistant(App):
                 "Mera naam JARVIS hai."
             )
 
+        # -------------------------
         # 3. Time
+        # -------------------------
+
         elif (
             "time kya hai" in command
             or "what time is it" in command
-            or "time" == command
+            or command == "time"
         ):
 
             current_time = datetime.now().strftime(
@@ -281,11 +295,42 @@ class VoiceAssistant(App):
             )
 
             self.speak(
-                "Abhi time hai " +
-                current_time
+                "Abhi time hai "
+                + current_time
             )
 
-        # Unknown command
+        # -------------------------
+        # 4. Date
+        # -------------------------
+
+        elif (
+            "date kya hai" in command
+            or "aaj ki date" in command
+            or "what is the date" in command
+            or "today's date" in command
+            or "today date" in command
+        ):
+
+            today = datetime.now()
+
+            day = today.strftime("%d")
+            month = today.strftime("%B")
+            year = today.strftime("%Y")
+
+            self.speak(
+                "Aaj "
+                + day
+                + " "
+                + month
+                + " "
+                + year
+                + " hai."
+            )
+
+        # -------------------------
+        # 5. Unknown command
+        # -------------------------
+
         else:
 
             self.speak(
@@ -306,7 +351,7 @@ class VoiceAssistant(App):
                 None
             )
 
-            # Answer ke baad dobara sunna
+            # Answer ke baad dobara sunega
             Clock.schedule_once(
                 self.listen_again,
                 3
