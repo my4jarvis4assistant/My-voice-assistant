@@ -60,13 +60,11 @@ class RecognitionListener(PythonJavaClass):
 
     @java_method('(Landroid/os/Bundle;)V')
     def onResults(self, results):
-
         matches = results.getStringArrayList(
             "results_recognition"
         )
 
         if matches and matches.size() > 0:
-
             text = matches.get(0)
 
             self.app.label.text = (
@@ -76,7 +74,6 @@ class RecognitionListener(PythonJavaClass):
             self.app.process_command(text)
 
         else:
-
             self.app.label.text = (
                 "Kuch samajh nahi aaya."
             )
@@ -99,7 +96,6 @@ class VoiceAssistant(App):
 
         self.external_action = False
 
-        # Android classes
         self.PythonActivity = autoclass(
             "org.kivy.android.PythonActivity"
         )
@@ -124,11 +120,12 @@ class VoiceAssistant(App):
             "java.util.Locale"
         )
 
-        self.activity = (
-            self.PythonActivity.mActivity
-        )
+        self.activity = self.PythonActivity.mActivity
 
-        # Text To Speech
+        # -------------------------
+        # TEXT TO SPEECH
+        # -------------------------
+
         self.tts = self.TextToSpeech(
             self.activity,
             None
@@ -138,7 +135,10 @@ class VoiceAssistant(App):
             self.Locale.US
         )
 
-        # Speech Recognition
+        # -------------------------
+        # SPEECH RECOGNITION
+        # -------------------------
+
         self.listener = RecognitionListener(self)
 
         self.setup_runnable = MainThreadRunnable(
@@ -152,9 +152,9 @@ class VoiceAssistant(App):
 
         return self.label
 
-    # =====================================
-    # Speech Setup
-    # =====================================
+    # -------------------------
+    # START SETUP
+    # -------------------------
 
     def start_setup(self, dt):
 
@@ -169,6 +169,10 @@ class VoiceAssistant(App):
             self.label.text = (
                 "Thread Error:\n" + str(e)
             )
+
+    # -------------------------
+    # SPEECH SETUP
+    # -------------------------
 
     def setup_speech(self):
 
@@ -220,9 +224,9 @@ class VoiceAssistant(App):
                 str(e)
             )
 
-    # =====================================
-    # Listening
-    # =====================================
+    # -------------------------
+    # START LISTENING
+    # -------------------------
 
     def start_listening_request(self, dt):
 
@@ -260,8 +264,13 @@ class VoiceAssistant(App):
         except Exception as e:
 
             self.label.text = (
-                "Start Error:\n" + str(e)
+                "Start Error:\n" +
+                str(e)
             )
+
+    # -------------------------
+    # LISTEN AGAIN
+    # -------------------------
 
     def listen_again(self, dt):
 
@@ -277,28 +286,33 @@ class VoiceAssistant(App):
         except Exception as e:
 
             self.label.text = (
-                "Restart Error:\n" + str(e)
+                "Restart Error:\n" +
+                str(e)
             )
 
-    # =====================================
-    # Stop Listening
-    # =====================================
+    # -------------------------
+    # STOP LISTENING
+    # -------------------------
 
     def stop_listening(self):
 
         try:
+
             self.recognizer.stopListening()
+
         except Exception:
             pass
 
         try:
+
             self.recognizer.cancel()
+
         except Exception:
             pass
 
-    # =====================================
-    # YouTube
-    # =====================================
+    # -------------------------
+    # OPEN YOUTUBE
+    # -------------------------
 
     def open_youtube(self, dt):
 
@@ -322,7 +336,9 @@ class VoiceAssistant(App):
 
             intent.setData(uri)
 
-            self.activity.startActivity(intent)
+            self.activity.startActivity(
+                intent
+            )
 
         except Exception as e:
 
@@ -338,9 +354,9 @@ class VoiceAssistant(App):
                 2
             )
 
-    # =====================================
-    # Calculator
-    # =====================================
+    # -------------------------
+    # OPEN CALCULATOR
+    # -------------------------
 
     def open_calculator(self, dt):
 
@@ -354,16 +370,68 @@ class VoiceAssistant(App):
                 "🧮 Calculator khol raha hoon..."
             )
 
-            # Android Calculator intent
-            intent = self.RecognizerIntent(
-                "android.intent.action.MAIN"
+            package_manager = (
+                self.activity.getPackageManager()
             )
 
-            intent.addCategory(
-                "android.intent.category.APP_CALCULATOR"
-            )
+            # Common Android Calculator packages
+            calculator_packages = [
 
-            self.activity.startActivity(intent)
+                "com.google.android.calculator",
+
+                "com.google.android.calculator2",
+
+                "com.miui.calculator",
+
+                "com.sec.android.app.popupcalculator",
+
+                "com.oneplus.calculator",
+
+                "com.coloros.calculator",
+
+                "com.oppo.calculator",
+
+                "com.vivo.calculator",
+
+                "com.transsion.calculator"
+            ]
+
+            launched = False
+
+            for package_name in calculator_packages:
+
+                try:
+
+                    launch_intent = (
+                        package_manager
+                        .getLaunchIntentForPackage(
+                            package_name
+                        )
+                    )
+
+                    if launch_intent is not None:
+
+                        self.activity.startActivity(
+                            launch_intent
+                        )
+
+                        launched = True
+                        break
+
+                except Exception:
+                    pass
+
+            if not launched:
+
+                self.external_action = False
+
+                self.label.text = (
+                    "❌ Calculator app nahi mili."
+                )
+
+                self.speak(
+                    "Calculator app nahi mili."
+                )
 
         except Exception as e:
 
@@ -379,22 +447,24 @@ class VoiceAssistant(App):
                 2
             )
 
-    # =====================================
-    # Command Processing
-    # =====================================
+    # -------------------------
+    # PROCESS COMMAND
+    # -------------------------
 
     def process_command(self, text):
 
         command = text.lower().strip()
 
-        # 1. Hello
+        # HELLO
+
         if "hello jarvis" in command:
 
             self.speak(
                 "Hello! Main ready hoon."
             )
 
-        # 2. Name
+        # NAME
+
         elif (
             "tumhara naam kya hai" in command
             or "what is your name" in command
@@ -405,7 +475,8 @@ class VoiceAssistant(App):
                 "Mera naam JARVIS hai."
             )
 
-        # 3. Time
+        # TIME
+
         elif (
             "time kya hai" in command
             or "what time is it" in command
@@ -421,7 +492,8 @@ class VoiceAssistant(App):
                 + current_time
             )
 
-        # 4. Date
+        # DATE
+
         elif (
             "date kya hai" in command
             or "aaj ki date" in command
@@ -446,7 +518,8 @@ class VoiceAssistant(App):
                 + " hai."
             )
 
-        # 5. YouTube
+        # YOUTUBE
+
         elif (
             "youtube kholo" in command
             or "youtube khol" in command
@@ -470,7 +543,8 @@ class VoiceAssistant(App):
                 2.5
             )
 
-        # 6. Calculator
+        # CALCULATOR
+
         elif (
             "calculator kholo" in command
             or "calculator khol" in command
@@ -494,18 +568,23 @@ class VoiceAssistant(App):
                 2.5
             )
 
-        # 7. Unknown
+        # UNKNOWN COMMAND
+
         else:
 
             self.speak(
                 "Maine suna: " + text
             )
 
-    # =====================================
-    # Speak
-    # =====================================
+    # -------------------------
+    # SPEAK
+    # -------------------------
 
-    def speak(self, text, restart=True):
+    def speak(
+        self,
+        text,
+        restart=True
+    ):
 
         try:
 
@@ -519,7 +598,10 @@ class VoiceAssistant(App):
                 None
             )
 
-            if restart and not self.external_action:
+            if (
+                restart
+                and not self.external_action
+            ):
 
                 Clock.schedule_once(
                     self.listen_again,
@@ -529,7 +611,8 @@ class VoiceAssistant(App):
         except Exception as e:
 
             self.label.text = (
-                "TTS Error:\n" + str(e)
+                "TTS Error:\n" +
+                str(e)
             )
 
 
