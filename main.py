@@ -5,7 +5,12 @@ from jnius import autoclass, PythonJavaClass, java_method
 from datetime import datetime
 
 
+# ==========================================
+# Android Main Thread Runnable
+# ==========================================
+
 class MainThreadRunnable(PythonJavaClass):
+
     __javainterfaces__ = ['java/lang/Runnable']
     __javacontext__ = 'app'
 
@@ -18,7 +23,12 @@ class MainThreadRunnable(PythonJavaClass):
         self.function()
 
 
+# ==========================================
+# Speech Recognition Listener
+# ==========================================
+
 class RecognitionListener(PythonJavaClass):
+
     __javainterfaces__ = ['android/speech/RecognitionListener']
     __javacontext__ = 'app'
 
@@ -48,11 +58,13 @@ class RecognitionListener(PythonJavaClass):
 
     @java_method('(ILjava/lang/String;)V')
     def onError(self, error):
+
         self.app.label.text = (
             "❌ Speech Error: " + str(error)
         )
 
         if not self.app.external_action:
+
             Clock.schedule_once(
                 self.app.listen_again,
                 1
@@ -60,11 +72,13 @@ class RecognitionListener(PythonJavaClass):
 
     @java_method('(Landroid/os/Bundle;)V')
     def onResults(self, results):
+
         matches = results.getStringArrayList(
             "results_recognition"
         )
 
         if matches and matches.size() > 0:
+
             text = matches.get(0)
 
             self.app.label.text = (
@@ -74,16 +88,22 @@ class RecognitionListener(PythonJavaClass):
             self.app.process_command(text)
 
         else:
+
             self.app.label.text = (
                 "Kuch samajh nahi aaya."
             )
 
             if not self.app.external_action:
+
                 Clock.schedule_once(
                     self.app.listen_again,
                     1
                 )
 
+
+# ==========================================
+# JARVIS
+# ==========================================
 
 class VoiceAssistant(App):
 
@@ -94,10 +114,13 @@ class VoiceAssistant(App):
             font_size="22sp"
         )
 
-        # External Android action chal raha hai ya nahi
+        # External Android app/action
         self.external_action = False
 
-        # Android classes
+        # ----------------------------------
+        # Android Classes
+        # ----------------------------------
+
         self.PythonActivity = autoclass(
             "org.kivy.android.PythonActivity"
         )
@@ -122,9 +145,14 @@ class VoiceAssistant(App):
             "java.util.Locale"
         )
 
-        self.activity = self.PythonActivity.mActivity
+        self.activity = (
+            self.PythonActivity.mActivity
+        )
 
+        # ----------------------------------
         # Text To Speech
+        # ----------------------------------
+
         self.tts = self.TextToSpeech(
             self.activity,
             None
@@ -134,8 +162,13 @@ class VoiceAssistant(App):
             self.Locale.US
         )
 
+        # ----------------------------------
         # Speech Recognition
-        self.listener = RecognitionListener(self)
+        # ----------------------------------
+
+        self.listener = RecognitionListener(
+            self
+        )
 
         self.setup_runnable = MainThreadRunnable(
             self.setup_speech
@@ -147,6 +180,10 @@ class VoiceAssistant(App):
         )
 
         return self.label
+
+    # ======================================
+    # Speech Setup
+    # ======================================
 
     def start_setup(self, dt):
 
@@ -212,6 +249,10 @@ class VoiceAssistant(App):
                 str(e)
             )
 
+    # ======================================
+    # Start Listening
+    # ======================================
+
     def start_listening_request(self, dt):
 
         if self.external_action:
@@ -252,6 +293,10 @@ class VoiceAssistant(App):
                 str(e)
             )
 
+    # ======================================
+    # Listen Again
+    # ======================================
+
     def listen_again(self, dt):
 
         if self.external_action:
@@ -270,9 +315,9 @@ class VoiceAssistant(App):
                 str(e)
             )
 
-    # --------------------------------
-    # Stop speech recognition
-    # --------------------------------
+    # ======================================
+    # Stop Listening
+    # ======================================
 
     def stop_listening(self):
 
@@ -286,9 +331,119 @@ class VoiceAssistant(App):
         except Exception:
             pass
 
-    # --------------------------------
-    # Open YouTube
-    # --------------------------------
+    # ======================================
+    # Open Android App
+    # ======================================
+
+    def open_package(self, package_names, app_name):
+
+        try:
+
+            self.external_action = True
+
+            self.stop_listening()
+
+            self.speak(
+                app_name + " khol raha hoon.",
+                restart=False
+            )
+
+            # TTS ke baad app open hoga
+            Clock.schedule_once(
+                lambda dt: self.launch_package(
+                    package_names,
+                    app_name
+                ),
+                2.5
+            )
+
+        except Exception as e:
+
+            self.external_action = False
+
+            self.label.text = (
+                app_name +
+                " Error:\n" +
+                str(e)
+            )
+
+            Clock.schedule_once(
+                self.listen_again,
+                2
+            )
+
+    # ======================================
+    # Launch Package
+    # ======================================
+
+    def launch_package(
+        self,
+        package_names,
+        app_name
+    ):
+
+        launched = False
+
+        try:
+
+            for package_name in package_names:
+
+                try:
+
+                    intent = self.RecognizerIntent(
+                        "android.intent.action.MAIN"
+                    )
+
+                    intent.addCategory(
+                        "android.intent.category.LAUNCHER"
+                    )
+
+                    intent.setPackage(
+                        package_name
+                    )
+
+                    self.activity.startActivity(
+                        intent
+                    )
+
+                    launched = True
+                    break
+
+                except Exception:
+                    pass
+
+            if not launched:
+
+                self.external_action = False
+
+                self.label.text = (
+                    "❌ " +
+                    app_name +
+                    " nahi mila."
+                )
+
+                Clock.schedule_once(
+                    self.listen_again,
+                    2
+                )
+
+        except Exception as e:
+
+            self.external_action = False
+
+            self.label.text = (
+                "❌ App Error:\n" +
+                str(e)
+            )
+
+            Clock.schedule_once(
+                self.listen_again,
+                2
+            )
+
+    # ======================================
+    # YouTube
+    # ======================================
 
     def open_youtube(self, dt):
 
@@ -297,10 +452,6 @@ class VoiceAssistant(App):
             self.external_action = True
 
             self.stop_listening()
-
-            self.label.text = (
-                "📺 YouTube khol raha hoon..."
-            )
 
             uri = self.Uri.parse(
                 "https://www.youtube.com/"
@@ -312,7 +463,9 @@ class VoiceAssistant(App):
 
             intent.setData(uri)
 
-            self.activity.startActivity(intent)
+            self.activity.startActivity(
+                intent
+            )
 
         except Exception as e:
 
@@ -328,22 +481,96 @@ class VoiceAssistant(App):
                 2
             )
 
-    # --------------------------------
+    # ======================================
+    # Camera
+    # ======================================
+
+    def open_camera(self, dt):
+
+        try:
+
+            self.external_action = True
+
+            self.stop_listening()
+
+            intent = self.RecognizerIntent(
+                "android.media.action.IMAGE_CAPTURE"
+            )
+
+            self.activity.startActivity(
+                intent
+            )
+
+        except Exception as e:
+
+            self.external_action = False
+
+            self.label.text = (
+                "Camera Error:\n" +
+                str(e)
+            )
+
+            Clock.schedule_once(
+                self.listen_again,
+                2
+            )
+
+    # ======================================
+    # Settings
+    # ======================================
+
+    def open_settings(self, dt):
+
+        try:
+
+            self.external_action = True
+
+            self.stop_listening()
+
+            intent = self.RecognizerIntent(
+                "android.settings.SETTINGS"
+            )
+
+            self.activity.startActivity(
+                intent
+            )
+
+        except Exception as e:
+
+            self.external_action = False
+
+            self.label.text = (
+                "Settings Error:\n" +
+                str(e)
+            )
+
+            Clock.schedule_once(
+                self.listen_again,
+                2
+            )
+
+    # ======================================
     # Command Processing
-    # --------------------------------
+    # ======================================
 
     def process_command(self, text):
 
         command = text.lower().strip()
 
+        # ----------------------------------
         # 1. Hello Jarvis
+        # ----------------------------------
+
         if "hello jarvis" in command:
 
             self.speak(
                 "Hello! Main ready hoon."
             )
 
+        # ----------------------------------
         # 2. Name
+        # ----------------------------------
+
         elif (
             "tumhara naam kya hai" in command
             or "what is your name" in command
@@ -354,7 +581,10 @@ class VoiceAssistant(App):
                 "Mera naam JARVIS hai."
             )
 
+        # ----------------------------------
         # 3. Time
+        # ----------------------------------
+
         elif (
             "time kya hai" in command
             or "what time is it" in command
@@ -370,7 +600,10 @@ class VoiceAssistant(App):
                 + current_time
             )
 
+        # ----------------------------------
         # 4. Date
+        # ----------------------------------
+
         elif (
             "date kya hai" in command
             or "aaj ki date" in command
@@ -395,7 +628,10 @@ class VoiceAssistant(App):
                 + " hai."
             )
 
-        # 5. Open YouTube
+        # ----------------------------------
+        # 5. YouTube
+        # ----------------------------------
+
         elif (
             "youtube kholo" in command
             or "youtube khol" in command
@@ -405,8 +641,8 @@ class VoiceAssistant(App):
             or command == "youtube"
         ):
 
-            # Listening turant band
             self.external_action = True
+
             self.stop_listening()
 
             self.speak(
@@ -414,49 +650,206 @@ class VoiceAssistant(App):
                 restart=False
             )
 
-            # TTS ke baad YouTube open
             Clock.schedule_once(
                 self.open_youtube,
                 2.5
             )
 
-        # 6. Unknown command
-        else:
+        # ----------------------------------
+        # 6. Calculator
+        # ----------------------------------
+
+        elif (
+            "calculator kholo" in command
+            or "calculator khol" in command
+            or "calculator open karo" in command
+            or "open calculator" in command
+            or "calculator open" in command
+            or command == "calculator"
+        ):
+
+            self.open_package(
+                [
+                    "com.google.android.calculator",
+                    "com.google.android.calculator2"
+                ],
+                "Calculator"
+            )
+
+        # ----------------------------------
+        # 7. Camera
+        # ----------------------------------
+
+        elif (
+            "camera kholo" in command
+            or "camera khol" in command
+            or "camera open karo" in command
+            or "open camera" in command
+            or "camera open" in command
+            or command == "camera"
+        ):
 
             self.speak(
-                "Maine suna: " + text
+                "Camera khol raha hoon.",
+                restart=False
             )
 
-    # --------------------------------
-    # Speak
-    # --------------------------------
+            self.external_action = True
 
-    def speak(self, text, restart=True):
+            self.stop_listening()
 
-        try:
-
-            self.label.text = (
-                "🔊 JARVIS:\n" + text
+            Clock.schedule_once(
+                self.open_camera,
+                2.5
             )
 
-            self.tts.speak(
-                text,
-                self.TextToSpeech.QUEUE_FLUSH,
-                None
+        # ----------------------------------
+        # 8. Chrome
+        # ----------------------------------
+
+        elif (
+            "chrome kholo" in command
+            or "chrome khol" in command
+            or "chrome open karo" in command
+            or "open chrome" in command
+            or "chrome open" in command
+            or command == "chrome"
+        ):
+
+            self.open_package(
+                [
+                    "com.android.chrome"
+                ],
+                "Chrome"
             )
 
-            if restart and not self.external_action:
+        # ----------------------------------
+        # 9. WhatsApp
+        # ----------------------------------
 
-                Clock.schedule_once(
-                    self.listen_again,
-                    3
-                )
+        elif (
+            "whatsapp kholo" in command
+            or "whatsapp khol" in command
+            or "whatsapp open karo" in command
+            or "open whatsapp" in command
+            or "whatsapp open" in command
+            or command == "whatsapp"
+        ):
 
-        except Exception as e:
-
-            self.label.text = (
-                "TTS Error:\n" + str(e)
+            self.open_package(
+                [
+                    "com.whatsapp"
+                ],
+                "WhatsApp"
             )
 
+        # ----------------------------------
+        # 10. Gallery / Photos
+        # ----------------------------------
 
-VoiceAssistant().run()
+        elif (
+            "gallery kholo" in command
+            or "gallery khol" in command
+            or "gallery open karo" in command
+            or "open gallery" in command
+            or "photos kholo" in command
+            or "photos open karo" in command
+            or "open photos" in command
+            or command == "gallery"
+            or command == "photos"
+        ):
+
+            self.open_package(
+                [
+                    "com.google.android.apps.photos",
+                    "com.miui.gallery"
+                ],
+                "Gallery"
+            )
+
+        # ----------------------------------
+        # 11. Settings
+        # ----------------------------------
+
+        elif (
+            "settings kholo" in command
+            or "settings khol" in command
+            or "settings open karo" in command
+            or "open settings" in command
+            or "settings open" in command
+            or command == "settings"
+        ):
+
+            self.speak(
+                "Settings khol raha hoon.",
+                restart=False
+            )
+
+            self.external_action = True
+
+            self.stop_listening()
+
+            Clock.schedule_once(
+                self.open_settings,
+                2.5
+            )
+
+        # ----------------------------------
+        # 12. Play Store
+        # ----------------------------------
+
+        elif (
+            "play store kholo" in command
+            or "play store khol" in command
+            or "play store open karo" in command
+            or "open play store" in command
+            or "play store open" in command
+            or command == "play store"
+        ):
+
+            self.open_package(
+                [
+                    "com.android.vending"
+                ],
+                "Play Store"
+            )
+
+        # ----------------------------------
+        # 13. Phone
+        # ----------------------------------
+
+        elif (
+            "phone kholo" in command
+            or "phone khol" in command
+            or "phone open karo" in command
+            or "open phone" in command
+            or "phone open" in command
+        ):
+
+            self.open_package(
+                [
+                    "com.google.android.dialer",
+                    "com.android.dialer",
+                    "com.android.contacts"
+                ],
+                "Phone"
+            )
+
+        # ----------------------------------
+        # 14. Messages
+        # ----------------------------------
+
+        elif (
+            "messages kholo" in command
+            or "message kholo" in command
+            or "messages khol" in command
+            or "open messages" in command
+            or "open message" in command
+            or "messages open karo" in command
+        ):
+
+            self.open_package(
+                [
+                    "com.google.android.apps.messaging",
+                    "com.android.mms"
+      ,
