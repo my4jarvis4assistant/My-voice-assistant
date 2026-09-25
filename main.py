@@ -52,10 +52,11 @@ class RecognitionListener(PythonJavaClass):
             "❌ Speech Error: " + str(error)
         )
 
-        Clock.schedule_once(
-            self.app.listen_again,
-            1
-        )
+        if not self.app.external_action:
+            Clock.schedule_once(
+                self.app.listen_again,
+                1
+            )
 
     @java_method('(Landroid/os/Bundle;)V')
     def onResults(self, results):
@@ -77,10 +78,11 @@ class RecognitionListener(PythonJavaClass):
                 "Kuch samajh nahi aaya."
             )
 
-            Clock.schedule_once(
-                self.app.listen_again,
-                1
-            )
+            if not self.app.external_action:
+                Clock.schedule_once(
+                    self.app.listen_again,
+                    1
+                )
 
 
 class VoiceAssistant(App):
@@ -91,6 +93,9 @@ class VoiceAssistant(App):
             text="🤖 JARVIS\n\nStarting...",
             font_size="22sp"
         )
+
+        # External Android action chal raha hai ya nahi
+        self.external_action = False
 
         # Android classes
         self.PythonActivity = autoclass(
@@ -209,6 +214,9 @@ class VoiceAssistant(App):
 
     def start_listening_request(self, dt):
 
+        if self.external_action:
+            return
+
         try:
 
             self.activity.runOnUiThread(
@@ -223,6 +231,9 @@ class VoiceAssistant(App):
             )
 
     def start_listening(self):
+
+        if self.external_action:
+            return
 
         try:
 
@@ -243,6 +254,9 @@ class VoiceAssistant(App):
 
     def listen_again(self, dt):
 
+        if self.external_action:
+            return
+
         try:
 
             self.activity.runOnUiThread(
@@ -257,12 +271,32 @@ class VoiceAssistant(App):
             )
 
     # --------------------------------
-    # Android action: Open YouTube
+    # Stop speech recognition
     # --------------------------------
 
-    def open_youtube(self):
+    def stop_listening(self):
 
         try:
+            self.recognizer.stopListening()
+        except Exception:
+            pass
+
+        try:
+            self.recognizer.cancel()
+        except Exception:
+            pass
+
+    # --------------------------------
+    # Open YouTube
+    # --------------------------------
+
+    def open_youtube(self, dt):
+
+        try:
+
+            self.external_action = True
+
+            self.stop_listening()
 
             self.label.text = (
                 "📺 YouTube khol raha hoon..."
@@ -282,28 +316,34 @@ class VoiceAssistant(App):
 
         except Exception as e:
 
+            self.external_action = False
+
             self.label.text = (
-                "YouTube Error:\n" + str(e)
+                "YouTube Error:\n" +
+                str(e)
             )
+
+            Clock.schedule_once(
+                self.listen_again,
+                2
+            )
+
+    # --------------------------------
+    # Command Processing
+    # --------------------------------
 
     def process_command(self, text):
 
         command = text.lower().strip()
 
-        # --------------------------------
         # 1. Hello Jarvis
-        # --------------------------------
-
         if "hello jarvis" in command:
 
             self.speak(
                 "Hello! Main ready hoon."
             )
 
-        # --------------------------------
         # 2. Name
-        # --------------------------------
-
         elif (
             "tumhara naam kya hai" in command
             or "what is your name" in command
@@ -314,10 +354,7 @@ class VoiceAssistant(App):
                 "Mera naam JARVIS hai."
             )
 
-        # --------------------------------
         # 3. Time
-        # --------------------------------
-
         elif (
             "time kya hai" in command
             or "what time is it" in command
@@ -333,10 +370,7 @@ class VoiceAssistant(App):
                 + current_time
             )
 
-        # --------------------------------
         # 4. Date
-        # --------------------------------
-
         elif (
             "date kya hai" in command
             or "aaj ki date" in command
@@ -361,40 +395,43 @@ class VoiceAssistant(App):
                 + " hai."
             )
 
-        # --------------------------------
         # 5. Open YouTube
-        # --------------------------------
-
         elif (
             "youtube kholo" in command
             or "youtube khol" in command
             or "youtube open karo" in command
             or "open youtube" in command
             or "youtube open" in command
-            or "youtube" == command
+            or command == "youtube"
         ):
 
+            # Listening turant band
+            self.external_action = True
+            self.stop_listening()
+
             self.speak(
-                "YouTube khol raha hoon."
+                "YouTube khol raha hoon.",
+                restart=False
             )
 
-            # Thoda delay, taaki TTS response complete ho
+            # TTS ke baad YouTube open
             Clock.schedule_once(
                 self.open_youtube,
                 2.5
             )
 
-        # --------------------------------
         # 6. Unknown command
-        # --------------------------------
-
         else:
 
             self.speak(
                 "Maine suna: " + text
             )
 
-    def speak(self, text):
+    # --------------------------------
+    # Speak
+    # --------------------------------
+
+    def speak(self, text, restart=True):
 
         try:
 
@@ -408,10 +445,12 @@ class VoiceAssistant(App):
                 None
             )
 
-            Clock.schedule_once(
-                self.listen_again,
-                3
-            )
+            if restart and not self.external_action:
+
+                Clock.schedule_once(
+                    self.listen_again,
+                    3
+                )
 
         except Exception as e:
 
