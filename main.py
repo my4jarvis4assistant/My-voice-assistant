@@ -1,12 +1,11 @@
 from kivy.app import App
 from kivy.uix.label import Label
 from kivy.clock import Clock
-
 from jnius import autoclass, PythonJavaClass, java_method
+from datetime import datetime
 
 
 class MainThreadRunnable(PythonJavaClass):
-
     __javainterfaces__ = ['java/lang/Runnable']
     __javacontext__ = 'app'
 
@@ -20,7 +19,6 @@ class MainThreadRunnable(PythonJavaClass):
 
 
 class RecognitionListener(PythonJavaClass):
-
     __javainterfaces__ = ['android/speech/RecognitionListener']
     __javacontext__ = 'app'
 
@@ -52,28 +50,29 @@ class RecognitionListener(PythonJavaClass):
     def onError(self, error):
         self.app.label.text = "❌ Speech Error: " + str(error)
 
+        # Error ke baad dobara listening
+        Clock.schedule_once(self.app.listen_again, 1)
+
     @java_method('(Landroid/os/Bundle;)V')
     def onResults(self, results):
-
         matches = results.getStringArrayList(
             "results_recognition"
         )
 
         if matches and matches.size() > 0:
-
             text = matches.get(0)
 
             self.app.label.text = (
                 "Aapne kaha:\n" + text
             )
 
-            # Recognized text ko JARVIS ke brain me bhejna
             self.app.process_command(text)
 
         else:
+            self.app.label.text = "Kuch samajh nahi aaya."
 
-            self.app.label.text = (
-                "Kuch samajh nahi aaya."
+            Clock.schedule_once(
+                self.app.listen_again, 1
             )
 
 
@@ -121,6 +120,7 @@ class VoiceAssistant(App):
         # Speech listener
         self.listener = RecognitionListener(self)
 
+        # Main-thread setup
         self.setup_runnable = MainThreadRunnable(
             self.setup_speech
         )
@@ -132,11 +132,9 @@ class VoiceAssistant(App):
 
         return self.label
 
-
     def start_setup(self, dt):
 
         try:
-
             self.activity.runOnUiThread(
                 self.setup_runnable
             )
@@ -146,7 +144,6 @@ class VoiceAssistant(App):
             self.label.text = (
                 "Thread Error:\n" + str(e)
             )
-
 
     def setup_speech(self):
 
@@ -194,9 +191,9 @@ class VoiceAssistant(App):
         except Exception as e:
 
             self.label.text = (
-                "Speech Setup Error:\n" + str(e)
+                "Speech Setup Error:\n" +
+                str(e)
             )
-
 
     def start_listening_request(self, dt):
 
@@ -209,10 +206,9 @@ class VoiceAssistant(App):
         except Exception as e:
 
             self.label.text = (
-                "Listening Thread Error:\n"
-                + str(e)
+                "Listening Thread Error:\n" +
+                str(e)
             )
-
 
     def start_listening(self):
 
@@ -229,26 +225,72 @@ class VoiceAssistant(App):
         except Exception as e:
 
             self.label.text = (
-                "Start Error:\n" + str(e)
+                "Start Error:\n" +
+                str(e)
             )
 
+    def listen_again(self, dt):
+
+        try:
+
+            self.activity.runOnUiThread(
+                self.listen_runnable
+            )
+
+        except Exception as e:
+
+            self.label.text = (
+                "Restart Error:\n" +
+                str(e)
+            )
 
     def process_command(self, text):
 
         command = text.lower().strip()
 
-        if "hello jarvis" in command:
+        # 1. Hello
+        if (
+            "hello jarvis" in command
+            or "hello jarvis" == command
+        ):
 
             self.speak(
                 "Hello! Main ready hoon."
             )
 
+        # 2. Name
+        elif (
+            "tumhara naam kya hai" in command
+            or "what is your name" in command
+            or "your name" in command
+        ):
+
+            self.speak(
+                "Mera naam JARVIS hai."
+            )
+
+        # 3. Time
+        elif (
+            "time kya hai" in command
+            or "what time is it" in command
+            or "time" == command
+        ):
+
+            current_time = datetime.now().strftime(
+                "%I:%M %p"
+            )
+
+            self.speak(
+                "Abhi time hai " +
+                current_time
+            )
+
+        # Unknown command
         else:
 
             self.speak(
                 "Maine suna: " + text
             )
-
 
     def speak(self, text):
 
@@ -262,6 +304,12 @@ class VoiceAssistant(App):
                 text,
                 self.TextToSpeech.QUEUE_FLUSH,
                 None
+            )
+
+            # Answer ke baad dobara sunna
+            Clock.schedule_once(
+                self.listen_again,
+                3
             )
 
         except Exception as e:
