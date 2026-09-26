@@ -120,6 +120,10 @@ class VoiceAssistant(App):
             "java.util.Locale"
         )
 
+        self.PackageManager = autoclass(
+            "android.content.pm.PackageManager"
+        )
+
         self.activity = self.PythonActivity.mActivity
 
         # TTS
@@ -132,7 +136,7 @@ class VoiceAssistant(App):
             self.Locale.US
         )
 
-        # Speech Listener
+        # Speech listener
         self.listener = RecognitionListener(
             self
         )
@@ -156,6 +160,7 @@ class VoiceAssistant(App):
             )
 
         except Exception as e:
+
             self.label.text = (
                 "Thread Error:\n" + str(e)
             )
@@ -246,8 +251,7 @@ class VoiceAssistant(App):
         except Exception as e:
 
             self.label.text = (
-                "Start Error:\n"
-                + str(e)
+                "Start Error:\n" + str(e)
             )
 
     def listen_again(self, dt):
@@ -264,8 +268,7 @@ class VoiceAssistant(App):
         except Exception as e:
 
             self.label.text = (
-                "Restart Error:\n"
-                + str(e)
+                "Restart Error:\n" + str(e)
             )
 
     def stop_listening(self):
@@ -280,9 +283,9 @@ class VoiceAssistant(App):
         except Exception:
             pass
 
-    # -----------------------------
+    # =========================
     # YOUTUBE
-    # -----------------------------
+    # =========================
 
     def open_youtube(self, dt):
 
@@ -323,9 +326,9 @@ class VoiceAssistant(App):
                 2
             )
 
-    # -----------------------------
+    # =========================
     # CALCULATOR
-    # -----------------------------
+    # =========================
 
     def open_calculator(self, dt):
 
@@ -338,53 +341,48 @@ class VoiceAssistant(App):
                 "🧮 Calculator khol raha hoon..."
             )
 
-            PackageManager = autoclass(
-                "android.content.pm.PackageManager"
-            )
-
             pm = self.activity.getPackageManager()
 
-            calculator_packages = [
+            packages = [
                 "com.google.android.calculator",
-                "com.android.calculator2",
-                "com.miui.calculator"
+                "com.miui.calculator",
+                "com.android.calculator2"
             ]
 
-            launched = False
+            intent = None
 
-            for package_name in calculator_packages:
+            for package in packages:
 
-                intent = (
-                    pm.getLaunchIntentForPackage(
-                        package_name
-                    )
-                )
+                try:
 
-                if intent is not None:
-
-                    self.activity.startActivity(
-                        intent
+                    intent = pm.getLaunchIntentForPackage(
+                        package
                     )
 
-                    launched = True
-                    break
+                    if intent is not None:
+                        break
 
-            if not launched:
+                except Exception:
+                    pass
+
+            if intent is None:
 
                 self.external_action = False
 
                 self.label.text = (
-                    "❌ Calculator app nahi mili."
-                )
-
-                self.speak(
-                    "Calculator app nahi mili."
+                    "❌ Calculator app nahi mila."
                 )
 
                 Clock.schedule_once(
                     self.listen_again,
-                    3
+                    2
                 )
+
+                return
+
+            self.activity.startActivity(
+                intent
+            )
 
         except Exception as e:
 
@@ -400,9 +398,9 @@ class VoiceAssistant(App):
                 2
             )
 
-    # -----------------------------
+    # =========================
     # CAMERA
-    # -----------------------------
+    # =========================
 
     def open_camera(self, dt):
 
@@ -437,9 +435,9 @@ class VoiceAssistant(App):
                 2
             )
 
-    # -----------------------------
+    # =========================
     # CHROME
-    # -----------------------------
+    # =========================
 
     def open_chrome(self, dt):
 
@@ -452,40 +450,30 @@ class VoiceAssistant(App):
                 "🌐 Chrome khol raha hoon..."
             )
 
-            PackageManager = autoclass(
-                "android.content.pm.PackageManager"
-            )
-
             pm = self.activity.getPackageManager()
 
-            intent = (
-                pm.getLaunchIntentForPackage(
-                    "com.android.chrome"
-                )
+            intent = pm.getLaunchIntentForPackage(
+                "com.android.chrome"
             )
 
-            if intent is not None:
-
-                self.activity.startActivity(
-                    intent
-                )
-
-            else:
+            if intent is None:
 
                 self.external_action = False
 
                 self.label.text = (
-                    "❌ Chrome app nahi mili."
-                )
-
-                self.speak(
-                    "Chrome app nahi mili."
+                    "❌ Chrome nahi mila."
                 )
 
                 Clock.schedule_once(
                     self.listen_again,
-                    3
+                    2
                 )
+
+                return
+
+            self.activity.startActivity(
+                intent
+            )
 
         except Exception as e:
 
@@ -501,9 +489,9 @@ class VoiceAssistant(App):
                 2
             )
 
-    # -----------------------------
+    # =========================
     # WHATSAPP
-    # -----------------------------
+    # =========================
 
     def open_whatsapp(self, dt):
 
@@ -516,40 +504,30 @@ class VoiceAssistant(App):
                 "💬 WhatsApp khol raha hoon..."
             )
 
-            PackageManager = autoclass(
-                "android.content.pm.PackageManager"
-            )
-
             pm = self.activity.getPackageManager()
 
-            intent = (
-                pm.getLaunchIntentForPackage(
-                    "com.whatsapp"
-                )
+            intent = pm.getLaunchIntentForPackage(
+                "com.whatsapp"
             )
 
-            if intent is not None:
-
-                self.activity.startActivity(
-                    intent
-                )
-
-            else:
+            if intent is None:
 
                 self.external_action = False
 
                 self.label.text = (
-                    "❌ WhatsApp app nahi mili."
-                )
-
-                self.speak(
-                    "WhatsApp app nahi mili."
+                    "❌ WhatsApp nahi mila."
                 )
 
                 Clock.schedule_once(
                     self.listen_again,
-                    3
+                    2
                 )
+
+                return
+
+            self.activity.startActivity(
+                intent
+            )
 
         except Exception as e:
 
@@ -565,9 +543,9 @@ class VoiceAssistant(App):
                 2
             )
 
-    # -----------------------------
-    # SETTINGS - VERSION 0.9
-    # -----------------------------
+    # =========================
+    # MAIN SETTINGS
+    # =========================
 
     def open_settings(self, dt):
 
@@ -602,22 +580,59 @@ class VoiceAssistant(App):
                 2
             )
 
-    # -----------------------------
+    # =========================
+    # WIFI SETTINGS - NEW
+    # =========================
+
+    def open_wifi_settings(self, dt):
+
+        try:
+
+            self.external_action = True
+            self.stop_listening()
+
+            self.label.text = (
+                "📶 Wi-Fi settings khol raha hoon..."
+            )
+
+            intent = self.RecognizerIntent(
+                "android.settings.WIFI_SETTINGS"
+            )
+
+            self.activity.startActivity(
+                intent
+            )
+
+        except Exception as e:
+
+            self.external_action = False
+
+            self.label.text = (
+                "Wi-Fi Settings Error:\n"
+                + str(e)
+            )
+
+            Clock.schedule_once(
+                self.listen_again,
+                2
+            )
+
+    # =========================
     # COMMAND PROCESSING
-    # -----------------------------
+    # =========================
 
     def process_command(self, text):
 
         command = text.lower().strip()
 
-        # HELLO
+        # Hello
         if "hello jarvis" in command:
 
             self.speak(
                 "Hello! Main ready hoon."
             )
 
-        # NAME
+        # Name
         elif (
             "tumhara naam kya hai" in command
             or "what is your name" in command
@@ -628,7 +643,7 @@ class VoiceAssistant(App):
                 "Mera naam JARVIS hai."
             )
 
-        # TIME
+        # Time
         elif (
             "time kya hai" in command
             or "what time is it" in command
@@ -644,7 +659,7 @@ class VoiceAssistant(App):
                 + current_time
             )
 
-        # DATE
+        # Date
         elif (
             "date kya hai" in command
             or "aaj ki date" in command
@@ -669,7 +684,7 @@ class VoiceAssistant(App):
                 + " hai."
             )
 
-        # YOUTUBE
+        # YouTube
         elif (
             "youtube kholo" in command
             or "youtube khol" in command
@@ -692,7 +707,7 @@ class VoiceAssistant(App):
                 2.5
             )
 
-        # CALCULATOR
+        # Calculator
         elif (
             "calculator kholo" in command
             or "calculator khol" in command
@@ -715,7 +730,7 @@ class VoiceAssistant(App):
                 2.5
             )
 
-        # CAMERA
+        # Camera
         elif (
             "camera kholo" in command
             or "camera khol" in command
@@ -738,7 +753,7 @@ class VoiceAssistant(App):
                 2.5
             )
 
-        # CHROME
+        # Chrome
         elif (
             "chrome kholo" in command
             or "chrome khol" in command
@@ -761,7 +776,7 @@ class VoiceAssistant(App):
                 2.5
             )
 
-        # WHATSAPP
+        # WhatsApp
         elif (
             "whatsapp kholo" in command
             or "whatsapp khol" in command
@@ -784,7 +799,7 @@ class VoiceAssistant(App):
                 2.5
             )
 
-        # SETTINGS - VERSION 0.9
+        # Main Settings
         elif (
             "settings kholo" in command
             or "settings khol" in command
@@ -807,16 +822,44 @@ class VoiceAssistant(App):
                 2.5
             )
 
-        # UNKNOWN COMMAND
+        # Wi-Fi Settings - NEW
+        elif (
+            "wifi kholo" in command
+            or "wifi khol" in command
+            or "wifi settings kholo" in command
+            or "wifi settings khol" in command
+            or "wifi open karo" in command
+            or "open wifi" in command
+            or "open wifi settings" in command
+            or "wi-fi kholo" in command
+            or "wi-fi khol" in command
+            or command == "wifi"
+            or command == "wi-fi"
+        ):
+
+            self.external_action = True
+            self.stop_listening()
+
+            self.speak(
+                "Wi-Fi settings khol raha hoon.",
+                restart=False
+            )
+
+            Clock.schedule_once(
+                self.open_wifi_settings,
+                2.5
+            )
+
+        # Unknown command
         else:
 
             self.speak(
                 "Maine suna: " + text
             )
 
-    # -----------------------------
+    # =========================
     # TEXT TO SPEECH
-    # -----------------------------
+    # =========================
 
     def speak(self, text, restart=True):
 
