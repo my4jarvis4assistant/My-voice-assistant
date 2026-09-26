@@ -874,4 +874,22 @@ class VoiceAssistant(App):
             self.tts.speak(
                 text,
                 self.TextToSpeech.QUEUE_FLUSH,
+                None
+            )
+
+            if restart and not self.external_action:
+
+                Clock.schedule_once(
+                    self.listen_again,
+                    3
+                )
+
+        except Exception as e:
+
+            self.label.text = (
+                "TTS Error:\n" + str(e)
+            )
+
+
+VoiceAssistant().run()
           
