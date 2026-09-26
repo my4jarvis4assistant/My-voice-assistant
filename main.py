@@ -156,7 +156,6 @@ class VoiceAssistant(App):
             )
 
         except Exception as e:
-
             self.label.text = (
                 "Thread Error:\n" + str(e)
             )
@@ -469,7 +468,6 @@ class VoiceAssistant(App):
 
                 self.activity.startActivity(
                     intent
-
                 )
 
             else:
@@ -504,7 +502,7 @@ class VoiceAssistant(App):
             )
 
     # -----------------------------
-    # WHATSAPP - VERSION 0.8
+    # WHATSAPP
     # -----------------------------
 
     def open_whatsapp(self, dt):
@@ -559,6 +557,43 @@ class VoiceAssistant(App):
 
             self.label.text = (
                 "WhatsApp Error:\n"
+                + str(e)
+            )
+
+            Clock.schedule_once(
+                self.listen_again,
+                2
+            )
+
+    # -----------------------------
+    # SETTINGS - VERSION 0.9
+    # -----------------------------
+
+    def open_settings(self, dt):
+
+        try:
+
+            self.external_action = True
+            self.stop_listening()
+
+            self.label.text = (
+                "⚙️ Settings khol raha hoon..."
+            )
+
+            intent = self.RecognizerIntent(
+                "android.settings.SETTINGS"
+            )
+
+            self.activity.startActivity(
+                intent
+            )
+
+        except Exception as e:
+
+            self.external_action = False
+
+            self.label.text = (
+                "Settings Error:\n"
                 + str(e)
             )
 
@@ -726,7 +761,7 @@ class VoiceAssistant(App):
                 2.5
             )
 
-        # WHATSAPP - VERSION 0.8
+        # WHATSAPP
         elif (
             "whatsapp kholo" in command
             or "whatsapp khol" in command
@@ -746,6 +781,29 @@ class VoiceAssistant(App):
 
             Clock.schedule_once(
                 self.open_whatsapp,
+                2.5
+            )
+
+        # SETTINGS - VERSION 0.9
+        elif (
+            "settings kholo" in command
+            or "settings khol" in command
+            or "settings open karo" in command
+            or "open settings" in command
+            or "settings open" in command
+            or command == "settings"
+        ):
+
+            self.external_action = True
+            self.stop_listening()
+
+            self.speak(
+                "Settings khol raha hoon.",
+                restart=False
+            )
+
+            Clock.schedule_once(
+                self.open_settings,
                 2.5
             )
 
