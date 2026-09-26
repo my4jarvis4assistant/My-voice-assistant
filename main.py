@@ -357,7 +357,7 @@ class VoiceAssistant(App):
             "android.settings.SOUND_SETTINGS",
             "🔊 Sound Settings khol raha hoon..."
             )    
-        def process_command(self, text):
+    def process_command(self, text):
         command = text.lower().strip()
 
         if "hello jarvis" in command:
