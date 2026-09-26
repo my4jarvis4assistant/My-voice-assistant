@@ -48,10 +48,15 @@ class RecognitionListener(PythonJavaClass):
 
     @java_method('(ILjava/lang/String;)V')
     def onError(self, error):
-        self.app.label.text = "❌ Speech Error: " + str(error)
+        self.app.label.text = (
+            "❌ Speech Error: " + str(error)
+        )
 
         if not self.app.external_action:
-            Clock.schedule_once(self.app.listen_again, 1)
+            Clock.schedule_once(
+                self.app.listen_again,
+                1
+            )
 
     @java_method('(Landroid/os/Bundle;)V')
     def onResults(self, results):
@@ -61,18 +66,29 @@ class RecognitionListener(PythonJavaClass):
 
         if matches and matches.size() > 0:
             text = matches.get(0)
-            self.app.label.text = "Aapne kaha:\n" + text
+
+            self.app.label.text = (
+                "Aapne kaha:\n" + text
+            )
+
             self.app.process_command(text)
+
         else:
-            self.app.label.text = "Kuch samajh nahi aaya."
+            self.app.label.text = (
+                "Kuch samajh nahi aaya."
+            )
 
             if not self.app.external_action:
-                Clock.schedule_once(self.app.listen_again, 1)
+                Clock.schedule_once(
+                    self.app.listen_again,
+                    1
+                )
 
 
 class VoiceAssistant(App):
 
     def build(self):
+
         self.label = Label(
             text="🤖 JARVIS\n\nStarting...",
             font_size="22sp"
@@ -104,14 +120,18 @@ class VoiceAssistant(App):
             "java.util.Locale"
         )
 
-        self.activity = self.PythonActivity.mActivity
+        self.activity = (
+            self.PythonActivity.mActivity
+        )
 
         self.tts = self.TextToSpeech(
             self.activity,
             None
         )
 
-        self.tts.setLanguage(self.Locale.US)
+        self.tts.setLanguage(
+            self.Locale.US
+        )
 
         self.listener = RecognitionListener(self)
 
@@ -119,20 +139,29 @@ class VoiceAssistant(App):
             self.setup_speech
         )
 
-        Clock.schedule_once(self.start_setup, 0.5)
+        Clock.schedule_once(
+            self.start_setup,
+            0.5
+        )
 
         return self.label
 
     def start_setup(self, dt):
+
         try:
             self.activity.runOnUiThread(
                 self.setup_runnable
             )
+
         except Exception as e:
-            self.label.text = "Thread Error:\n" + str(e)
+            self.label.text = (
+                "Thread Error:\n" + str(e)
+            )
 
     def setup_speech(self):
+
         try:
+
             self.recognizer = (
                 self.SpeechRecognizer
                 .createSpeechRecognizer(
@@ -173,11 +202,14 @@ class VoiceAssistant(App):
             )
 
         except Exception as e:
+
             self.label.text = (
-                "Speech Setup Error:\n" + str(e)
+                "Speech Setup Error:\n"
+                + str(e)
             )
 
     def start_listening_request(self, dt):
+
         if self.external_action:
             return
 
@@ -185,38 +217,54 @@ class VoiceAssistant(App):
             self.activity.runOnUiThread(
                 self.listen_runnable
             )
+
         except Exception as e:
+
             self.label.text = (
-                "Listening Thread Error:\n" + str(e)
+                "Listening Thread Error:\n"
+                + str(e)
             )
 
     def start_listening(self):
+
         if self.external_action:
             return
 
         try:
-            self.label.text = "🎤 Bolna shuru kijiye..."
+
+            self.label.text = (
+                "🎤 Bolna shuru kijiye..."
+            )
 
             self.recognizer.startListening(
                 self.intent
             )
+
         except Exception as e:
-            self.label.text = "Start Error:\n" + str(e)
+
+            self.label.text = (
+                "Start Error:\n" + str(e)
+            )
 
     def listen_again(self, dt):
+
         if self.external_action:
             return
 
         try:
+
             self.activity.runOnUiThread(
                 self.listen_runnable
             )
+
         except Exception as e:
+
             self.label.text = (
                 "Restart Error:\n" + str(e)
             )
 
     def stop_listening(self):
+
         try:
             self.recognizer.stopListening()
         except Exception:
@@ -227,66 +275,10 @@ class VoiceAssistant(App):
         except Exception:
             pass
 
-    def open_app(self, package_name, app_name):
-        try:
-            self.external_action = True
-            self.stop_listening()
-
-            self.label.text = (
-                app_name + " khol raha hoon..."
-            )
-
-            pm = self.activity.getPackageManager()
-
-            intent = pm.getLaunchIntentForPackage(
-                package_name
-            )
-
-            if intent:
-                self.activity.startActivity(intent)
-            else:
-                self.external_action = False
-                self.label.text = (
-                    app_name + " nahi mila."
-                )
-                Clock.schedule_once(
-                    self.listen_again,
-                    2
-                )
-
-        except Exception as e:
-            self.external_action = False
-            self.label.text = (
-                app_name + " Error:\n" + str(e)
-            )
-            Clock.schedule_once(
-                self.listen_again,
-                2
-            )
-
-    def open_settings_page(self, action, message):
-        try:
-            self.external_action = True
-            self.stop_listening()
-
-            self.label.text = message
-
-            intent = self.RecognizerIntent(action)
-
-            self.activity.startActivity(intent)
-
-        except Exception as e:
-            self.external_action = False
-            self.label.text = (
-                "Settings Error:\n" + str(e)
-            )
-            Clock.schedule_once(
-                self.listen_again,
-                2
-            )
-
     def open_youtube(self, dt):
+
         try:
+
             self.external_action = True
             self.stop_listening()
 
@@ -303,20 +295,92 @@ class VoiceAssistant(App):
             )
 
             intent.setData(uri)
-            self.activity.startActivity(intent)
+
+            self.activity.startActivity(
+                intent
+            )
 
         except Exception as e:
+
             self.external_action = False
+
             self.label.text = (
-                "YouTube Error:\n" + str(e)
+                "YouTube Error:\n"
+                + str(e)
             )
+
+            Clock.schedule_once(
+                self.listen_again,
+                2
+            )
+
+    def open_calculator(self, dt):
+
+        try:
+
+            self.external_action = True
+            self.stop_listening()
+
+            self.label.text = (
+                "🧮 Calculator khol raha hoon..."
+            )
+
+            packages = [
+                "com.google.android.calculator",
+                "com.miui.calculator",
+                "com.android.calculator2"
+            ]
+
+            pm = self.activity.getPackageManager()
+
+            for package_name in packages:
+
+                try:
+
+                    intent = (
+                        pm.getLaunchIntentForPackage(
+                            package_name
+                        )
+                    )
+
+                    if intent:
+                        self.activity.startActivity(
+                            intent
+                        )
+                        return
+
+                except Exception:
+                    pass
+
+            self.external_action = False
+
+            self.label.text = (
+                "Calculator nahi mila."
+            )
+
+            Clock.schedule_once(
+                self.listen_again,
+                2
+            )
+
+        except Exception as e:
+
+            self.external_action = False
+
+            self.label.text = (
+                "Calculator Error:\n"
+                + str(e)
+            )
+
             Clock.schedule_once(
                 self.listen_again,
                 2
             )
 
     def open_camera(self, dt):
+
         try:
+
             self.external_action = True
             self.stop_listening()
 
@@ -328,39 +392,262 @@ class VoiceAssistant(App):
                 "android.media.action.IMAGE_CAPTURE"
             )
 
-            self.activity.startActivity(intent)
+            self.activity.startActivity(
+                intent
+            )
 
         except Exception as e:
+
             self.external_action = False
+
             self.label.text = (
-                "Camera Error:\n" + str(e)
+                "Camera Error:\n"
+                + str(e)
             )
+
             Clock.schedule_once(
                 self.listen_again,
                 2
             )
 
-    def open_wifi(self, dt):
-        self.open_settings_page(
-            "android.settings.WIFI_SETTINGS",
-            "📶 Wi-Fi Settings khol raha hoon..."
-        )
+    def open_chrome(self, dt):
 
-    def open_bluetooth(self, dt):
-        self.open_settings_page(
-            "android.settings.BLUETOOTH_SETTINGS",
-            "🔵 Bluetooth Settings khol raha hoon..."
-        )
+        try:
 
-    def open_sound(self, dt):
-        self.open_settings_page(
-            "android.settings.SOUND_SETTINGS",
-            "🔊 Sound Settings khol raha hoon..."
-            )    
+            self.external_action = True
+            self.stop_listening()
+
+            self.label.text = (
+                "🌐 Chrome khol raha hoon..."
+            )
+
+            pm = self.activity.getPackageManager()
+
+            intent = pm.getLaunchIntentForPackage(
+                "com.android.chrome"
+            )
+
+            if intent:
+
+                self.activity.startActivity(
+                    intent
+                )
+
+            else:
+
+                self.external_action = False
+
+                self.label.text = (
+                    "Chrome nahi mila."
+                )
+
+                Clock.schedule_once(
+                    self.listen_again,
+                    2
+                )
+
+        except Exception as e:
+
+            self.external_action = False
+
+            self.label.text = (
+                "Chrome Error:\n"
+                + str(e)
+            )
+
+            Clock.schedule_once(
+                self.listen_again,
+                2
+            )
+
+    def open_whatsapp(self, dt):
+
+        try:
+
+            self.external_action = True
+            self.stop_listening()
+
+            self.label.text = (
+                "💬 WhatsApp khol raha hoon..."
+            )
+
+            pm = self.activity.getPackageManager()
+
+            intent = pm.getLaunchIntentForPackage(
+                "com.whatsapp"
+            )
+
+            if intent:
+
+                self.activity.startActivity(
+                    intent
+                )
+
+            else:
+
+                self.external_action = False
+
+                self.label.text = (
+                    "WhatsApp nahi mila."
+                )
+
+                Clock.schedule_once(
+                    self.listen_again,
+                    2
+                )
+
+        except Exception as e:
+
+            self.external_action = False
+
+            self.label.text = (
+                "WhatsApp Error:\n"
+                + str(e)
+            )
+
+            Clock.schedule_once(
+                self.listen_again,
+                2
+            )
+
+    def open_settings(self, dt):
+
+        try:
+
+            self.external_action = True
+            self.stop_listening()
+
+            self.label.text = (
+                "⚙️ Settings khol raha hoon..."
+            )
+
+            intent = self.RecognizerIntent(
+                "android.settings.SETTINGS"
+            )
+
+            self.activity.startActivity(
+                intent
+            )
+
+        except Exception as e:
+
+            self.external_action = False
+
+            self.label.text = (
+                "Settings Error:\n"
+                + str(e)
+            )
+
+            Clock.schedule_once(
+                self.listen_again,
+                2
+            )
+
+    def open_wifi_settings(self, dt):
+
+        try:
+
+            self.external_action = True
+            self.stop_listening()
+
+            self.label.text = (
+                "📶 Wi-Fi Settings khol raha hoon..."
+            )
+
+            intent = self.RecognizerIntent(
+                "android.settings.WIFI_SETTINGS"
+            )
+
+            self.activity.startActivity(
+                intent
+            )
+
+        except Exception as e:
+
+            self.external_action = False
+
+            self.label.text = (
+                "Wi-Fi Settings Error:\n"
+                + str(e)
+            )
+
+            Clock.schedule_once(
+                self.listen_again,
+                2
+            )
+
+    def open_bluetooth_settings(self, dt):
+
+        try:
+
+            self.external_action = True
+            self.stop_listening()
+
+            self.label.text = (
+                "🔵 Bluetooth Settings khol raha hoon..."
+            )
+
+            intent = self.RecognizerIntent(
+                "android.settings.BLUETOOTH_SETTINGS"
+            )
+
+            self.activity.startActivity(
+                intent
+            )
+
+        except Exception as e:
+
+            self.external_action = False
+
+            self.label.text = (
+                "Bluetooth Settings Error:\n"
+                + str(e)
+            )
+
+            Clock.schedule_once(
+                self.listen_again,
+                2
+            )
+
+    def open_display_settings(self, dt):
+
+        try:
+
+            self.external_action = True
+            self.stop_listening()
+
+            self.label.text = (
+                "🖥️ Display Settings khol raha hoon..."
+            )
+
+            intent = self.RecognizerIntent(
+                "android.settings.DISPLAY_SETTINGS"
+            )
+
+            self.activity.startActivity(
+                intent
+            )
+
+        except Exception as e:
+
+            self.external_action = False
+
+            self.label.text = (
+                "Display Settings Error:\n"
+                + str(e)
+            )
+
+            Clock.schedule_once(
+                self.listen_again,
+                2
+            )
+
     def process_command(self, text):
+
         command = text.lower().strip()
 
         if "hello jarvis" in command:
+
             self.speak(
                 "Hello! Main ready hoon."
             )
@@ -370,6 +657,7 @@ class VoiceAssistant(App):
             or "what is your name" in command
             or "your name" in command
         ):
+
             self.speak(
                 "Mera naam JARVIS hai."
             )
@@ -379,12 +667,14 @@ class VoiceAssistant(App):
             or "what time is it" in command
             or command == "time"
         ):
+
             current_time = datetime.now().strftime(
                 "%I:%M %p"
             )
 
             self.speak(
-                "Abhi time hai " + current_time
+                "Abhi time hai "
+                + current_time
             )
 
         elif (
@@ -394,15 +684,20 @@ class VoiceAssistant(App):
             or "today's date" in command
             or "today date" in command
         ):
+
             today = datetime.now()
+
+            day = today.strftime("%d")
+            month = today.strftime("%B")
+            year = today.strftime("%Y")
 
             self.speak(
                 "Aaj "
-                + today.strftime("%d")
+                + day
                 + " "
-                + today.strftime("%B")
+                + month
                 + " "
-                + today.strftime("%Y")
+                + year
                 + " hai."
             )
 
@@ -411,8 +706,10 @@ class VoiceAssistant(App):
             or "youtube khol" in command
             or "youtube open karo" in command
             or "open youtube" in command
+            or "youtube open" in command
             or command == "youtube"
         ):
+
             self.external_action = True
             self.stop_listening()
 
@@ -431,8 +728,10 @@ class VoiceAssistant(App):
             or "calculator khol" in command
             or "calculator open karo" in command
             or "open calculator" in command
+            or "calculator open" in command
             or command == "calculator"
         ):
+
             self.external_action = True
             self.stop_listening()
 
@@ -442,10 +741,7 @@ class VoiceAssistant(App):
             )
 
             Clock.schedule_once(
-                lambda dt: self.open_app(
-                    "com.miui.calculator",
-                    "Calculator"
-                ),
+                self.open_calculator,
                 2.5
             )
 
@@ -454,8 +750,10 @@ class VoiceAssistant(App):
             or "camera khol" in command
             or "camera open karo" in command
             or "open camera" in command
+            or "camera open" in command
             or command == "camera"
         ):
+
             self.external_action = True
             self.stop_listening()
 
@@ -474,8 +772,10 @@ class VoiceAssistant(App):
             or "chrome khol" in command
             or "chrome open karo" in command
             or "open chrome" in command
+            or "chrome open" in command
             or command == "chrome"
         ):
+
             self.external_action = True
             self.stop_listening()
 
@@ -485,10 +785,7 @@ class VoiceAssistant(App):
             )
 
             Clock.schedule_once(
-                lambda dt: self.open_app(
-                    "com.android.chrome",
-                    "Chrome"
-                ),
+                self.open_chrome,
                 2.5
             )
 
@@ -497,8 +794,10 @@ class VoiceAssistant(App):
             or "whatsapp khol" in command
             or "whatsapp open karo" in command
             or "open whatsapp" in command
+            or "whatsapp open" in command
             or command == "whatsapp"
         ):
+
             self.external_action = True
             self.stop_listening()
 
@@ -508,10 +807,7 @@ class VoiceAssistant(App):
             )
 
             Clock.schedule_once(
-                lambda dt: self.open_app(
-                    "com.whatsapp",
-                    "WhatsApp"
-                ),
+                self.open_whatsapp,
                 2.5
             )
 
@@ -520,8 +816,10 @@ class VoiceAssistant(App):
             or "settings khol" in command
             or "settings open karo" in command
             or "open settings" in command
+            or "settings open" in command
             or command == "settings"
         ):
+
             self.external_action = True
             self.stop_listening()
 
@@ -531,10 +829,7 @@ class VoiceAssistant(App):
             )
 
             Clock.schedule_once(
-                lambda dt: self.open_settings_page(
-                    "android.settings.SETTINGS",
-                    "⚙️ Settings khol raha hoon..."
-                ),
+                self.open_settings,
                 2.5
             )
 
@@ -543,10 +838,17 @@ class VoiceAssistant(App):
             or "wifi khol" in command
             or "wifi settings kholo" in command
             or "wifi settings khol" in command
+            or "wifi open karo" in command
             or "open wifi" in command
+            or "open wifi settings" in command
+            or "wi-fi kholo" in command
+            or "wi-fi khol" in command
+            or "wi-fi settings kholo" in command
+            or "wi-fi settings khol" in command
             or command == "wifi"
             or command == "wi-fi"
         ):
+
             self.external_action = True
             self.stop_listening()
 
@@ -556,7 +858,7 @@ class VoiceAssistant(App):
             )
 
             Clock.schedule_once(
-                self.open_wifi,
+                self.open_wifi_settings,
                 2.5
             )
 
@@ -565,11 +867,14 @@ class VoiceAssistant(App):
             or "bluetooth khol" in command
             or "bluetooth settings kholo" in command
             or "bluetooth settings khol" in command
+            or "bluetooth open karo" in command
             or "open bluetooth" in command
+            or "open bluetooth settings" in command
             or command == "bluetooth"
         ):
+
             self.external_action = True
-            self.stop_listening()
+self.stop_listening()
 
             self.speak(
                 "Bluetooth settings khol raha hoon.",
@@ -577,43 +882,50 @@ class VoiceAssistant(App):
             )
 
             Clock.schedule_once(
-                self.open_bluetooth,
+                self.open_bluetooth_settings,
                 2.5
             )
 
         elif (
-            "sound kholo" in command
-            or "sound khol" in command
-            or "sound settings kholo" in command
-            or "sound settings khol" in command
-            or "volume kholo" in command
-            or "volume settings kholo" in command
-            or "open sound" in command
-            or "open volume" in command
-            or command == "sound"
-            or command == "volume"
+            "display kholo" in command
+            or "display khol" in command
+            or "display settings kholo" in command
+            or "display settings khol" in command
+            or "display open karo" in command
+            or "open display" in command
+            or "open display settings" in command
+            or "screen settings kholo" in command
+            or "screen settings khol" in command
+            or "screen display kholo" in command
+            or command == "display"
         ):
+
             self.external_action = True
             self.stop_listening()
 
             self.speak(
-                "Sound settings khol raha hoon.",
+                "Display settings khol raha hoon.",
                 restart=False
             )
 
             Clock.schedule_once(
-                self.open_sound,
+                self.open_display_settings,
                 2.5
             )
 
         else:
+
             self.speak(
                 "Maine suna: " + text
             )
 
     def speak(self, text, restart=True):
+
         try:
-            self.label.text = "🔊 JARVIS:\n" + text
+
+            self.label.text = (
+                "🔊 JARVIS:\n" + text
+            )
 
             self.tts.speak(
                 text,
@@ -622,16 +934,17 @@ class VoiceAssistant(App):
             )
 
             if restart and not self.external_action:
+
                 Clock.schedule_once(
                     self.listen_again,
                     3
                 )
 
         except Exception as e:
+
             self.label.text = (
                 "TTS Error:\n" + str(e)
             )
 
 
 VoiceAssistant().run()
-          
