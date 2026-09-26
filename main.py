@@ -120,6 +120,10 @@ class VoiceAssistant(App):
             "java.util.Locale"
         )
 
+        self.PackageManager = autoclass(
+            "android.content.pm.PackageManager"
+        )
+
         self.activity = (
             self.PythonActivity.mActivity
         )
@@ -145,10 +149,6 @@ class VoiceAssistant(App):
         )
 
         return self.label
-
-    # -----------------------------
-    # SPEECH SETUP
-    # -----------------------------
 
     def start_setup(self, dt):
 
@@ -279,10 +279,6 @@ class VoiceAssistant(App):
         except Exception:
             pass
 
-    # -----------------------------
-    # YOUTUBE
-    # -----------------------------
-
     def open_youtube(self, dt):
 
         try:
@@ -321,10 +317,6 @@ class VoiceAssistant(App):
                 self.listen_again,
                 2
             )
-
-    # -----------------------------
-    # CALCULATOR
-    # -----------------------------
 
     def open_calculator(self, dt):
 
@@ -389,10 +381,6 @@ class VoiceAssistant(App):
                 2
             )
 
-    # -----------------------------
-    # CAMERA
-    # -----------------------------
-
     def open_camera(self, dt):
 
         try:
@@ -425,10 +413,6 @@ class VoiceAssistant(App):
                 self.listen_again,
                 2
             )
-
-    # -----------------------------
-    # CHROME
-    # -----------------------------
 
     def open_chrome(self, dt):
 
@@ -480,10 +464,6 @@ class VoiceAssistant(App):
                 2
             )
 
-    # -----------------------------
-    # WHATSAPP
-    # -----------------------------
-
     def open_whatsapp(self, dt):
 
         try:
@@ -534,10 +514,6 @@ class VoiceAssistant(App):
                 2
             )
 
-    # -----------------------------
-    # SETTINGS
-    # -----------------------------
-
     def open_settings(self, dt):
 
         try:
@@ -570,10 +546,6 @@ class VoiceAssistant(App):
                 self.listen_again,
                 2
             )
-
-    # -----------------------------
-    # WIFI SETTINGS
-    # -----------------------------
 
     def open_wifi_settings(self, dt):
 
@@ -608,10 +580,6 @@ class VoiceAssistant(App):
                 2
             )
 
-    # -----------------------------
-    # BLUETOOTH SETTINGS - 0.11
-    # -----------------------------
-
     def open_bluetooth_settings(self, dt):
 
         try:
@@ -645,22 +613,16 @@ class VoiceAssistant(App):
                 2
             )
 
-    # -----------------------------
-    # COMMAND PROCESSING
-    # -----------------------------
-
     def process_command(self, text):
 
         command = text.lower().strip()
 
-        # HELLO
         if "hello jarvis" in command:
 
             self.speak(
                 "Hello! Main ready hoon."
             )
 
-        # NAME
         elif (
             "tumhara naam kya hai" in command
             or "what is your name" in command
@@ -671,7 +633,6 @@ class VoiceAssistant(App):
                 "Mera naam JARVIS hai."
             )
 
-        # TIME
         elif (
             "time kya hai" in command
             or "what time is it" in command
@@ -687,7 +648,6 @@ class VoiceAssistant(App):
                 + current_time
             )
 
-        # DATE
         elif (
             "date kya hai" in command
             or "aaj ki date" in command
@@ -698,17 +658,20 @@ class VoiceAssistant(App):
 
             today = datetime.now()
 
+            day = today.strftime("%d")
+            month = today.strftime("%B")
+            year = today.strftime("%Y")
+
             self.speak(
                 "Aaj "
-                + today.strftime("%d")
+                + day
                 + " "
-                + today.strftime("%B")
+                + month
                 + " "
-                + today.strftime("%Y")
+                + year
                 + " hai."
             )
 
-        # YOUTUBE
         elif (
             "youtube kholo" in command
             or "youtube khol" in command
@@ -731,7 +694,6 @@ class VoiceAssistant(App):
                 2.5
             )
 
-        # CALCULATOR
         elif (
             "calculator kholo" in command
             or "calculator khol" in command
@@ -754,7 +716,6 @@ class VoiceAssistant(App):
                 2.5
             )
 
-        # CAMERA
         elif (
             "camera kholo" in command
             or "camera khol" in command
@@ -777,7 +738,6 @@ class VoiceAssistant(App):
                 2.5
             )
 
-        # CHROME
         elif (
             "chrome kholo" in command
             or "chrome khol" in command
@@ -800,7 +760,6 @@ class VoiceAssistant(App):
                 2.5
             )
 
-        # WHATSAPP
         elif (
             "whatsapp kholo" in command
             or "whatsapp khol" in command
@@ -823,7 +782,6 @@ class VoiceAssistant(App):
                 2.5
             )
 
-        # SETTINGS
         elif (
             "settings kholo" in command
             or "settings khol" in command
@@ -846,7 +804,6 @@ class VoiceAssistant(App):
                 2.5
             )
 
-        # WIFI
         elif (
             "wifi kholo" in command
             or "wifi khol" in command
@@ -876,7 +833,45 @@ class VoiceAssistant(App):
                 2.5
             )
 
-        # BLUETOOTH - VERSION 0.11
         elif (
             "bluetooth kholo" in command
-            or "bluetooth khol"
+            or "bluetooth khol" in command
+            or "bluetooth settings kholo" in command
+            or "bluetooth settings khol" in command
+            or "bluetooth open karo" in command
+            or "open bluetooth" in command
+            or "open bluetooth settings" in command
+            or command == "bluetooth"
+        ):
+
+            self.external_action = True
+            self.stop_listening()
+
+            self.speak(
+                "Bluetooth settings khol raha hoon.",
+                restart=False
+            )
+
+            Clock.schedule_once(
+                self.open_bluetooth_settings,
+                2.5
+            )
+
+        else:
+
+            self.speak(
+                "Maine suna: " + text
+            )
+
+    def speak(self, text, restart=True):
+
+        try:
+
+            self.label.text = (
+                "🔊 JARVIS:\n" + text
+            )
+
+            self.tts.speak(
+                text,
+                self.TextToSpeech.QUEUE_FLUSH,
+          
