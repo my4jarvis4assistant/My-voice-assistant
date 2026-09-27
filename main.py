@@ -655,7 +655,6 @@ class VoiceAssistant(App):
 
             pm = self.activity.getPackageManager()
 
-            # First try: Battery Settings
             intent = self.RecognizerIntent(
                 "android.settings.BATTERY_SETTINGS"
             )
@@ -664,7 +663,6 @@ class VoiceAssistant(App):
                 self.activity.startActivity(intent)
                 return
 
-            # Second try: Power Usage Summary
             intent = self.RecognizerIntent(
                 "android.intent.action.POWER_USAGE_SUMMARY"
             )
@@ -673,7 +671,6 @@ class VoiceAssistant(App):
                 self.activity.startActivity(intent)
                 return
 
-            # Final fallback: Main Settings
             intent = self.RecognizerIntent(
                 "android.settings.SETTINGS"
             )
@@ -694,29 +691,47 @@ class VoiceAssistant(App):
                 2
             )
 
+    def open_location_settings(self, dt):
+
         try:
 
             self.external_action = True
             self.stop_listening()
 
             self.label.text = (
-                "🔋 Battery Settings khol raha hoon..."
+                "📍 Location Settings khol raha hoon..."
             )
+
+            pm = self.activity.getPackageManager()
 
             intent = self.RecognizerIntent(
-                "android.settings.BATTERY_SETTINGS"
+                "android.settings.LOCATION_SOURCE_SETTINGS"
             )
 
-            self.activity.startActivity(
-                intent
+            if intent.resolveActivity(pm):
+                self.activity.startActivity(intent)
+                return
+
+            intent = self.RecognizerIntent(
+                "android.settings.LOCATION_SETTINGS"
             )
+
+            if intent.resolveActivity(pm):
+                self.activity.startActivity(intent)
+                return
+
+            intent = self.RecognizerIntent(
+                "android.settings.SETTINGS"
+            )
+
+            self.activity.startActivity(intent)
 
         except Exception as e:
 
             self.external_action = False
 
             self.label.text = (
-                "Battery Settings Error:\n"
+                "Location Settings Error:\n"
                 + str(e)
             )
 
@@ -1017,6 +1032,37 @@ class VoiceAssistant(App):
 
             Clock.schedule_once(
                 self.open_battery_settings,
+                2.5
+            )
+
+        elif (
+            "location kholo" in command
+            or "location khol" in command
+            or "location settings kholo" in command
+            or "location settings khol" in command
+            or "location open karo" in command
+            or "open location" in command
+            or "open location settings" in command
+            or "gps kholo" in command
+            or "gps khol" in command
+            or "gps settings kholo" in command
+            or "gps settings khol" in command
+            or "location on karo" in command
+            or "location on" in command
+            or command == "location"
+            or command == "gps"
+        ):
+
+            self.external_action = True
+            self.stop_listening()
+
+            self.speak(
+                "Location settings khol raha hoon.",
+                restart=False
+            )
+
+            Clock.schedule_once(
+                self.open_location_settings,
                 2.5
             )
 
