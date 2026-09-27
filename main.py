@@ -17,6 +17,8 @@ class MainThreadRunnable(PythonJavaClass):
         "java/lang/Runnable"
     ]
 
+    __javacontext__ = "app"
+
     def __init__(self, callback):
         super().__init__()
         self.callback = callback
@@ -36,60 +38,164 @@ class RecognitionListener(PythonJavaClass):
         "android/speech/RecognitionListener"
     ]
 
+    __javacontext__ = "app"
+
     def __init__(self, assistant):
         super().__init__()
         self.assistant = assistant
 
-    @java_method("()V")
+
+    # -----------------------------------------------------
+    # READY FOR SPEECH
+    # -----------------------------------------------------
+
+    @java_method("(Landroid/os/Bundle;)V")
     def onReadyForSpeech(self, params):
-        pass
+
+        self.assistant.label.text = (
+            "🎤 Listening..."
+        )
+
+
+    # -----------------------------------------------------
+    # BEGINNING OF SPEECH
+    # -----------------------------------------------------
 
     @java_method("()V")
     def onBeginningOfSpeech(self):
+
+        self.assistant.label.text = (
+            "👂 Sun raha hoon..."
+        )
+
+
+    # -----------------------------------------------------
+    # RMS
+    # -----------------------------------------------------
+
+    @java_method("(F)V")
+    def onRmsChanged(self, rmsdB):
+
         pass
+
+
+    # -----------------------------------------------------
+    # BUFFER
+    # -----------------------------------------------------
 
     @java_method("([B)V")
     def onBufferReceived(self, buffer):
+
         pass
+
+
+    # -----------------------------------------------------
+    # END OF SPEECH
+    # -----------------------------------------------------
 
     @java_method("()V")
     def onEndOfSpeech(self):
-        pass
+
+        self.assistant.label.text = (
+            "🧠 Samajh raha hoon..."
+        )
+
+
+    # -----------------------------------------------------
+    # ERROR
+    # -----------------------------------------------------
 
     @java_method("(I)V")
     def onError(self, error):
-        Clock.schedule_once(
-            self.assistant.listen_again,
-            1
+
+        self.assistant.label.text = (
+            "❌ Speech Error: "
+            + str(error)
         )
 
-    @java_method("([Landroid/speech/RecognitionResult;)V")
-    def onPartialResults(self, results):
-        pass
+        if not self.assistant.external_action:
 
-    @java_method("([Landroid/speech/RecognitionResult;)V")
+            Clock.schedule_once(
+                self.assistant.listen_again,
+                1
+            )
+
+
+    # -----------------------------------------------------
+    # RESULTS
+    # -----------------------------------------------------
+
+    @java_method("(Landroid/os/Bundle;)V")
     def onResults(self, results):
+
         try:
+
             matches = results.getStringArrayList(
                 "results_recognition"
             )
 
             if matches and matches.size() > 0:
-                command = str(matches.get(0))
-                self.assistant.process_command(command)
+
+                command = str(
+                    matches.get(0)
+                )
+
+                self.assistant.label.text = (
+                    "You said:\n"
+                    + command
+                )
+
+                self.assistant.process_command(
+                    command
+                )
+
+            else:
+
+                self.assistant.label.text = (
+                    "Kuch samajh nahi aaya."
+                )
+
+                if not self.assistant.external_action:
+
+                    Clock.schedule_once(
+                        self.assistant.listen_again,
+                        1
+                    )
 
         except Exception as e:
+
             self.assistant.label.text = (
                 "Recognition Error:\n"
                 + str(e)
             )
 
+            if not self.assistant.external_action:
+
+                Clock.schedule_once(
+                    self.assistant.listen_again,
+                    1
+                )
+
+
+    # -----------------------------------------------------
+    # PARTIAL RESULTS
+    # -----------------------------------------------------
+
     @java_method("(Landroid/os/Bundle;)V")
-    def onEvent(self, eventType, params):
+    def onPartialResults(self, results):
+
         pass
 
-    @java_method("(F)V")
-    def onRmsChanged(self, rmsdB):
+
+    # -----------------------------------------------------
+    # EVENT
+    # -----------------------------------------------------
+
+    @java_method(
+        "(ILandroid/os/Bundle;)V"
+    )
+    def onEvent(self, eventType, params):
+
         pass
 
 
@@ -118,7 +224,10 @@ class VoiceAssistant(App):
         self.external_action = False
 
         self.label = Label(
-            text="JARVIS Voice Assistant\nStarting...",
+            text=(
+                "JARVIS Voice Assistant\n"
+                "Starting..."
+            ),
             halign="center",
             valign="middle",
             font_size="22sp"
@@ -336,7 +445,17 @@ class VoiceAssistant(App):
         try:
 
             if self.recognizer is not None:
+
                 self.recognizer.stopListening()
+
+        except Exception:
+            pass
+
+        try:
+
+            if self.recognizer is not None:
+
+                self.recognizer.cancel()
 
         except Exception:
             pass
@@ -432,6 +551,7 @@ class VoiceAssistant(App):
                 except Exception:
                     pass
 
+
             intent = self.RecognizerIntent(
                 "android.intent.action.MAIN"
             )
@@ -447,6 +567,7 @@ class VoiceAssistant(App):
                 )
 
                 return
+
 
             self.label.text = (
                 "Calculator app nahi mili."
@@ -690,10 +811,6 @@ class VoiceAssistant(App):
                 return
 
 
-            # ---------------------------------------------
-            # FALLBACK 1
-            # ---------------------------------------------
-
             intent = self.RecognizerIntent(
                 "android.settings.WIRELESS_SETTINGS"
             )
@@ -706,10 +823,6 @@ class VoiceAssistant(App):
 
                 return
 
-
-            # ---------------------------------------------
-            # FALLBACK 2
-            # ---------------------------------------------
 
             intent = self.RecognizerIntent(
                 "android.settings.SETTINGS"
@@ -763,6 +876,7 @@ class VoiceAssistant(App):
 
                 return
 
+
             intent = self.RecognizerIntent(
                 "android.settings.SETTINGS"
             )
@@ -814,6 +928,7 @@ class VoiceAssistant(App):
                 )
 
                 return
+
 
             intent = self.RecognizerIntent(
                 "android.settings.SETTINGS"
@@ -1055,19 +1170,6 @@ class VoiceAssistant(App):
 
 
             intent = self.RecognizerIntent(
-                "android.settings.WIRELESS_SETTINGS"
-            )
-
-            if intent.resolveActivity(pm):
-
-                self.activity.startActivity(
-                    intent
-                )
-
-                return
-
-
-            intent = self.RecognizerIntent(
                 "android.settings.SETTINGS"
             )
 
@@ -1098,15 +1200,10 @@ class VoiceAssistant(App):
 
         try:
 
-            # ---------------------------------------------
-            # NORMALIZE COMMAND
-            # ---------------------------------------------
-
             command = str(command)
 
             command = command.lower().strip()
 
-            # Hindi Wi-Fi variations
             command = command.replace(
                 "वाई-फाई",
                 "wifi"
@@ -1122,7 +1219,6 @@ class VoiceAssistant(App):
                 "wifi"
             )
 
-            # Other common recognition variations
             command = command.replace(
                 "wi fi",
                 "wifi"
@@ -1138,11 +1234,9 @@ class VoiceAssistant(App):
                 "wifi"
             )
 
-            # Remove extra spaces
             command = " ".join(
                 command.split()
             )
-
 
             self.label.text = (
                 "You said:\n"
@@ -1295,13 +1389,9 @@ class VoiceAssistant(App):
             # =================================================
             # WIFI
             # =================================================
-            #
-            # बहुत सारे commands
-            # =================================================
 
             elif (
 
-                # English / Hinglish
                 "wifi kholo" in command
                 or "wifi khol" in command
                 or "wifi settings kholo" in command
@@ -1335,25 +1425,7 @@ class VoiceAssistant(App):
                 or "wifi check karo" in command
                 or "check wifi" in command
                 or "wifi dekhna hai" in command
-
-                # Hindi recognition
-                or "वाईफाई खोलो" in command
-                or "वाईफाई खोल" in command
-                or "वाईफाई सेटिंग खोलो" in command
-                or "वाईफाई सेटिंग खोल" in command
-                or "वाईफाई सेटिंग्स खोलो" in command
-                or "वाईफाई सेटिंग्स खोल" in command
-                or "वाई फाई खोलो" in command
-                or "वाई फाई खोल" in command
-                or "वाई फाई सेटिंग खोलो" in command
-                or "वाई फाई सेटिंग खोल" in command
-                or "वाई-फाई खोलो" in command
-                or "वाई-फाई खोल" in command
-
-                # Just wifi
                 or command == "wifi"
-                or command == "वाईफाई"
-                or command == "वाई फाई"
             ):
 
                 self.external_action = True
@@ -1471,7 +1543,7 @@ class VoiceAssistant(App):
 
 
             # =================================================
-            # LOCATION / GPS
+            # LOCATION
             # =================================================
 
             elif (
@@ -1703,6 +1775,7 @@ class VoiceAssistant(App):
                     restart=True
                 )
 
+
         except Exception as e:
 
             self.label.text = (
@@ -1724,6 +1797,11 @@ class VoiceAssistant(App):
 
         try:
 
+            self.label.text = (
+                "🔊 JARVIS:\n"
+                + text
+            )
+
             if self.tts is not None:
 
                 self.tts.speak(
@@ -1732,7 +1810,7 @@ class VoiceAssistant(App):
                     None
                 )
 
-            if restart:
+            if restart and not self.external_action:
 
                 Clock.schedule_once(
                     self.listen_again,
