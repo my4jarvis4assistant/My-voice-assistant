@@ -740,6 +740,47 @@ class VoiceAssistant(App):
                 2
             )
 
+    def open_security_settings(self, dt):
+
+        try:
+
+            self.external_action = True
+            self.stop_listening()
+
+            self.label.text = (
+                "🔐 Security Settings khol raha hoon..."
+            )
+
+            pm = self.activity.getPackageManager()
+
+            intent = self.RecognizerIntent(
+                "android.settings.SECURITY_SETTINGS"
+            )
+
+            if intent.resolveActivity(pm):
+                self.activity.startActivity(intent)
+                return
+
+            intent = self.RecognizerIntent(
+                "android.settings.SETTINGS"
+            )
+
+            self.activity.startActivity(intent)
+
+        except Exception as e:
+
+            self.external_action = False
+
+            self.label.text = (
+                "Security Settings Error:\n"
+                + str(e)
+            )
+
+            Clock.schedule_once(
+                self.listen_again,
+                2
+            )
+
     def process_command(self, text):
 
         command = text.lower().strip()
@@ -851,7 +892,7 @@ class VoiceAssistant(App):
             or "camera open" in command
             or command == "camera"
         ):
-
+            
             self.external_action = True
             self.stop_listening()
 
@@ -1063,6 +1104,32 @@ class VoiceAssistant(App):
 
             Clock.schedule_once(
                 self.open_location_settings,
+                2.5
+            )
+
+        elif (
+            "security kholo" in command
+            or "security khol" in command
+            or "security settings kholo" in command
+            or "security settings khol" in command
+            or "security open karo" in command
+            or "open security" in command
+            or "open security settings" in command
+            or "lock settings kholo" in command
+            or "lock settings khol" in command
+            or command == "security"
+        ):
+
+            self.external_action = True
+            self.stop_listening()
+
+            self.speak(
+                "Security settings khol raha hoon.",
+                restart=False
+            )
+
+            Clock.schedule_once(
+                self.open_security_settings,
                 2.5
             )
 
