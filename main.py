@@ -642,6 +642,39 @@ class VoiceAssistant(App):
                 2
             )
 
+    def open_battery_settings(self, dt):
+
+        try:
+
+            self.external_action = True
+            self.stop_listening()
+
+            self.label.text = (
+                "🔋 Battery Settings khol raha hoon..."
+            )
+
+            intent = self.RecognizerIntent(
+                "android.settings.BATTERY_SETTINGS"
+            )
+
+            self.activity.startActivity(
+                intent
+            )
+
+        except Exception as e:
+
+            self.external_action = False
+
+            self.label.text = (
+                "Battery Settings Error:\n"
+                + str(e)
+            )
+
+            Clock.schedule_once(
+                self.listen_again,
+                2
+            )
+
     def process_command(self, text):
 
         command = text.lower().strip()
@@ -910,6 +943,30 @@ class VoiceAssistant(App):
 
             Clock.schedule_once(
                 self.open_display_settings,
+                2.5
+            )
+
+        elif (
+            "battery kholo" in command
+            or "battery khol" in command
+            or "battery settings kholo" in command
+            or "battery settings khol" in command
+            or "battery open karo" in command
+            or "open battery" in command
+            or "open battery settings" in command
+            or command == "battery"
+        ):
+
+            self.external_action = True
+            self.stop_listening()
+
+            self.speak(
+                "Battery settings khol raha hoon.",
+                restart=False
+            )
+
+            Clock.schedule_once(
+                self.open_battery_settings,
                 2.5
             )
 
