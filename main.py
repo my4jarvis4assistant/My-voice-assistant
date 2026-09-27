@@ -874,7 +874,7 @@ class VoiceAssistant(App):
         ):
 
             self.external_action = True
-self.stop_listening()
+            self.stop_listening()
 
             self.speak(
                 "Bluetooth settings khol raha hoon.",
