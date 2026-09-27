@@ -653,6 +653,56 @@ class VoiceAssistant(App):
                 "🔋 Battery Settings khol raha hoon..."
             )
 
+            pm = self.activity.getPackageManager()
+
+            # First try: Battery Settings
+            intent = self.RecognizerIntent(
+                "android.settings.BATTERY_SETTINGS"
+            )
+
+            if intent.resolveActivity(pm):
+                self.activity.startActivity(intent)
+                return
+
+            # Second try: Power Usage Summary
+            intent = self.RecognizerIntent(
+                "android.intent.action.POWER_USAGE_SUMMARY"
+            )
+
+            if intent.resolveActivity(pm):
+                self.activity.startActivity(intent)
+                return
+
+            # Final fallback: Main Settings
+            intent = self.RecognizerIntent(
+                "android.settings.SETTINGS"
+            )
+
+            self.activity.startActivity(intent)
+
+        except Exception as e:
+
+            self.external_action = False
+
+            self.label.text = (
+                "Battery Settings Error:\n"
+                + str(e)
+            )
+
+            Clock.schedule_once(
+                self.listen_again,
+                2
+            )
+
+        try:
+
+            self.external_action = True
+            self.stop_listening()
+
+            self.label.text = (
+                "🔋 Battery Settings khol raha hoon..."
+            )
+
             intent = self.RecognizerIntent(
                 "android.settings.BATTERY_SETTINGS"
             )
