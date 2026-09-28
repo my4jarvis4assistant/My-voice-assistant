@@ -2,7 +2,7 @@
 # JARVIS VOICE ASSISTANT
 # VERSION 0.19
 # BASE: v0.18 SUCCESS
-# NEW: GOOGLE / WEB VOICE SEARCH
+# NEW FEATURE: GOOGLE / WEB VOICE SEARCH
 # ============================================================
 
 from kivy.app import App
@@ -16,20 +16,37 @@ from jnius import autoclass, PythonJavaClass, java_method
 # ANDROID CLASSES
 # ============================================================
 
-PythonActivity = autoclass("org.kivy.android.PythonActivity")
+PythonActivity = autoclass(
+    "org.kivy.android.PythonActivity"
+)
 
-Intent = autoclass("android.content.Intent")
-Context = autoclass("android.content.Context")
-Uri = autoclass("android.net.Uri")
+Intent = autoclass(
+    "android.content.Intent"
+)
 
-Settings = autoclass("android.provider.Settings")
-RecognizerIntent = autoclass("android.speech.RecognizerIntent")
-SpeechRecognizer = autoclass("android.speech.SpeechRecognizer")
+Uri = autoclass(
+    "android.net.Uri"
+)
 
-TextToSpeech = autoclass("android.speech.tts.TextToSpeech")
-Locale = autoclass("java.util.Locale")
+Settings = autoclass(
+    "android.provider.Settings"
+)
 
-PackageManager = autoclass("android.content.pm.PackageManager")
+RecognizerIntent = autoclass(
+    "android.speech.RecognizerIntent"
+)
+
+SpeechRecognizer = autoclass(
+    "android.speech.SpeechRecognizer"
+)
+
+TextToSpeech = autoclass(
+    "android.speech.tts.TextToSpeech"
+)
+
+Locale = autoclass(
+    "java.util.Locale"
+)
 
 
 # ============================================================
@@ -67,15 +84,21 @@ class RecognitionListener(PythonJavaClass):
 
     @java_method("(Landroid/os/Bundle;)V")
     def onReadyForSpeech(self, params):
+
         Clock.schedule_once(
-            lambda dt: self.assistant.set_status("Sun raha hoon..."),
+            lambda dt: self.assistant.set_status(
+                "Sun raha hoon..."
+            ),
             0
         )
 
     @java_method("()V")
     def onBeginningOfSpeech(self):
+
         Clock.schedule_once(
-            lambda dt: self.assistant.set_status("Sun raha hoon..."),
+            lambda dt: self.assistant.set_status(
+                "Sun raha hoon..."
+            ),
             0
         )
 
@@ -93,41 +116,55 @@ class RecognitionListener(PythonJavaClass):
 
     @java_method("(I)V")
     def onError(self, error):
-        # Error 5 = client-side error.
-        # Isko screen par unnecessary error ke roop mein nahi dikhayenge.
+
+        # Error 5 ko screen par nahi dikhayenge.
         if error == 5:
+
             Clock.schedule_once(
                 lambda dt: self.assistant.listen_again(),
                 0.2
             )
+
             return
 
         Clock.schedule_once(
-            lambda dt: self.assistant.handle_speech_error(error),
+            lambda dt: self.assistant.handle_speech_error(
+                error
+            ),
             0
         )
 
     @java_method("(Landroid/os/Bundle;)V")
     def onResults(self, results):
+
         try:
+
             matches = results.getStringArrayList(
                 SpeechRecognizer.RESULTS_RECOGNITION
             )
 
             if matches is not None and matches.size() > 0:
-                text = str(matches.get(0))
+
+                text = str(
+                    matches.get(0)
+                )
 
                 Clock.schedule_once(
-                    lambda dt: self.assistant.process_command(text),
+                    lambda dt: self.assistant.process_command(
+                        text
+                    ),
                     0
                 )
+
             else:
+
                 Clock.schedule_once(
                     lambda dt: self.assistant.listen_again(),
                     0
                 )
 
         except Exception:
+
             Clock.schedule_once(
                 lambda dt: self.assistant.listen_again(),
                 0
@@ -160,6 +197,12 @@ class VoiceAssistant(App):
             size=self.update_text_size
         )
 
+        self.speech_recognizer = None
+        self.listener = None
+        self.recognizer_intent = None
+        self.tts = None
+        self.activity = None
+
         Clock.schedule_once(
             self.start_setup,
             1
@@ -168,212 +211,22 @@ class VoiceAssistant(App):
         return self.label
 
     # ========================================================
-    # TEXT / STATUS
+    # TEXT SIZE
     # ========================================================
 
     def update_text_size(self, instance, value):
+
         self.label.text_size = value
 
+    # ========================================================
+    # STATUS
+    # ========================================================
+
     def set_status(self, text):
-        self.label.text = "JARVIS\n\n" + text
 
-    # ========================================================
-    # START SETUP
-    # ========================================================
-
-    def start_setup(self, dt):
-
-        try:
-            activity = PythonActivity.mActivity
-
-            self.activity = activity
-
-            # ------------------------------------------------
-            # TEXT TO SPEECH
-            # ------------------------------------------------
-
-            self.tts = TextToSpeech(
-                activity,
-                None
-            )
-
-            try:
-                self.tts.setLanguage(
-                    Locale.US
-                )
-            except Exception:
-                pass
-
-            # ------------------------------------------------
-            # SPEECH RECOGNIZER
-            # ------------------------------------------------
-
-            self.speech_recognizer = SpeechRecognizer.createSpeechRecognizer(
-                activity
-            )
-
-            self.listener = RecognitionListener(
-                self
-            )
-
-            self.speech_recognizer.setRecognitionListener(
-                self.listener
-            )
-
-            # ------------------------------------------------
-            # RECOGNIZER INTENT
-            # ------------------------------------------------
-
-            self.recognizer_intent = Intent(
-                RecognizerIntent.ACTION_RECOGNIZE_SPEECH
-            )
-
-            self.recognizer_intent.putExtra(
-                RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
-            )
-
-            self.recognizer_intent.putExtra(
-                RecognizerIntent.EXTRA_LANGUAGE,
-                "en-IN"
-            )
-
-            self.recognizer_intent.putExtra(
-                RecognizerIntent.EXTRA_PARTIAL_RESULTS,
-                False
-            )
-
-            self.recognizer_intent.putExtra(
-                RecognizerIntent.EXTRA_MAX_RESULTS,
-                3
-            )
-
-            # ------------------------------------------------
-            # START
-            # ------------------------------------------------
-
-            self.set_status(
-                "Jarvis v0.19 ready..."
-            )
-
-            Clock.schedule_once(
-                lambda dt: self.speak(
-                    "Hello! Main Jarvis hoon."
-                ),
-                1
-            )
-
-            Clock.schedule_once(
-                lambda dt: self.listen(),
-                3
-            )
-
-        except Exception as e:
-
-            self.set_status(
-                "Setup Error:\n" + str(e)
-            )
-
-    # ========================================================
-    # TEXT TO SPEECH
-    # ========================================================
-
-    def speak(self, text):
-
-        try:
-            self.tts.speak(
-                text,
-                TextToSpeech.QUEUE_FLUSH,
-                None
-            )
-
-        except Exception:
-            pass
-
-    # ========================================================
-    # START LISTENING
-    # ========================================================
-
-    def listen(self):
-
-        try:
-
-            self.set_status(
-                "Sun raha hoon..."
-            )
-
-            self.speech_recognizer.startListening(
-                self.recognizer_intent
-            )
-
-        except Exception:
-
-            Clock.schedule_once(
-                lambda dt: self.listen_again(),
-                0.5
-            )
-
-    # ========================================================
-    # LISTEN AGAIN
-    # ========================================================
-
-    def listen_again(self):
-
-        try:
-
-            self.speech_recognizer.cancel()
-
-        except Exception:
-            pass
-
-        Clock.schedule_once(
-            lambda dt: self.listen(),
-            0.3
-        )
-
-    # ========================================================
-    # STOP LISTENING
-    # ========================================================
-
-    def stop_listening(self):
-
-        try:
-            self.speech_recognizer.stopListening()
-        except Exception:
-            pass
-
-    # ========================================================
-    # SPEECH ERROR
-    # ========================================================
-
-    def handle_speech_error(self, error):
-
-        # Error 5 is handled silently above.
-        # Baaki errors ke liye short status.
-
-        if error == 7:
-            self.set_status(
-                "Dobara boliye..."
-            )
-
-        elif error == 6:
-            self.set_status(
-                "Dobara boliye..."
-            )
-
-        elif error == 8:
-            self.set_status(
-                "Listening restart ho raha hai..."
-            )
-
-        else:
-            self.set_status(
-                "Listening restart ho raha hai..."
-            )
-
-        Clock.schedule_once(
-            lambda dt: self.listen(),
-            1
+        self.label.text = (
+            "JARVIS\n\n" +
+            text
         )
 
     # ========================================================
@@ -393,10 +246,285 @@ class VoiceAssistant(App):
             )
 
         except Exception:
+
             try:
                 callback()
             except Exception:
                 pass
+
+    # ========================================================
+    # START SETUP
+    #
+    # IMPORTANT:
+    # SpeechRecognizer creation MUST happen on
+    # Android application's Main Thread.
+    # ========================================================
+
+    def start_setup(self, dt):
+
+        def setup_android():
+
+            try:
+
+                self.activity = (
+                    PythonActivity.mActivity
+                )
+
+                # =================================================
+                # TEXT TO SPEECH
+                # =================================================
+
+                self.tts = TextToSpeech(
+                    self.activity,
+                    None
+                )
+
+                try:
+
+                    self.tts.setLanguage(
+                        Locale.US
+                    )
+
+                except Exception:
+                    pass
+
+                # =================================================
+                # SPEECH RECOGNIZER
+                # MAIN THREAD
+                # =================================================
+
+                self.speech_recognizer = (
+                    SpeechRecognizer.createSpeechRecognizer(
+                        self.activity
+                    )
+                )
+
+                self.listener = RecognitionListener(
+                    self
+                )
+
+                self.speech_recognizer.setRecognitionListener(
+                    self.listener
+                )
+
+                # =================================================
+                # RECOGNIZER INTENT
+                # =================================================
+
+                self.recognizer_intent = Intent(
+                    RecognizerIntent.ACTION_RECOGNIZE_SPEECH
+                )
+
+                self.recognizer_intent.putExtra(
+                    RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                    RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+                )
+
+                self.recognizer_intent.putExtra(
+                    RecognizerIntent.EXTRA_LANGUAGE,
+                    "en-IN"
+                )
+
+                self.recognizer_intent.putExtra(
+                    RecognizerIntent.EXTRA_PARTIAL_RESULTS,
+                    False
+                )
+
+                self.recognizer_intent.putExtra(
+                    RecognizerIntent.EXTRA_MAX_RESULTS,
+                    3
+                )
+
+                # =================================================
+                # READY
+                # =================================================
+
+                Clock.schedule_once(
+                    lambda dt: self.set_status(
+                        "Jarvis v0.19 ready..."
+                    ),
+                    0
+                )
+
+                Clock.schedule_once(
+                    lambda dt: self.speak(
+                        "Hello! Main Jarvis hoon."
+                    ),
+                    1
+                )
+
+                Clock.schedule_once(
+                    lambda dt: self.listen(),
+                    3
+                )
+
+            except Exception as e:
+
+                Clock.schedule_once(
+                    lambda dt: self.set_status(
+                        "Setup Error:\n" +
+                        str(e)
+                    ),
+                    0
+                )
+
+        # =====================================================
+        # VERY IMPORTANT
+        # Entire SpeechRecognizer setup goes to Main Thread.
+        # =====================================================
+
+        if self.activity is None:
+
+            self.activity = (
+                PythonActivity.mActivity
+            )
+
+        self.run_on_android_thread(
+            setup_android
+        )
+
+    # ========================================================
+    # TEXT TO SPEECH
+    # ========================================================
+
+    def speak(self, text):
+
+        try:
+
+            self.tts.speak(
+                text,
+                TextToSpeech.QUEUE_FLUSH,
+                None
+            )
+
+        except Exception:
+            pass
+
+    # ========================================================
+    # START LISTENING
+    #
+    # SpeechRecognizer.startListening() MUST also be
+    # called from Android Main Thread.
+    # ========================================================
+
+    def listen(self):
+
+        def start_listening():
+
+            try:
+
+                self.set_status(
+                    "Sun raha hoon..."
+                )
+
+                self.speech_recognizer.startListening(
+                    self.recognizer_intent
+                )
+
+            except Exception:
+
+                Clock.schedule_once(
+                    lambda dt: self.listen_again(),
+                    0.5
+                )
+
+        self.run_on_android_thread(
+            start_listening
+        )
+
+    # ========================================================
+    # LISTEN AGAIN
+    #
+    # cancel() and startListening() both on Main Thread.
+    # ========================================================
+
+    def listen_again(self):
+
+        def restart_listening():
+
+            try:
+
+                if self.speech_recognizer is not None:
+
+                    self.speech_recognizer.cancel()
+
+            except Exception:
+                pass
+
+            try:
+
+                if self.speech_recognizer is not None:
+
+                    self.speech_recognizer.startListening(
+                        self.recognizer_intent
+                    )
+
+            except Exception:
+
+                Clock.schedule_once(
+                    lambda dt: self.listen_again(),
+                    0.5
+                )
+
+        self.run_on_android_thread(
+            restart_listening
+        )
+
+    # ========================================================
+    # STOP LISTENING
+    # ========================================================
+
+    def stop_listening(self):
+
+        def stop():
+
+            try:
+
+                if self.speech_recognizer is not None:
+
+                    self.speech_recognizer.stopListening()
+
+            except Exception:
+                pass
+
+        self.run_on_android_thread(
+            stop
+        )
+
+    # ========================================================
+    # SPEECH ERROR
+    # ========================================================
+
+    def handle_speech_error(self, error):
+
+        if error == 7:
+
+            self.set_status(
+                "Dobara boliye..."
+            )
+
+        elif error == 6:
+
+            self.set_status(
+                "Dobara boliye..."
+            )
+
+        elif error == 8:
+
+            self.set_status(
+                "Listening restart ho raha hai..."
+            )
+
+        else:
+
+            self.set_status(
+                "Listening restart ho raha hai..."
+            )
+
+        Clock.schedule_once(
+            lambda dt: self.listen(),
+            1
+        )
 
     # ========================================================
     # OPEN INTENT
@@ -412,7 +540,7 @@ class VoiceAssistant(App):
                     intent
                 )
 
-            except Exception as e:
+            except Exception:
 
                 Clock.schedule_once(
                     lambda dt: self.set_status(
@@ -750,7 +878,7 @@ class VoiceAssistant(App):
         )
 
     # ========================================================
-    # MOBILE NETWORK / DATA SETTINGS
+    # MOBILE NETWORK / DATA
     # ========================================================
 
     def open_mobile_network_settings(self):
@@ -788,14 +916,16 @@ class VoiceAssistant(App):
                 except Exception:
                     continue
 
-            self.set_status(
-                "Mobile Network Settings open nahi ho saki."
+            Clock.schedule_once(
+                lambda dt: self.set_status(
+                    "Mobile Network Settings open nahi ho saki."
+                ),
+                0
             )
 
         self.run_on_android_thread(
             action
         )
-
     # ========================================================
     # INSTALLED APP LAUNCHER
     # ========================================================
@@ -821,7 +951,9 @@ class VoiceAssistant(App):
 
             try:
 
-                pm = self.activity.getPackageManager()
+                pm = (
+                    self.activity.getPackageManager()
+                )
 
                 intent = Intent(
                     Intent.ACTION_MAIN
@@ -836,13 +968,17 @@ class VoiceAssistant(App):
                     0
                 )
 
-                search_name = clean_name.lower()
+                search_name = (
+                    clean_name.lower()
+                )
 
                 exact_match = None
                 partial_match = None
                 package_match = None
 
-                for i in range(apps.size()):
+                for i in range(
+                    apps.size()
+                ):
 
                     info = apps.get(i)
 
@@ -854,19 +990,29 @@ class VoiceAssistant(App):
                         info.activityInfo.packageName
                     )
 
-                    label_lower = label.lower()
-                    package_lower = package_name.lower()
+                    label_lower = (
+                        label.lower()
+                    )
+
+                    package_lower = (
+                        package_name.lower()
+                    )
 
                     if label_lower == search_name:
+
                         exact_match = info
                         break
 
                     if search_name in label_lower:
+
                         if partial_match is None:
+
                             partial_match = info
 
                     if search_name in package_lower:
+
                         if package_match is None:
+
                             package_match = info
 
                 selected = (
@@ -887,9 +1033,13 @@ class VoiceAssistant(App):
 
                     return
 
-                launch_intent = pm.getLaunchIntentForPackage(
-                    str(
-                        selected.activityInfo.packageName
+                package_name = str(
+                    selected.activityInfo.packageName
+                )
+
+                launch_intent = (
+                    pm.getLaunchIntentForPackage(
+                        package_name
                     )
                 )
 
@@ -955,6 +1105,7 @@ class VoiceAssistant(App):
                 ].strip()
 
                 if name:
+
                     return name
 
         return None
@@ -1002,11 +1153,15 @@ class VoiceAssistant(App):
                     "security",
                     "mobile network",
                     "mobile networks",
+                    "mobile data",
                     "data settings",
+                    "network settings",
+                    "sim settings",
                     "google"
                 ]
 
                 if app_name in blocked:
+
                     return False
 
                 return self.open_installed_app(
@@ -1016,7 +1171,8 @@ class VoiceAssistant(App):
         return False
 
     # ========================================================
-    # GOOGLE / WEB SEARCH — v0.19 NEW FEATURE
+    # GOOGLE / WEB SEARCH
+    # v0.19 NEW FEATURE
     # ========================================================
 
     def google_web_search(self, query):
@@ -1024,12 +1180,20 @@ class VoiceAssistant(App):
         query = query.strip()
 
         if not query:
+
             self.set_status(
                 "Kya search karna hai?"
             )
+
             self.speak(
                 "Kya search karna hai?"
             )
+
+            Clock.schedule_once(
+                lambda dt: self.listen(),
+                2
+            )
+
             return
 
         self.set_status(
@@ -1069,33 +1233,45 @@ class VoiceAssistant(App):
             )
 
     # ========================================================
-    # SEARCH COMMAND EXTRACTOR
+    # SEARCH QUERY EXTRACTOR
     # ========================================================
 
     def extract_search_query(self, command):
 
         text = command.lower().strip()
 
-        # ----------------------------------------------
-        # Google search commands
-        # ----------------------------------------------
-
         prefixes = [
+
             "google pe ",
+
             "google par ",
+
             "google me ",
+
             "google mein ",
+
             "google search ",
+
             "google search karo ",
+
             "google par search karo ",
+
             "google pe search karo ",
+
             "google me search karo ",
+
             "google mein search karo ",
+
             "search karo ",
+
             "search kar ",
+
             "web search ",
+
             "web search karo ",
+
             "internet par ",
+
             "internet pe "
         ]
 
@@ -1109,7 +1285,6 @@ class VoiceAssistant(App):
 
                 if query:
 
-                    # Optional ending remove
                     endings = [
                         " search karo",
                         " search kar",
@@ -1119,17 +1294,15 @@ class VoiceAssistant(App):
 
                     for ending in endings:
 
-                        if query.endswith(ending):
+                        if query.endswith(
+                            ending
+                        ):
 
                             query = query[
                                 :-len(ending)
                             ].strip()
 
                     return query
-
-        # ----------------------------------------------
-        # "X search karo"
-        # ----------------------------------------------
 
         endings = [
             " search karo",
@@ -1150,11 +1323,13 @@ class VoiceAssistant(App):
                         "youtube",
                         "instagram",
                         "whatsapp",
-                        "chrome"
+                        "chrome",
+                        "camera",
+                        "calculator"
                     ]
 
-                    # Dedicated commands ko search na samjhein
                     if query not in blocked:
+
                         return query
 
         return None
@@ -1170,12 +1345,13 @@ class VoiceAssistant(App):
             text = command.strip().lower()
 
             if not text:
+
                 self.listen_again()
                 return
 
             # IMPORTANT:
-            # Yahan "Maine suna: ..." display nahi hoga.
-            # Har known command apna direct status dikhayega.
+            # Raw command screen par nahi dikhaya jayega.
+            # Known command ka direct action/status dikhega.
 
             # =================================================
             # STOP
@@ -1281,11 +1457,12 @@ class VoiceAssistant(App):
 
             # =================================================
             # GOOGLE / WEB SEARCH
-            # NEW v0.19
             # =================================================
 
-            search_query = self.extract_search_query(
-                text
+            search_query = (
+                self.extract_search_query(
+                    text
+                )
             )
 
             if search_query:
@@ -1296,7 +1473,7 @@ class VoiceAssistant(App):
 
                 Clock.schedule_once(
                     lambda dt: self.listen(),
-                    3
+                    4
                 )
 
                 return
@@ -1450,7 +1627,6 @@ class VoiceAssistant(App):
                 )
 
                 return
-
             # =================================================
             # BLUETOOTH
             # =================================================
@@ -1561,11 +1737,17 @@ class VoiceAssistant(App):
             # =================================================
 
             mobile_network_words = [
+
                 "mobile network",
+
                 "mobile networks",
+
                 "mobile data",
+
                 "data settings",
+
                 "network settings",
+
                 "sim settings"
             ]
 
@@ -1574,6 +1756,7 @@ class VoiceAssistant(App):
             for word in mobile_network_words:
 
                 if word in text:
+
                     is_mobile_network = True
                     break
 
@@ -1592,8 +1775,10 @@ class VoiceAssistant(App):
             # GENERIC APP PREFIX
             # =================================================
 
-            app_name = self.extract_app_name(
-                text
+            app_name = (
+                self.extract_app_name(
+                    text
+                )
             )
 
             if app_name:
@@ -1654,20 +1839,65 @@ class VoiceAssistant(App):
 
     # ========================================================
     # APP STOP
+    #
+    # destroy() and shutdown() are also performed safely.
     # ========================================================
 
     def on_stop(self):
 
-        try:
-            if self.speech_recognizer:
-                self.speech_recognizer.destroy()
-        except Exception:
-            pass
+        def cleanup():
+
+            try:
+
+                if self.speech_recognizer is not None:
+
+                    try:
+                        self.speech_recognizer.stopListening()
+                    except Exception:
+                        pass
+
+                    try:
+                        self.speech_recognizer.cancel()
+                    except Exception:
+                        pass
+
+                    try:
+                        self.speech_recognizer.destroy()
+                    except Exception:
+                        pass
+
+            except Exception:
+                pass
+
+            try:
+
+                if self.tts is not None:
+
+                    try:
+                        self.tts.stop()
+                    except Exception:
+                        pass
+
+                    try:
+                        self.tts.shutdown()
+                    except Exception:
+                        pass
+
+            except Exception:
+                pass
 
         try:
-            if self.tts:
-                self.tts.stop()
-                self.tts.shutdown()
+
+            if self.activity is not None:
+
+                self.run_on_android_thread(
+                    cleanup
+                )
+
+            else:
+
+                cleanup()
+
         except Exception:
             pass
 
@@ -1676,4 +1906,4 @@ class VoiceAssistant(App):
 # RUN JARVIS
 # ============================================================
 
-VoiceAssistant().run()   
+VoiceAssistant().run()
