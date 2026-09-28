@@ -3,7 +3,6 @@ from kivy.uix.label import Label
 from kivy.clock import Clock
 
 from jnius import autoclass, PythonJavaClass, java_method
-
 from datetime import datetime
 
 
@@ -44,30 +43,29 @@ class RecognitionListener(PythonJavaClass):
         super().__init__()
         self.assistant = assistant
 
-
     # -----------------------------------------------------
-    # READY FOR SPEECH
+    # READY
     # -----------------------------------------------------
 
     @java_method("(Landroid/os/Bundle;)V")
     def onReadyForSpeech(self, params):
 
-        self.assistant.label.text = (
-            "🎤 Listening..."
-        )
-
+        if not self.assistant.external_action:
+            self.assistant.label.text = (
+                "🎤 Listening..."
+            )
 
     # -----------------------------------------------------
-    # BEGINNING OF SPEECH
+    # BEGINNING
     # -----------------------------------------------------
 
     @java_method("()V")
     def onBeginningOfSpeech(self):
 
-        self.assistant.label.text = (
-            "👂 Sun raha hoon..."
-        )
-
+        if not self.assistant.external_action:
+            self.assistant.label.text = (
+                "👂 Sun raha hoon..."
+            )
 
     # -----------------------------------------------------
     # RMS
@@ -75,9 +73,7 @@ class RecognitionListener(PythonJavaClass):
 
     @java_method("(F)V")
     def onRmsChanged(self, rmsdB):
-
         pass
-
 
     # -----------------------------------------------------
     # BUFFER
@@ -85,21 +81,19 @@ class RecognitionListener(PythonJavaClass):
 
     @java_method("([B)V")
     def onBufferReceived(self, buffer):
-
         pass
 
-
     # -----------------------------------------------------
-    # END OF SPEECH
+    # END
     # -----------------------------------------------------
 
     @java_method("()V")
     def onEndOfSpeech(self):
 
-        self.assistant.label.text = (
-            "🧠 Samajh raha hoon..."
-        )
-
+        if not self.assistant.external_action:
+            self.assistant.label.text = (
+                "🧠 Samajh raha hoon..."
+            )
 
     # -----------------------------------------------------
     # ERROR
@@ -108,18 +102,39 @@ class RecognitionListener(PythonJavaClass):
     @java_method("(I)V")
     def onError(self, error):
 
+        # -----------------------------------------------
+        # ERROR 5 = ERROR_CLIENT
+        #
+        # Do NOT show it on screen.
+        # This commonly happens around cancel/stop
+        # while changing recognition state.
+        # -----------------------------------------------
+
+        if error == 5:
+            if not self.assistant.external_action:
+                Clock.schedule_once(
+                    self.assistant.listen_again,
+                    1
+                )
+            return
+
+        # -----------------------------------------------
+        # If another app/settings is opening,
+        # ignore all speech errors.
+        # -----------------------------------------------
+
+        if self.assistant.external_action:
+            return
+
         self.assistant.label.text = (
             "❌ Speech Error: "
             + str(error)
         )
 
-        if not self.assistant.external_action:
-
-            Clock.schedule_once(
-                self.assistant.listen_again,
-                1
-            )
-
+        Clock.schedule_once(
+            self.assistant.listen_again,
+            1
+        )
 
     # -----------------------------------------------------
     # RESULTS
@@ -127,6 +142,9 @@ class RecognitionListener(PythonJavaClass):
 
     @java_method("(Landroid/os/Bundle;)V")
     def onResults(self, results):
+
+        if self.assistant.external_action:
+            return
 
         try:
 
@@ -155,12 +173,10 @@ class RecognitionListener(PythonJavaClass):
                     "Kuch samajh nahi aaya."
                 )
 
-                if not self.assistant.external_action:
-
-                    Clock.schedule_once(
-                        self.assistant.listen_again,
-                        1
-                    )
+                Clock.schedule_once(
+                    self.assistant.listen_again,
+                    1
+                )
 
         except Exception as e:
 
@@ -169,23 +185,18 @@ class RecognitionListener(PythonJavaClass):
                 + str(e)
             )
 
-            if not self.assistant.external_action:
-
-                Clock.schedule_once(
-                    self.assistant.listen_again,
-                    1
-                )
-
+            Clock.schedule_once(
+                self.assistant.listen_again,
+                1
+            )
 
     # -----------------------------------------------------
-    # PARTIAL RESULTS
+    # PARTIAL
     # -----------------------------------------------------
 
     @java_method("(Landroid/os/Bundle;)V")
     def onPartialResults(self, results):
-
         pass
-
 
     # -----------------------------------------------------
     # EVENT
@@ -195,7 +206,6 @@ class RecognitionListener(PythonJavaClass):
         "(ILandroid/os/Bundle;)V"
     )
     def onEvent(self, eventType, params):
-
         pass
 
 
@@ -235,7 +245,6 @@ class VoiceAssistant(App):
 
         return self.label
 
-
     # =====================================================
     # APP START
     # =====================================================
@@ -247,9 +256,8 @@ class VoiceAssistant(App):
             1
         )
 
-
     # =====================================================
-    # START SETUP ON ANDROID MAIN THREAD
+    # START SETUP
     # =====================================================
 
     def start_setup(self, dt):
@@ -271,7 +279,6 @@ class VoiceAssistant(App):
                 + str(e)
             )
 
-
     # =====================================================
     # SPEECH + TTS SETUP
     # =====================================================
@@ -280,9 +287,9 @@ class VoiceAssistant(App):
 
         try:
 
-            # ---------------------------------------------
+            # -------------------------------------------------
             # TEXT TO SPEECH
-            # ---------------------------------------------
+            # -------------------------------------------------
 
             self.TextToSpeech = autoclass(
                 "android.speech.tts.TextToSpeech"
@@ -301,10 +308,9 @@ class VoiceAssistant(App):
                 self.Locale.US
             )
 
-
-            # ---------------------------------------------
+            # -------------------------------------------------
             # SPEECH RECOGNIZER
-            # ---------------------------------------------
+            # -------------------------------------------------
 
             self.SpeechRecognizer = autoclass(
                 "android.speech.SpeechRecognizer"
@@ -365,7 +371,6 @@ class VoiceAssistant(App):
                 + str(e)
             )
 
-
     # =====================================================
     # START LISTENING REQUEST
     # =====================================================
@@ -391,7 +396,6 @@ class VoiceAssistant(App):
                 "Listening Error:\n"
                 + str(e)
             )
-
 
     # =====================================================
     # START LISTENING
@@ -421,7 +425,6 @@ class VoiceAssistant(App):
                 + str(e)
             )
 
-
     # =====================================================
     # LISTEN AGAIN
     # =====================================================
@@ -435,7 +438,6 @@ class VoiceAssistant(App):
             None
         )
 
-
     # =====================================================
     # STOP LISTENING
     # =====================================================
@@ -445,8 +447,7 @@ class VoiceAssistant(App):
         try:
 
             if self.recognizer is not None:
-
-                self.recognizer.stopListening()
+                self.recognizer.cancel()
 
         except Exception:
             pass
@@ -454,12 +455,10 @@ class VoiceAssistant(App):
         try:
 
             if self.recognizer is not None:
-
-                self.recognizer.cancel()
+                self.recognizer.stopListening()
 
         except Exception:
             pass
-
 
     # =====================================================
     # YOUTUBE
@@ -468,9 +467,6 @@ class VoiceAssistant(App):
     def open_youtube(self, dt):
 
         try:
-
-            self.external_action = True
-            self.stop_listening()
 
             self.label.text = (
                 "▶️ YouTube khol raha hoon..."
@@ -501,12 +497,6 @@ class VoiceAssistant(App):
                 + str(e)
             )
 
-            Clock.schedule_once(
-                self.listen_again,
-                2
-            )
-
-
     # =====================================================
     # CALCULATOR
     # =====================================================
@@ -514,9 +504,6 @@ class VoiceAssistant(App):
     def open_calculator(self, dt):
 
         try:
-
-            self.external_action = True
-            self.stop_listening()
 
             self.label.text = (
                 "🧮 Calculator khol raha hoon..."
@@ -551,7 +538,6 @@ class VoiceAssistant(App):
                 except Exception:
                     pass
 
-
             intent = self.RecognizerIntent(
                 "android.intent.action.MAIN"
             )
@@ -568,17 +554,11 @@ class VoiceAssistant(App):
 
                 return
 
-
             self.label.text = (
                 "Calculator app nahi mili."
             )
 
             self.external_action = False
-
-            Clock.schedule_once(
-                self.listen_again,
-                2
-            )
 
         except Exception as e:
 
@@ -589,12 +569,6 @@ class VoiceAssistant(App):
                 + str(e)
             )
 
-            Clock.schedule_once(
-                self.listen_again,
-                2
-            )
-
-
     # =====================================================
     # CAMERA
     # =====================================================
@@ -602,9 +576,6 @@ class VoiceAssistant(App):
     def open_camera(self, dt):
 
         try:
-
-            self.external_action = True
-            self.stop_listening()
 
             self.label.text = (
                 "📷 Camera khol raha hoon..."
@@ -627,12 +598,6 @@ class VoiceAssistant(App):
                 + str(e)
             )
 
-            Clock.schedule_once(
-                self.listen_again,
-                2
-            )
-
-
     # =====================================================
     # CHROME
     # =====================================================
@@ -640,9 +605,6 @@ class VoiceAssistant(App):
     def open_chrome(self, dt):
 
         try:
-
-            self.external_action = True
-            self.stop_listening()
 
             self.label.text = (
                 "🌐 Chrome khol raha hoon..."
@@ -668,11 +630,6 @@ class VoiceAssistant(App):
 
                 self.external_action = False
 
-                Clock.schedule_once(
-                    self.listen_again,
-                    2
-                )
-
         except Exception as e:
 
             self.external_action = False
@@ -682,12 +639,6 @@ class VoiceAssistant(App):
                 + str(e)
             )
 
-            Clock.schedule_once(
-                self.listen_again,
-                2
-            )
-
-
     # =====================================================
     # WHATSAPP
     # =====================================================
@@ -695,9 +646,6 @@ class VoiceAssistant(App):
     def open_whatsapp(self, dt):
 
         try:
-
-            self.external_action = True
-            self.stop_listening()
 
             self.label.text = (
                 "💬 WhatsApp khol raha hoon..."
@@ -723,11 +671,6 @@ class VoiceAssistant(App):
 
                 self.external_action = False
 
-                Clock.schedule_once(
-                    self.listen_again,
-                    2
-                )
-
         except Exception as e:
 
             self.external_action = False
@@ -737,12 +680,6 @@ class VoiceAssistant(App):
                 + str(e)
             )
 
-            Clock.schedule_once(
-                self.listen_again,
-                2
-            )
-
-
     # =====================================================
     # MAIN SETTINGS
     # =====================================================
@@ -750,9 +687,6 @@ class VoiceAssistant(App):
     def open_settings(self, dt):
 
         try:
-
-            self.external_action = True
-            self.stop_listening()
 
             self.label.text = (
                 "⚙️ Settings khol raha hoon..."
@@ -775,22 +709,13 @@ class VoiceAssistant(App):
                 + str(e)
             )
 
-            Clock.schedule_once(
-                self.listen_again,
-                2
-            )
-
-
     # =====================================================
-    # WIFI SETTINGS
+    # WIFI
     # =====================================================
 
     def open_wifi_settings(self, dt):
 
         try:
-
-            self.external_action = True
-            self.stop_listening()
 
             self.label.text = (
                 "📶 Wi-Fi Settings khol raha hoon..."
@@ -810,7 +735,6 @@ class VoiceAssistant(App):
 
                 return
 
-
             intent = self.RecognizerIntent(
                 "android.settings.WIRELESS_SETTINGS"
             )
@@ -823,14 +747,11 @@ class VoiceAssistant(App):
 
                 return
 
-
-            intent = self.RecognizerIntent(
-                "android.settings.SETTINGS"
+            self.label.text = (
+                "Wi-Fi Settings available nahi hai."
             )
 
-            self.activity.startActivity(
-                intent
-            )
+            self.external_action = False
 
         except Exception as e:
 
@@ -841,22 +762,13 @@ class VoiceAssistant(App):
                 + str(e)
             )
 
-            Clock.schedule_once(
-                self.listen_again,
-                2
-            )
-
-
     # =====================================================
-    # BLUETOOTH SETTINGS
+    # BLUETOOTH
     # =====================================================
 
     def open_bluetooth_settings(self, dt):
 
         try:
-
-            self.external_action = True
-            self.stop_listening()
 
             self.label.text = (
                 "🔵 Bluetooth Settings khol raha hoon..."
@@ -876,14 +788,11 @@ class VoiceAssistant(App):
 
                 return
 
-
-            intent = self.RecognizerIntent(
-                "android.settings.SETTINGS"
+            self.label.text = (
+                "Bluetooth Settings available nahi hai."
             )
 
-            self.activity.startActivity(
-                intent
-            )
+            self.external_action = False
 
         except Exception as e:
 
@@ -894,22 +803,13 @@ class VoiceAssistant(App):
                 + str(e)
             )
 
-            Clock.schedule_once(
-                self.listen_again,
-                2
-            )
-
-
     # =====================================================
-    # DISPLAY SETTINGS
+    # DISPLAY
     # =====================================================
 
     def open_display_settings(self, dt):
 
         try:
-
-            self.external_action = True
-            self.stop_listening()
 
             self.label.text = (
                 "☀️ Display Settings khol raha hoon..."
@@ -929,14 +829,11 @@ class VoiceAssistant(App):
 
                 return
 
-
-            intent = self.RecognizerIntent(
-                "android.settings.SETTINGS"
+            self.label.text = (
+                "Display Settings available nahi hai."
             )
 
-            self.activity.startActivity(
-                intent
-            )
+            self.external_action = False
 
         except Exception as e:
 
@@ -947,22 +844,13 @@ class VoiceAssistant(App):
                 + str(e)
             )
 
-            Clock.schedule_once(
-                self.listen_again,
-                2
-            )
-
-
     # =====================================================
-    # BATTERY SETTINGS
+    # BATTERY
     # =====================================================
 
     def open_battery_settings(self, dt):
 
         try:
-
-            self.external_action = True
-            self.stop_listening()
 
             self.label.text = (
                 "🔋 Battery Settings khol raha hoon..."
@@ -982,7 +870,6 @@ class VoiceAssistant(App):
 
                 return
 
-
             intent = self.RecognizerIntent(
                 "android.intent.action.POWER_USAGE_SUMMARY"
             )
@@ -995,40 +882,28 @@ class VoiceAssistant(App):
 
                 return
 
-
-            intent = self.RecognizerIntent(
-                "android.settings.SETTINGS"
+            self.label.text = (
+                "Battery Settings available nahi hai."
             )
 
-            self.activity.startActivity(
-                intent
-            )
+            self.external_action = False
 
         except Exception as e:
 
             self.external_action = False
 
             self.label.text = (
-                "Battery Settings Error:\n"
+                "Battery Error:\n"
                 + str(e)
             )
 
-            Clock.schedule_once(
-                self.listen_again,
-                2
-            )
-
-
     # =====================================================
-    # LOCATION SETTINGS
+    # LOCATION
     # =====================================================
 
     def open_location_settings(self, dt):
 
         try:
-
-            self.external_action = True
-            self.stop_listening()
 
             self.label.text = (
                 "📍 Location Settings khol raha hoon..."
@@ -1048,7 +923,6 @@ class VoiceAssistant(App):
 
                 return
 
-
             intent = self.RecognizerIntent(
                 "android.settings.LOCATION_SETTINGS"
             )
@@ -1061,40 +935,28 @@ class VoiceAssistant(App):
 
                 return
 
-
-            intent = self.RecognizerIntent(
-                "android.settings.SETTINGS"
+            self.label.text = (
+                "Location Settings available nahi hai."
             )
 
-            self.activity.startActivity(
-                intent
-            )
+            self.external_action = False
 
         except Exception as e:
 
             self.external_action = False
 
             self.label.text = (
-                "Location Settings Error:\n"
+                "Location Error:\n"
                 + str(e)
             )
 
-            Clock.schedule_once(
-                self.listen_again,
-                2
-            )
-
-
     # =====================================================
-    # SECURITY SETTINGS
+    # SECURITY
     # =====================================================
 
     def open_security_settings(self, dt):
 
         try:
-
-            self.external_action = True
-            self.stop_listening()
 
             self.label.text = (
                 "🔐 Security Settings khol raha hoon..."
@@ -1114,40 +976,28 @@ class VoiceAssistant(App):
 
                 return
 
-
-            intent = self.RecognizerIntent(
-                "android.settings.SETTINGS"
+            self.label.text = (
+                "Security Settings available nahi hai."
             )
 
-            self.activity.startActivity(
-                intent
-            )
+            self.external_action = False
 
         except Exception as e:
 
             self.external_action = False
 
             self.label.text = (
-                "Security Settings Error:\n"
+                "Security Error:\n"
                 + str(e)
             )
 
-            Clock.schedule_once(
-                self.listen_again,
-                2
-            )
-
-
     # =====================================================
-    # MOBILE NETWORK / DATA SETTINGS
+    # MOBILE NETWORK / DATA
     # =====================================================
 
     def open_mobile_network_settings(self, dt):
 
         try:
-
-            self.external_action = True
-            self.stop_listening()
 
             self.label.text = (
                 "📶 Mobile Network Settings "
@@ -1155,6 +1005,10 @@ class VoiceAssistant(App):
             )
 
             pm = self.activity.getPackageManager()
+
+            # ---------------------------------------------
+            # 1. MOBILE NETWORK SETTINGS
+            # ---------------------------------------------
 
             intent = self.RecognizerIntent(
                 "android.settings.MOBILE_NETWORK_SETTINGS"
@@ -1168,13 +1022,53 @@ class VoiceAssistant(App):
 
                 return
 
+            # ---------------------------------------------
+            # 2. NETWORK OPERATOR SETTINGS
+            # ---------------------------------------------
 
             intent = self.RecognizerIntent(
-                "android.settings.SETTINGS"
+                "android.settings.NETWORK_OPERATOR_SETTINGS"
             )
 
-            self.activity.startActivity(
-                intent
+            if intent.resolveActivity(pm):
+
+                self.activity.startActivity(
+                    intent
+                )
+
+                return
+
+            # ---------------------------------------------
+            # 3. DATA ROAMING SETTINGS
+            # ---------------------------------------------
+
+            intent = self.RecognizerIntent(
+                "android.settings.DATA_ROAMING_SETTINGS"
+            )
+
+            if intent.resolveActivity(pm):
+
+                self.activity.startActivity(
+                    intent
+                )
+
+                return
+
+            # ---------------------------------------------
+            # IMPORTANT:
+            # DO NOT OPEN GENERAL SETTINGS.
+            # ---------------------------------------------
+
+            self.label.text = (
+                "❌ Mobile Network Settings "
+                "is phone par available nahi hai."
+            )
+
+            self.external_action = False
+
+            Clock.schedule_once(
+                self.listen_again,
+                2
             )
 
         except Exception as e:
@@ -1191,7 +1085,6 @@ class VoiceAssistant(App):
                 2
             )
 
-
     # =====================================================
     # COMMAND PROCESSING
     # =====================================================
@@ -1200,9 +1093,13 @@ class VoiceAssistant(App):
 
         try:
 
-            command = str(command)
+            command = str(
+                command
+            ).lower().strip()
 
-            command = command.lower().strip()
+            # -------------------------------------------------
+            # WIFI NORMALIZATION
+            # -------------------------------------------------
 
             command = command.replace(
                 "वाई-फाई",
@@ -1229,11 +1126,6 @@ class VoiceAssistant(App):
                 "wifi"
             )
 
-            command = command.replace(
-                "wi_fi",
-                "wifi"
-            )
-
             command = " ".join(
                 command.split()
             )
@@ -1242,7 +1134,6 @@ class VoiceAssistant(App):
                 "You said:\n"
                 + command
             )
-
 
             # =================================================
             # YOUTUBE
@@ -1270,7 +1161,6 @@ class VoiceAssistant(App):
                 )
 
                 return
-
 
             # =================================================
             # CALCULATOR
@@ -1301,7 +1191,6 @@ class VoiceAssistant(App):
 
                 return
 
-
             # =================================================
             # CAMERA
             # =================================================
@@ -1328,7 +1217,6 @@ class VoiceAssistant(App):
                 )
 
                 return
-
 
             # =================================================
             # CHROME
@@ -1357,11 +1245,10 @@ class VoiceAssistant(App):
 
                 return
 
-
             # =================================================
             # WHATSAPP
             # =================================================
-
+            
             elif (
                 "whatsapp kholo" in command
                 or "whatsapp khol" in command
@@ -1385,46 +1272,20 @@ class VoiceAssistant(App):
 
                 return
 
-
             # =================================================
             # WIFI
             # =================================================
 
             elif (
-
                 "wifi kholo" in command
                 or "wifi khol" in command
                 or "wifi settings kholo" in command
                 or "wifi settings khol" in command
                 or "wifi open karo" in command
-                or "wifi setting kholo" in command
-                or "wifi setting khol" in command
-                or "wifi options kholo" in command
-                or "wifi options khol" in command
-                or "wifi menu kholo" in command
-                or "wifi menu khol" in command
-                or "wifi page kholo" in command
-                or "wifi page khol" in command
-                or "wifi screen kholo" in command
-                or "wifi screen khol" in command
-                or "wifi panel kholo" in command
-                or "wifi panel khol" in command
                 or "open wifi" in command
                 or "open wifi settings" in command
-                or "open wifi setting" in command
-                or "show wifi" in command
-                or "show wifi settings" in command
                 or "wifi dikhao" in command
                 or "wifi settings dikhao" in command
-                or "wifi ka setting kholo" in command
-                or "wifi ki setting kholo" in command
-                or "wifi ka settings kholo" in command
-                or "wifi ki settings kholo" in command
-                or "wifi settings open karo" in command
-                or "wifi setting open karo" in command
-                or "wifi check karo" in command
-                or "check wifi" in command
-                or "wifi dekhna hai" in command
                 or command == "wifi"
             ):
 
@@ -1442,7 +1303,6 @@ class VoiceAssistant(App):
                 )
 
                 return
-
 
             # =================================================
             # BLUETOOTH
@@ -1474,7 +1334,6 @@ class VoiceAssistant(App):
 
                 return
 
-
             # =================================================
             # DISPLAY
             # =================================================
@@ -1484,13 +1343,10 @@ class VoiceAssistant(App):
                 or "display khol" in command
                 or "display settings kholo" in command
                 or "display settings khol" in command
-                or "display open karo" in command
                 or "open display" in command
                 or "open display settings" in command
                 or "screen settings kholo" in command
                 or "screen settings khol" in command
-                or "screen kholo" in command
-                or "screen khol" in command
                 or command == "display"
             ):
 
@@ -1509,7 +1365,6 @@ class VoiceAssistant(App):
 
                 return
 
-
             # =================================================
             # BATTERY
             # =================================================
@@ -1519,7 +1374,6 @@ class VoiceAssistant(App):
                 or "battery khol" in command
                 or "battery settings kholo" in command
                 or "battery settings khol" in command
-                or "battery open karo" in command
                 or "open battery" in command
                 or "open battery settings" in command
                 or "battery dikhao" in command
@@ -1541,7 +1395,6 @@ class VoiceAssistant(App):
 
                 return
 
-
             # =================================================
             # LOCATION
             # =================================================
@@ -1551,19 +1404,12 @@ class VoiceAssistant(App):
                 or "location khol" in command
                 or "location settings kholo" in command
                 or "location settings khol" in command
-                or "location open karo" in command
                 or "open location" in command
                 or "open location settings" in command
                 or "gps kholo" in command
                 or "gps khol" in command
                 or "gps settings kholo" in command
                 or "gps settings khol" in command
-                or "gps open karo" in command
-                or "open gps" in command
-                or "location on karo" in command
-                or "location on" in command
-                or "gps on karo" in command
-                or "gps on" in command
                 or command == "location"
                 or command == "gps"
             ):
@@ -1583,7 +1429,6 @@ class VoiceAssistant(App):
 
                 return
 
-
             # =================================================
             # SECURITY
             # =================================================
@@ -1593,13 +1438,10 @@ class VoiceAssistant(App):
                 or "security khol" in command
                 or "security settings kholo" in command
                 or "security settings khol" in command
-                or "security open karo" in command
                 or "open security" in command
                 or "open security settings" in command
                 or "lock settings kholo" in command
                 or "lock settings khol" in command
-                or "security setting kholo" in command
-                or "security setting khol" in command
                 or command == "security"
             ):
 
@@ -1618,7 +1460,6 @@ class VoiceAssistant(App):
 
                 return
 
-
             # =================================================
             # MOBILE NETWORK / DATA
             # =================================================
@@ -1630,19 +1471,22 @@ class VoiceAssistant(App):
                 or "mobile network settings khol" in command
                 or "mobile data settings kholo" in command
                 or "mobile data settings khol" in command
-                or "data settings kholo" in command
-                or "data settings khol" in command
-                or "network settings kholo" in command
-                or "network settings khol" in command
-                or "mobile network open karo" in command
-                or "mobile data open karo" in command
                 or "mobile data kholo" in command
                 or "mobile data khol" in command
+                or "mobile data open karo" in command
+                or "mobile network open karo" in command
                 or "open mobile network" in command
                 or "open mobile network settings" in command
                 or "open mobile data" in command
                 or "open mobile data settings" in command
+                or "data settings kholo" in command
+                or "data settings khol" in command
                 or "data open karo" in command
+                or "network settings kholo" in command
+                or "network settings khol" in command
+                or "mobile bada kholo" in command
+                or "mobile bada khol" in command
+                or "mobile bada" in command
                 or command == "mobile network"
                 or command == "mobile data"
                 or command == "network settings"
@@ -1652,7 +1496,8 @@ class VoiceAssistant(App):
                 self.stop_listening()
 
                 self.speak(
-                    "Mobile network settings khol raha hoon.",
+                    "Mobile network settings "
+                    "khol raha hoon.",
                     restart=False
                 )
 
@@ -1662,7 +1507,6 @@ class VoiceAssistant(App):
                 )
 
                 return
-
 
             # =================================================
             # MAIN SETTINGS
@@ -1696,7 +1540,6 @@ class VoiceAssistant(App):
 
                 return
 
-
             # =================================================
             # TIME
             # =================================================
@@ -1719,7 +1562,6 @@ class VoiceAssistant(App):
                 )
 
                 return
-
 
             # =================================================
             # DATE
@@ -1744,9 +1586,8 @@ class VoiceAssistant(App):
 
                 return
 
-
             # =================================================
-            # EXIT / STOP
+            # STOP
             # =================================================
 
             elif (
@@ -1763,9 +1604,8 @@ class VoiceAssistant(App):
 
                 return
 
-
             # =================================================
-            # UNKNOWN COMMAND
+            # UNKNOWN
             # =================================================
 
             else:
@@ -1774,7 +1614,6 @@ class VoiceAssistant(App):
                     "Maine suna: " + command,
                     restart=True
                 )
-
 
         except Exception as e:
 
@@ -1787,7 +1626,6 @@ class VoiceAssistant(App):
                 self.listen_again,
                 2
             )
-
 
     # =====================================================
     # TEXT TO SPEECH
@@ -1826,7 +1664,7 @@ class VoiceAssistant(App):
 
 
 # =========================================================
-# RUN APP
+# RUN
 # =========================================================
 
 VoiceAssistant().run()
