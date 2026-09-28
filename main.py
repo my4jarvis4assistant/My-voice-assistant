@@ -9,20 +9,37 @@ from jnius import autoclass, PythonJavaClass, java_method
 # ANDROID CLASSES
 # ============================================================
 
-PythonActivity = autoclass("org.kivy.android.PythonActivity")
+PythonActivity = autoclass(
+    "org.kivy.android.PythonActivity"
+)
 
-Intent = autoclass("android.content.Intent")
-Settings = autoclass("android.provider.Settings")
-Uri = autoclass("android.net.Uri")
+Intent = autoclass(
+    "android.content.Intent"
+)
 
-SpeechRecognizer = autoclass("android.speech.SpeechRecognizer")
-RecognizerIntent = autoclass("android.speech.RecognizerIntent")
+Settings = autoclass(
+    "android.provider.Settings"
+)
 
-TextToSpeech = autoclass("android.speech.tts.TextToSpeech")
-Locale = autoclass("java.util.Locale")
+Uri = autoclass(
+    "android.net.Uri"
+)
 
-PackageManager = autoclass("android.content.pm.PackageManager")
-ArrayList = autoclass("java.util.ArrayList")
+SpeechRecognizer = autoclass(
+    "android.speech.SpeechRecognizer"
+)
+
+RecognizerIntent = autoclass(
+    "android.speech.RecognizerIntent"
+)
+
+TextToSpeech = autoclass(
+    "android.speech.tts.TextToSpeech"
+)
+
+Locale = autoclass(
+    "java.util.Locale"
+)
 
 
 # ============================================================
@@ -31,7 +48,10 @@ ArrayList = autoclass("java.util.ArrayList")
 
 class MainThreadRunnable(PythonJavaClass):
 
-    __javainterfaces__ = ["java/lang/Runnable"]
+    __javainterfaces__ = [
+        "java/lang/Runnable"
+    ]
+
     __javacontext__ = "app"
 
     def __init__(self, callback):
@@ -49,7 +69,10 @@ class MainThreadRunnable(PythonJavaClass):
 
 class RecognitionListener(PythonJavaClass):
 
-    __javainterfaces__ = ["android/speech/RecognitionListener"]
+    __javainterfaces__ = [
+        "android/speech/RecognitionListener"
+    ]
+
     __javacontext__ = "app"
 
     def __init__(self, assistant):
@@ -78,37 +101,50 @@ class RecognitionListener(PythonJavaClass):
 
     @java_method("(I)V")
     def onError(self, error):
-        # Error 5 = ERROR_CLIENT
-        # Isko screen par show nahi karna.
+
+        # ERROR_CLIENT
+        # Is error ko screen par nahi dikhana.
         if error == 5:
             Clock.schedule_once(
                 lambda dt: self.assistant.listen_again(),
-                0.3
+                0.4
             )
             return
 
-        # Common temporary errors ko silently retry karo.
-        if error in (1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13):
+        # Temporary recognition errors
+        if error in (
+            1, 2, 3, 4, 6, 7,
+            8, 9, 10, 11, 12, 13
+        ):
             Clock.schedule_once(
                 lambda dt: self.assistant.listen_again(),
-                0.5
+                0.6
             )
 
     @java_method("(Landroid/os/Bundle;)V")
     def onResults(self, results):
 
         try:
+
             matches = results.getStringArrayList(
                 SpeechRecognizer.RESULTS_RECOGNITION
             )
 
-            if matches is not None and matches.size() > 0:
+            if matches is not None:
 
-                command = str(matches.get(0)).strip()
+                if matches.size() > 0:
 
-                if command:
-                    self.assistant.process_command(command)
-                    return
+                    command = str(
+                        matches.get(0)
+                    ).strip()
+
+                    if command:
+
+                        self.assistant.process_command(
+                            command
+                        )
+
+                        return
 
         except Exception:
             pass
@@ -128,7 +164,7 @@ class RecognitionListener(PythonJavaClass):
 
 
 # ============================================================
-# VOICE ASSISTANT
+# VOICE ASSISTANT APP
 # ============================================================
 
 class VoiceAssistant(App):
@@ -136,7 +172,10 @@ class VoiceAssistant(App):
     def build(self):
 
         self.label = Label(
-            text="JARVIS v0.18\nStarting...",
+            text=(
+                "JARVIS v0.18\n"
+                "Starting..."
+            ),
             font_size="22sp"
         )
 
@@ -145,7 +184,6 @@ class VoiceAssistant(App):
         self.recognition_listener = None
         self.listening = False
 
-        # Android setup main thread par
         Clock.schedule_once(
             self.start_setup_on_android_main_thread,
             0.5
@@ -157,7 +195,10 @@ class VoiceAssistant(App):
     # START SETUP ON ANDROID MAIN THREAD
     # ========================================================
 
-    def start_setup_on_android_main_thread(self, dt):
+    def start_setup_on_android_main_thread(
+        self,
+        dt
+    ):
 
         try:
 
@@ -167,11 +208,16 @@ class VoiceAssistant(App):
                 self.setup_speech_and_tts
             )
 
-            activity.runOnUiThread(runnable)
+            activity.runOnUiThread(
+                runnable
+            )
 
         except Exception as e:
 
-            self.label.text = "Setup Error:\n" + str(e)
+            self.label.text = (
+                "Setup Error:\n" +
+                str(e)
+            )
 
     # ========================================================
     # SPEECH + TTS SETUP
@@ -200,12 +246,14 @@ class VoiceAssistant(App):
             # SPEECH RECOGNIZER
             # ------------------------------------------------
 
-            self.speech_recognizer = SpeechRecognizer.createSpeechRecognizer(
-                activity
+            self.speech_recognizer = (
+                SpeechRecognizer.createSpeechRecognizer(
+                    activity
+                )
             )
 
-            self.recognition_listener = RecognitionListener(
-                self
+            self.recognition_listener = (
+                RecognitionListener(self)
             )
 
             self.speech_recognizer.setRecognitionListener(
@@ -239,7 +287,7 @@ class VoiceAssistant(App):
             )
 
     # ========================================================
-    # TTS
+    # TEXT TO SPEECH
     # ========================================================
 
     def speak(self, text):
@@ -274,7 +322,9 @@ class VoiceAssistant(App):
                 self._start_listening_main
             )
 
-            activity.runOnUiThread(runnable)
+            activity.runOnUiThread(
+                runnable
+            )
 
         except Exception:
             pass
@@ -326,6 +376,7 @@ class VoiceAssistant(App):
             )
 
         except Exception:
+
             self.listening = False
 
             Clock.schedule_once(
@@ -380,6 +431,7 @@ class VoiceAssistant(App):
             return True
 
         except Exception:
+
             return False
 
     # ========================================================
@@ -402,10 +454,11 @@ class VoiceAssistant(App):
             return True
 
         except Exception:
+
             return False
 
     # ========================================================
-    # OPEN YOUTUBE
+    # YOUTUBE
     # ========================================================
 
     def open_youtube(self):
@@ -413,12 +466,21 @@ class VoiceAssistant(App):
         if self.open_url(
             "https://www.youtube.com"
         ):
-            self.speak("YouTube khol raha hoon.")
-        else:
-            self.speak("YouTube nahi khul paya.")
+
+            self.speak(
+                "YouTube khol raha hoon."
+            )
+
+            return True
+
+        self.speak(
+            "YouTube nahi khul paya."
+        )
+
+        return False
 
     # ========================================================
-    # OPEN CALCULATOR
+    # CALCULATOR
     # ========================================================
 
     def open_calculator(self):
@@ -427,9 +489,13 @@ class VoiceAssistant(App):
 
             activity = PythonActivity.mActivity
 
-            package_manager = activity.getPackageManager()
+            package_manager = (
+                activity.getPackageManager()
+            )
 
-            packages = package_manager.getInstalledPackages(0)
+            packages = (
+                package_manager.getInstalledPackages(0)
+            )
 
             calculator_packages = [
                 "com.google.android.calculator",
@@ -437,7 +503,9 @@ class VoiceAssistant(App):
                 "com.android.calculator2"
             ]
 
-            for i in range(packages.size()):
+            for i in range(
+                packages.size()
+            ):
 
                 package_info = packages.get(i)
 
@@ -447,8 +515,11 @@ class VoiceAssistant(App):
 
                 if package_name in calculator_packages:
 
-                    launch_intent = package_manager.getLaunchIntentForPackage(
-                        package_name
+                    launch_intent = (
+                        package_manager
+                        .getLaunchIntentForPackage(
+                            package_name
+                        )
                     )
 
                     if launch_intent is not None:
@@ -466,8 +537,9 @@ class VoiceAssistant(App):
         except Exception:
             pass
 
-        # Fallback
-        if self.open_url("https://www.google.com/search?q=calculator"):
+        if self.open_url(
+            "https://www.google.com/search?q=calculator"
+        ):
 
             self.speak(
                 "Calculator khol raha hoon."
@@ -482,7 +554,7 @@ class VoiceAssistant(App):
         return False
 
     # ========================================================
-    # OPEN CAMERA
+    # CAMERA
     # ========================================================
 
     def open_camera(self):
@@ -504,7 +576,7 @@ class VoiceAssistant(App):
         return False
 
     # ========================================================
-    # OPEN CHROME
+    # CHROME
     # ========================================================
 
     def open_chrome(self):
@@ -513,10 +585,15 @@ class VoiceAssistant(App):
 
             activity = PythonActivity.mActivity
 
-            package_manager = activity.getPackageManager()
+            package_manager = (
+                activity.getPackageManager()
+            )
 
-            launch_intent = package_manager.getLaunchIntentForPackage(
-                "com.android.chrome"
+            launch_intent = (
+                package_manager
+                .getLaunchIntentForPackage(
+                    "com.android.chrome"
+                )
             )
 
             if launch_intent is not None:
@@ -539,7 +616,7 @@ class VoiceAssistant(App):
         ):
 
             self.speak(
-                "Chrome ya browser khol raha hoon."
+                "Browser khol raha hoon."
             )
 
             return True
@@ -551,7 +628,7 @@ class VoiceAssistant(App):
         return False
 
     # ========================================================
-    # OPEN WHATSAPP
+    # WHATSAPP
     # ========================================================
 
     def open_whatsapp(self):
@@ -560,10 +637,15 @@ class VoiceAssistant(App):
 
             activity = PythonActivity.mActivity
 
-            package_manager = activity.getPackageManager()
+            package_manager = (
+                activity.getPackageManager()
+            )
 
-            launch_intent = package_manager.getLaunchIntentForPackage(
-                "com.whatsapp"
+            launch_intent = (
+                package_manager
+                .getLaunchIntentForPackage(
+                    "com.whatsapp"
+                )
             )
 
             if launch_intent is not None:
@@ -760,13 +842,9 @@ class VoiceAssistant(App):
         activity = PythonActivity.mActivity
 
         actions = [
-
             "android.settings.MOBILE_NETWORK_SETTINGS",
-
             "android.settings.NETWORK_OPERATOR_SETTINGS",
-
             "android.settings.DATA_ROAMING_SETTINGS"
-
         ]
 
         for action in actions:
@@ -778,7 +856,8 @@ class VoiceAssistant(App):
                 activity.startActivity(intent)
 
                 self.speak(
-                    "Mobile Network settings khol raha hoon."
+                    "Mobile Network settings "
+                    "khol raha hoon."
                 )
 
                 return True
@@ -787,13 +866,13 @@ class VoiceAssistant(App):
                 continue
 
         self.speak(
-            "Mobile Network settings available nahi hai."
+            "Mobile Network settings "
+            "available nahi hai."
         )
 
         return False
-
     # ========================================================
-    # INSTALLED APPS
+    # INSTALLED APPS - MAIN FUNCTION
     # ========================================================
 
     def open_installed_app(self, app_name):
@@ -802,59 +881,178 @@ class VoiceAssistant(App):
 
             activity = PythonActivity.mActivity
 
-            package_manager = activity.getPackageManager()
+            package_manager = (
+                activity.getPackageManager()
+            )
 
-            main_action = Intent(
+            # ------------------------------------------------
+            # Launcher applications ki list
+            # ------------------------------------------------
+
+            launcher_intent = Intent(
                 Intent.ACTION_MAIN
             )
 
-            main_action.addCategory(
+            launcher_intent.addCategory(
                 Intent.CATEGORY_LAUNCHER
             )
 
-            activities = package_manager.queryIntentActivities(
-                main_action,
-                0
+            activities = (
+                package_manager.queryIntentActivities(
+                    launcher_intent,
+                    0
+                )
             )
 
-            app_name = app_name.strip().lower()
+            if activities is None:
+                self.speak(
+                    "Installed app nahi mili."
+                )
+                return False
 
-            exact_match = None
-            partial_match = None
+            wanted_name = (
+                app_name
+                .strip()
+                .lower()
+            )
 
-            for i in range(activities.size()):
+            # Extra words remove karna
+            removable_words = [
+                "app",
+                "application",
+                "ko",
+                "please",
+                "the"
+            ]
 
-                info = activities.get(i)
+            words = wanted_name.split()
 
-                activity_info = info.activityInfo
+            clean_words = []
 
-                label = str(
-                    activity_info.loadLabel(
-                        package_manager
+            for word in words:
+
+                if word not in removable_words:
+                    clean_words.append(word)
+
+            wanted_name = " ".join(
+                clean_words
+            ).strip()
+
+            exact_package = None
+            partial_package = None
+            package_by_name = None
+
+            # ------------------------------------------------
+            # Installed apps ko search karo
+            # ------------------------------------------------
+
+            for i in range(
+                activities.size()
+            ):
+
+                try:
+
+                    resolve_info = (
+                        activities.get(i)
                     )
+
+                    activity_info = (
+                        resolve_info.activityInfo
+                    )
+
+                    if activity_info is None:
+                        continue
+
+                    package_name = str(
+                        activity_info.packageName
+                    )
+
+                    label = str(
+                        activity_info.loadLabel(
+                            package_manager
+                        )
+                    )
+
+                    label_lower = (
+                        label.lower().strip()
+                    )
+
+                    package_lower = (
+                        package_name.lower()
+                    )
+
+                    # ----------------------------------------
+                    # Exact app name
+                    # ----------------------------------------
+
+                    if label_lower == wanted_name:
+
+                        exact_package = (
+                            package_name
+                        )
+
+                        break
+
+                    # ----------------------------------------
+                    # App name ke andar match
+                    # ----------------------------------------
+
+                    if (
+                        wanted_name
+                        and wanted_name in label_lower
+                    ):
+
+                        if partial_package is None:
+
+                            partial_package = (
+                                package_name
+                            )
+
+                    # ----------------------------------------
+                    # Package name match
+                    # ----------------------------------------
+
+                    if (
+                        wanted_name
+                        and wanted_name in package_lower
+                    ):
+
+                        if package_by_name is None:
+
+                            package_by_name = (
+                                package_name
+                            )
+
+                except Exception:
+                    continue
+
+            # ------------------------------------------------
+            # Match select karo
+            # ------------------------------------------------
+
+            selected_package = None
+
+            if exact_package is not None:
+
+                selected_package = (
+                    exact_package
                 )
 
-                package_name = str(
-                    activity_info.packageName
+            elif partial_package is not None:
+
+                selected_package = (
+                    partial_package
                 )
 
-                label_lower = label.lower()
+            elif package_by_name is not None:
 
-                if label_lower == app_name:
+                selected_package = (
+                    package_by_name
+                )
 
-                    exact_match = package_name
-                    break
-
-                if app_name in label_lower:
-
-                    if partial_match is None:
-                        partial_match = package_name
-
-            selected_package = (
-                exact_match
-                if exact_match is not None
-                else partial_match
-            )
+            # ------------------------------------------------
+            # App nahi mili
+            # ------------------------------------------------
 
             if selected_package is None:
 
@@ -870,8 +1068,15 @@ class VoiceAssistant(App):
 
                 return False
 
-            launch_intent = package_manager.getLaunchIntentForPackage(
-                selected_package
+            # ------------------------------------------------
+            # Launch intent
+            # ------------------------------------------------
+
+            launch_intent = (
+                package_manager
+                .getLaunchIntentForPackage(
+                    selected_package
+                )
             )
 
             if launch_intent is None:
@@ -887,6 +1092,10 @@ class VoiceAssistant(App):
                 )
 
                 return False
+
+            # ------------------------------------------------
+            # App launch
+            # ------------------------------------------------
 
             activity.startActivity(
                 launch_intent
@@ -914,12 +1123,152 @@ class VoiceAssistant(App):
             return False
 
     # ========================================================
+    # FIND APP NAME FROM NATURAL COMMAND
+    # ========================================================
+
+    def extract_app_name(self, command):
+
+        command = command.strip().lower()
+
+        prefixes = [
+            "app kholo ",
+            "app khol ",
+            "application kholo ",
+            "application khol ",
+            "open app ",
+            "open application ",
+            "app open karo ",
+            "app open kar ",
+            "application open karo ",
+            "application open kar "
+        ]
+
+        for prefix in prefixes:
+
+            if command.startswith(prefix):
+
+                name = command[
+                    len(prefix):
+                ].strip()
+
+                if name:
+                    return name
+
+        suffixes = [
+            " kholo",
+            " khol",
+            " open karo",
+            " open kar",
+            " ko kholo",
+            " ko khol",
+            " ko open karo",
+            " ko open kar"
+        ]
+
+        for suffix in suffixes:
+
+            if command.endswith(suffix):
+
+                name = command[
+                    :-len(suffix)
+                ].strip()
+
+                if name:
+                    return name
+
+        return None
+
+    # ========================================================
+    # NATURAL INSTALLED APP COMMAND
+    # ========================================================
+
+    def try_open_natural_app(self, command):
+
+        # ----------------------------------------------------
+        # Known non-app commands ko yahan ignore karo
+        # ----------------------------------------------------
+
+        blocked_words = [
+            "settings",
+            "setting",
+            "mobile network",
+            "mobile data",
+            "wifi",
+            "wi-fi",
+            "bluetooth",
+            "display",
+            "battery",
+            "location",
+            "security",
+            "calculator",
+            "camera",
+            "youtube",
+            "chrome",
+            "whatsapp"
+        ]
+
+        for word in blocked_words:
+
+            if word in command:
+                return False
+
+        # ----------------------------------------------------
+        # App name command se nikalo
+        # ----------------------------------------------------
+
+        app_name = self.extract_app_name(
+            command
+        )
+
+        if app_name:
+
+            return self.open_installed_app(
+                app_name
+            )
+
+        # ----------------------------------------------------
+        # Direct natural command:
+        #
+        # Instagram kholo
+        # Instagram khol
+        # Instagram open karo
+        # Instagram open kar
+        # ----------------------------------------------------
+
+        endings = [
+            " kholo",
+            " khol",
+            " open karo",
+            " open kar"
+        ]
+
+        for ending in endings:
+
+            if command.endswith(ending):
+
+                app_name = command[
+                    :-len(ending)
+                ].strip()
+
+                if app_name:
+
+                    return self.open_installed_app(
+                        app_name
+                    )
+
+        return False
+
+    # ========================================================
     # PROCESS COMMAND
     # ========================================================
 
     def process_command(self, command):
 
-        command = command.lower().strip()
+        command = (
+            command
+            .lower()
+            .strip()
+        )
 
         self.label.text = (
             "JARVIS v0.18\n"
@@ -928,10 +1277,10 @@ class VoiceAssistant(App):
         )
 
         # ====================================================
-        # HELLO / GREETING
+        # HELLO JARVIS
         # ====================================================
 
-            if command in [
+        if command in [
             "hello jarvis",
             "hey jarvis",
             "hi jarvis",
@@ -959,6 +1308,7 @@ class VoiceAssistant(App):
         if command in [
             "what is your name",
             "what's your name",
+            "what is your name jarvis",
             "your name",
             "tumhara naam kya hai",
             "aapka naam kya hai",
@@ -983,11 +1333,13 @@ class VoiceAssistant(App):
         if command in [
             "who are you",
             "tum kaun ho",
-            "aap kaun ho"
+            "aap kaun ho",
+            "who are you jarvis"
         ]:
 
             self.speak(
-                "Main aapka voice assistant Jarvis hoon."
+                "Main aapka voice assistant "
+                "Jarvis hoon."
             )
 
             Clock.schedule_once(
@@ -1007,7 +1359,8 @@ class VoiceAssistant(App):
             "listening stop",
             "sunna band karo",
             "band ho jao",
-            "jarvis stop"
+            "jarvis stop",
+            "stop jarvis"
         ]:
 
             self.stop_listening()
@@ -1043,7 +1396,7 @@ class VoiceAssistant(App):
         # CALCULATOR
         # ====================================================
 
-           if (
+        if (
             "calculator" in command
             and (
                 "khol" in command
@@ -1106,8 +1459,7 @@ class VoiceAssistant(App):
         # WHATSAPP
         # ====================================================
 
-
-           if (
+        if (
             "whatsapp" in command
             and (
                 "khol" in command
@@ -1211,7 +1563,7 @@ class VoiceAssistant(App):
         # DISPLAY
         # ====================================================
 
-           if (
+        if (
             "display" in command
             and (
                 "khol" in command
@@ -1317,17 +1669,18 @@ class VoiceAssistant(App):
             if word in command:
 
                 is_mobile_network = True
+
                 break
 
         if (
             is_mobile_network
             or (
-                "network" in command
-                and "mobile" in command
+                "mobile" in command
+                and "network" in command
             )
             or (
-                "data" in command
-                and "mobile" in command
+                "mobile" in command
+                and "data" in command
             )
         ):
 
@@ -1341,52 +1694,23 @@ class VoiceAssistant(App):
             return
 
         # ====================================================
-        # GENERIC INSTALLED APP COMMAND
+        # INSTALLED APP
+        #
+        # Is point par naye/downloaded apps handle honge.
+        #
+        # Examples:
+        # Instagram kholo
+        # Instagram khol
+        # Instagram open karo
+        # App kholo Instagram
+        # Open app Instagram
         # ====================================================
 
-            app_name = None
+        app_opened = self.try_open_natural_app(
+            command
+        )
 
-        if command.startswith("app kholo "):
-
-            app_name = command[
-                len("app kholo "):
-            ].strip()
-
-        elif command.startswith("app khol "):
-
-            app_name = command[
-                len("app khol "):
-            ].strip()
-
-        elif command.startswith("application kholo "):
-
-            app_name = command[
-                len("application kholo "):
-            ].strip()
-
-        elif command.startswith("application khol "):
-
-            app_name = command[
-                len("application khol "):
-            ].strip()
-
-        elif command.startswith("open app "):
-
-            app_name = command[
-                len("open app "):
-            ].strip()
-
-        elif command.startswith("open application "):
-
-            app_name = command[
-                len("open application "):
-            ].strip()
-
-        if app_name:
-
-            self.open_installed_app(
-                app_name
-            )
+        if app_opened:
 
             Clock.schedule_once(
                 lambda dt: self.listen_again(),
@@ -1411,7 +1735,7 @@ class VoiceAssistant(App):
 
 
 # ============================================================
-# START APP
+# START APPLICATION
 # ============================================================
 
 if __name__ == "__main__":
