@@ -1344,7 +1344,7 @@ class VoiceAssistant(App):
         # GENERIC INSTALLED APP COMMAND
         # ====================================================
 
-        app_name = None
+            app_name = None
 
         if command.startswith("app kholo "):
 
