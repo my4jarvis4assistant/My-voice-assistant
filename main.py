@@ -1,6 +1,20 @@
+# ============================================================
+# MY VOICE ASSISTANT - v0.21
+# BASE: v0.20 SUCCESS
+# NEW:
+#   1. Phone / Dialer Actions
+#   2. Contacts Actions
+#   3. Wi-Fi command fix
+# ============================================================
+
+import re
+import time
+from datetime import datetime
+
 from kivy.app import App
-from kivy.uix.label import Label
 from kivy.clock import Clock
+from kivy.uix.label import Label
+from kivy.uix.boxlayout import BoxLayout
 
 from jnius import autoclass, PythonJavaClass, java_method
 
@@ -10,56 +24,102 @@ from jnius import autoclass, PythonJavaClass, java_method
 # ============================================================
 
 PythonActivity = autoclass("org.kivy.android.PythonActivity")
+activity = PythonActivity.mActivity
+
 Intent = autoclass("android.content.Intent")
-Uri = autoclass("android.net.Uri")
-RecognizerIntent = autoclass("android.speech.RecognizerIntent")
-SpeechRecognizer = autoclass("android.speech.SpeechRecognizer")
-Bundle = autoclass("android.os.Bundle")
-Locale = autoclass("java.util.Locale")
-TextToSpeech = autoclass("android.speech.tts.TextToSpeech")
 Settings = autoclass("android.provider.Settings")
-Date = autoclass("java.util.Date")
-PackageManager = autoclass("android.content.pm.PackageManager")
+Uri = autoclass("android.net.Uri")
+
+RecognizerIntent = autoclass(
+    "android.speech.RecognizerIntent"
+)
+
+SpeechRecognizer = autoclass(
+    "android.speech.SpeechRecognizer"
+)
+
+RecognitionListener = autoclass(
+    "android.speech.RecognitionListener"
+)
+
+TextToSpeech = autoclass(
+    "android.speech.tts.TextToSpeech"
+)
+
+Locale = autoclass(
+    "java.util.Locale"
+)
+
+PackageManager = autoclass(
+    "android.content.pm.PackageManager"
+)
+
+ContactsContract = autoclass(
+    "android.provider.ContactsContract"
+)
 
 
 # ============================================================
-# ANDROID MAIN THREAD RUNNER
+# MAIN THREAD RUNNER
 # ============================================================
+
+Runnable = autoclass("java.lang.Runnable")
+
 
 class MainThreadRunnable(PythonJavaClass):
 
-    __javainterfaces__ = ["java/lang/Runnable"]
+    __javainterfaces__ = [
+        "java/lang/Runnable"
+    ]
 
-    def __init__(self, callback):
+    def __init__(self, function):
         super().__init__()
-        self.callback = callback
+        self.function = function
 
     @java_method("()V")
     def run(self):
         try:
-            self.callback()
+            self.function()
         except Exception as e:
-            print("Main thread error:", e)
+            print("MainThread Error:", e)
+
+
+def run_on_android_thread(function):
+    try:
+        activity.runOnUiThread(
+            MainThreadRunnable(function)
+        )
+    except Exception as e:
+        print("run_on_android_thread error:", e)
 
 
 # ============================================================
 # SPEECH RECOGNITION LISTENER
 # ============================================================
 
-class RecognitionListener(PythonJavaClass):
+class MyRecognitionListener(
+    PythonJavaClass,
+    RecognitionListener
+):
 
-    __javainterfaces__ = ["android/speech/RecognitionListener"]
+    __javainterfaces__ = [
+        "android/speech/RecognitionListener"
+    ]
 
-    def __init__(self, app):
+    def __init__(self, assistant):
         super().__init__()
-        self.app = app
+        self.assistant = assistant
 
-    @java_method("(Landroid/os/Bundle;)V")
+    @java_method("()V")
     def onReadyForSpeech(self, params):
-        pass
+        self.assistant.on_ready()
 
     @java_method("()V")
     def onBeginningOfSpeech(self):
+        self.assistant.on_beginning()
+
+    @java_method("([B)V")
+    def onBufferReceived(self, buffer):
         pass
 
     @java_method("(F)V")
@@ -67,300 +127,371 @@ class RecognitionListener(PythonJavaClass):
         pass
 
     @java_method("([B)V")
-    def onBufferReceived(self, buffer):
-        pass
-
-    @java_method("()V")
     def onEndOfSpeech(self):
-        pass
+        self.assistant.on_end()
 
     @java_method("(I)V")
     def onError(self, error):
-        print("Speech error:", error)
+        self.assistant.on_error(error)
 
-        # Error 5 = client / recognizer state issue.
-        # User ko unnecessary error message nahi dikhana.
-        if error == 5:
-            Clock.schedule_once(
-                lambda dt: self.app.listen_again(),
-                0.5
-            )
-            return
-
-        # Other common temporary errors
-        if error in (6, 7, 8, 9):
-            Clock.schedule_once(
-                lambda dt: self.app.listen_again(),
-                0.8
-            )
-            return
-
-        self.app.set_status("Dobara boliye...")
-
-        Clock.schedule_once(
-            lambda dt: self.app.listen_again(),
-            1.0
-        )
-
-    @java_method("(Landroid/os/Bundle;)V")
+    @java_method("([Ljava/lang/String;)V")
     def onResults(self, results):
+        self.assistant.on_results(results)
 
-        try:
-            matches = results.getStringArrayList(
-                SpeechRecognizer.RESULTS_RECOGNITION
-            )
-
-            if matches is not None and matches.size() > 0:
-
-                text = str(matches.get(0))
-
-                print("Recognized:", text)
-
-                self.app.process_command(text)
-
-        except Exception as e:
-            print("Result error:", e)
-
-    @java_method("(Landroid/os/Bundle;)V")
+    @java_method("([Ljava/lang/String;)V")
     def onPartialResults(self, results):
         pass
 
-    @java_method("(ILandroid/os/Bundle;)V")
+    @java_method("(Landroid/os/Bundle;)V")
     def onEvent(self, eventType, params):
         pass
 
 
 # ============================================================
-# VOICE ASSISTANT
+# TTS INIT LISTENER
 # ============================================================
 
-class VoiceAssistant(App):
+class TTSInitListener(
+    PythonJavaClass
+):
+
+    __javainterfaces__ = [
+        "android/speech/tts/TextToSpeech$OnInitListener"
+    ]
+
+    def __init__(self, assistant):
+        super().__init__()
+        self.assistant = assistant
+
+    @java_method("(I)V")
+    def onInit(self, status):
+        try:
+            if status == TextToSpeech.SUCCESS:
+                self.assistant.tts_ready = True
+
+                try:
+                    self.assistant.tts.setLanguage(
+                        Locale.getDefault()
+                    )
+                except Exception:
+                    pass
+
+                print("TTS ready")
+
+            else:
+                self.assistant.tts_ready = False
+                print("TTS initialization failed")
+
+        except Exception as e:
+            print("TTS init error:", e)
+
+
+# ============================================================
+# MAIN APP
+# ============================================================
+
+class VoiceAssistantApp(App):
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        self.speech = None
+        self.listener = None
+
+        self.tts = None
+        self.tts_ready = False
+
+        self.is_listening = False
+        self.is_stopping = False
+
+        self.retry_event = None
+
+        self.status_label = None
+
+        # Prevent multiple recognition starts
+        self.starting_recognition = False
+
+
+    # ========================================================
+    # BUILD
+    # ========================================================
 
     def build(self):
 
-        self.activity = PythonActivity.mActivity
-
-        self.speech_recognizer = None
-        self.listener = None
-        self.recognizer_intent = None
-        self.tts = None
+        layout = BoxLayout(
+            orientation="vertical",
+            padding=30,
+            spacing=20
+        )
 
         self.status_label = Label(
-            text="JARVIS starting...",
-            font_size="20sp"
+            text="My Voice Assistant\nv0.21",
+            font_size="24sp"
+        )
+
+        layout.add_widget(
+            self.status_label
+        )
+
+        return layout
+
+
+    # ========================================================
+    # APP START
+    # ========================================================
+
+    def on_start(self):
+
+        print("Voice Assistant v0.21 started")
+
+        self.update_status(
+            "Voice Assistant\nStarting..."
         )
 
         Clock.schedule_once(
-            self.start_setup,
-            1
+            self.setup_android,
+            0.5
         )
 
-        return self.status_label
+
+    # ========================================================
+    # ANDROID SETUP
+    # ========================================================
+
+    def setup_android(self, dt=None):
+
+        run_on_android_thread(
+            self.setup_android_main
+        )
+
+
+    def setup_android_main(self):
+
+        try:
+
+            # ------------------------------------------------
+            # TEXT TO SPEECH
+            # ------------------------------------------------
+
+            self.tts = TextToSpeech(
+                activity,
+                TTSInitListener(self)
+            )
+
+            # ------------------------------------------------
+            # SPEECH RECOGNIZER
+            # ------------------------------------------------
+
+            if not SpeechRecognizer.isRecognitionAvailable(
+                activity
+            ):
+                print(
+                    "Speech recognition is not available"
+                )
+
+                self.update_status(
+                    "Speech Recognition unavailable"
+                )
+
+                return
+
+            self.listener = MyRecognitionListener(
+                self
+            )
+
+            self.speech = SpeechRecognizer.createSpeechRecognizer(
+                activity
+            )
+
+            self.speech.setRecognitionListener(
+                self.listener
+            )
+
+            print(
+                "SpeechRecognizer created on main thread"
+            )
+
+            self.update_status(
+                "Ready"
+            )
+
+            Clock.schedule_once(
+                lambda dt: self.speak(
+                    "Hello! Main tumhara voice assistant hoon."
+                ),
+                0.8
+            )
+
+            Clock.schedule_once(
+                self.start_listening,
+                2.5
+            )
+
+        except Exception as e:
+
+            print(
+                "Android setup error:",
+                e
+            )
+
+            self.update_status(
+                "Setup Error"
+            )
+
 
     # ========================================================
     # STATUS
     # ========================================================
 
-    def set_status(self, text):
+    def update_status(self, text):
 
         try:
+
             Clock.schedule_once(
-                lambda dt: setattr(
-                    self.status_label,
-                    "text",
-                    text
-                ),
+                lambda dt: self._update_status(text),
                 0
             )
+
         except Exception:
             pass
 
-    # ========================================================
-    # ANDROID MAIN THREAD
-    # ========================================================
 
-    def run_on_android_thread(self, callback):
+    def _update_status(self, text):
 
         try:
 
-            runnable = MainThreadRunnable(callback)
+            if self.status_label:
+                self.status_label.text = text
 
-            self.activity.runOnUiThread(runnable)
+        except Exception:
+            pass
 
-        except Exception as e:
-
-            print("run_on_android_thread error:", e)
 
     # ========================================================
-    # TTS
+    # TEXT TO SPEECH
     # ========================================================
 
     def speak(self, text):
 
-        try:
+        if not text:
+            return
 
-            if self.tts is None:
-                return
+        print(
+            "Assistant:",
+            text
+        )
 
-            def speak_main():
+        self.update_status(
+            text
+        )
 
-                try:
-
-                    self.tts.speak(
-                        text,
-                        TextToSpeech.QUEUE_FLUSH,
-                        None
-                    )
-
-                except Exception as e:
-
-                    print("TTS error:", e)
-
-            self.run_on_android_thread(
-                speak_main
-            )
-
-        except Exception as e:
-            print("Speak error:", e)
-
-    # ========================================================
-    # START SETUP
-    # ========================================================
-
-    def start_setup(self, dt=None):
-
-        def setup_android():
+        def do_speak():
 
             try:
 
-                self.tts = TextToSpeech(
-                    self.activity,
-                    None
-                )
+                if (
+                    self.tts is not None
+                    and self.tts_ready
+                ):
 
-                self.tts.setLanguage(
-                    Locale.US
-                )
-
-                self.speech_recognizer = (
-                    SpeechRecognizer.createSpeechRecognizer(
-                        self.activity
+                    self.tts.speak(
+                        str(text),
+                        TextToSpeech.QUEUE_FLUSH,
+                        None,
+                        "assistant_utterance"
                     )
+
+            except Exception as e:
+
+                print(
+                    "TTS speak error:",
+                    e
                 )
 
-                self.listener = RecognitionListener(
-                    self
-                )
+        run_on_android_thread(
+            do_speak
+        )
 
-                self.speech_recognizer.setRecognitionListener(
-                    self.listener
-                )
 
-                self.recognizer_intent = Intent(
+    # ========================================================
+    # SPEECH LISTENING
+    # ========================================================
+
+    def start_listening(self, dt=None):
+
+        if self.speech is None:
+            return
+
+        if self.starting_recognition:
+            return
+
+        self.starting_recognition = True
+
+        def start():
+
+            try:
+
+                self.starting_recognition = False
+
+                intent = Intent(
                     RecognizerIntent.ACTION_RECOGNIZE_SPEECH
                 )
 
-                self.recognizer_intent.putExtra(
+                intent.putExtra(
                     RecognizerIntent.EXTRA_LANGUAGE_MODEL,
                     RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
                 )
 
-                self.recognizer_intent.putExtra(
+                intent.putExtra(
                     RecognizerIntent.EXTRA_LANGUAGE,
-                    "en-IN"
+                    "hi-IN"
                 )
 
-                self.recognizer_intent.putExtra(
+                intent.putExtra(
                     RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE,
-                    "en-IN"
+                    "hi-IN"
                 )
 
-                self.recognizer_intent.putExtra(
+                intent.putExtra(
+                    RecognizerIntent.EXTRA_PARTIAL_RESULTS,
+                    False
+                )
+
+                intent.putExtra(
                     RecognizerIntent.EXTRA_MAX_RESULTS,
-                    1
+                    5
                 )
 
-                self.set_status(
-                    "JARVIS ready..."
+                self.is_listening = True
+
+                self.update_status(
+                    "Listening..."
                 )
 
-                self.speak(
-                    "Hello! Main Jarvis hoon."
+                self.speech.startListening(
+                    intent
                 )
+
+            except Exception as e:
+
+                self.starting_recognition = False
+
+                print(
+                    "Start listening error:",
+                    e
+                )
+
+                self.is_listening = False
 
                 Clock.schedule_once(
-                    lambda dt: self.listen(),
-                    2
+                    self.start_listening,
+                    1.0
                 )
 
-            except Exception as e:
-
-                print("Setup Error:", e)
-
-                self.set_status(
-                    "Setup Error: " + str(e)
-                )
-
-        self.run_on_android_thread(
-            setup_android
+        run_on_android_thread(
+            start
         )
 
-    # ========================================================
-    # LISTEN
-    # ========================================================
-
-    def listen(self):
-
-        if self.speech_recognizer is None:
-            return
-
-        def start_listening():
-
-            try:
-
-                self.speech_recognizer.startListening(
-                    self.recognizer_intent
-                )
-
-            except Exception as e:
-
-                print("Start listening error:", e)
-
-        self.run_on_android_thread(
-            start_listening
-        )
-
-    # ========================================================
-    # LISTEN AGAIN
-    # ========================================================
-
-    def listen_again(self):
-
-        if self.speech_recognizer is None:
-            return
-
-        def restart():
-
-            try:
-
-                self.speech_recognizer.cancel()
-
-            except Exception:
-                pass
-
-            try:
-
-                self.speech_recognizer.startListening(
-                    self.recognizer_intent
-                )
-
-            except Exception as e:
-
-                print("Listen again error:", e)
-
-        self.run_on_android_thread(
-            restart
-        )
 
     # ========================================================
     # STOP LISTENING
@@ -368,109 +499,274 @@ class VoiceAssistant(App):
 
     def stop_listening(self):
 
-        if self.speech_recognizer is None:
-            return
-
         def stop():
 
             try:
 
-                self.speech_recognizer.stopListening()
+                if self.speech is not None:
 
-            except Exception:
-                pass
+                    self.speech.stopListening()
 
-        self.run_on_android_thread(
+                self.is_listening = False
+
+            except Exception as e:
+
+                print(
+                    "Stop listening error:",
+                    e
+                )
+
+        run_on_android_thread(
             stop
         )
+
+
+    # ========================================================
+    # SPEECH CALLBACKS
+    # ========================================================
+
+    def on_ready(self):
+
+        self.update_status(
+            "Listening..."
+        )
+
+
+    def on_beginning(self):
+
+        self.update_status(
+            "Listening..."
+        )
+
+
+    def on_end(self):
+
+        self.is_listening = False
+
+        self.update_status(
+            "Processing..."
+        )
+
+
+    # ========================================================
+    # SPEECH ERROR
+    # ========================================================
+
+    def on_error(self, error):
+
+        self.is_listening = False
+
+        print(
+            "Speech error:",
+            error
+        )
+
+        # Error 5 = client error.
+        # Silently retry, as in v0.20.
+        if error == 5:
+
+            Clock.schedule_once(
+                self.start_listening,
+                0.5
+            )
+
+            return
+
+        # Common temporary recognition errors
+        if error in (
+            6,
+            7,
+            8,
+            9
+        ):
+
+            Clock.schedule_once(
+                self.start_listening,
+                0.8
+            )
+
+            return
+
+        Clock.schedule_once(
+            self.start_listening,
+            1.0
+        )
+
+
+    # ========================================================
+    # SPEECH RESULTS
+    # ========================================================
+
+    def on_results(self, results):
+
+        try:
+
+            matches = results.getStringArrayList(
+                SpeechRecognizer.RESULTS_RECOGNITION
+            )
+
+            if matches is None:
+                Clock.schedule_once(
+                    self.start_listening,
+                    0.5
+                )
+                return
+
+            if matches.size() == 0:
+                Clock.schedule_once(
+                    self.start_listening,
+                    0.5
+                )
+                return
+
+            command = str(
+                matches.get(0)
+            ).strip()
+
+            if not command:
+                Clock.schedule_once(
+                    self.start_listening,
+                    0.5
+                )
+                return
+
+            print(
+                "Recognized:",
+                command
+            )
+
+            self.process_command(
+                command
+            )
+
+        except Exception as e:
+
+            print(
+                "Results error:",
+                e
+            )
+
+            Clock.schedule_once(
+                self.start_listening,
+                0.8
+            )
+
+
+    # ========================================================
+    # NORMALIZE COMMAND
+    # ========================================================
+
+    def normalize_command(self, command):
+
+        command = command.lower().strip()
+
+        command = command.replace(
+            "wi-fi",
+            "wifi"
+        )
+
+        command = command.replace(
+            "wi fi",
+            "wifi"
+        )
+
+        command = re.sub(
+            r"[^\w\s+.-]",
+            " ",
+            command,
+            flags=re.UNICODE
+        )
+
+        command = re.sub(
+            r"\s+",
+            " ",
+            command
+        ).strip()
+
+        return command
+
 
     # ========================================================
     # OPEN INTENT
     # ========================================================
 
-    def open_intent(self, intent):
+    def open_intent(
+        self,
+        intent,
+        success_message=None,
+        fail_message="Open nahi ho paya."
+    ):
 
-        def open_main():
+        def do_open():
 
             try:
 
-                self.activity.startActivity(
+                intent.addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK
+                )
+
+                activity.startActivity(
                     intent
                 )
 
+                if success_message:
+                    self.speak(
+                        success_message
+                    )
+
             except Exception as e:
 
-                print("Intent error:", e)
+                print(
+                    "Intent open error:",
+                    e
+                )
 
-        self.run_on_android_thread(
-            open_main
+                self.speak(
+                    fail_message
+                )
+
+        run_on_android_thread(
+            do_open
         )
 
+
+# ============================================================
+# END PART 1
+# ============================================================
+
+# ============================================================
+# PART 2/3
+# COMMAND ACTIONS
+# ============================================================
+
+
     # ========================================================
-    # GENERIC URL
-    # ========================================================
-
-    def open_url(self, url):
-
-        try:
-
-            intent = Intent(
-                Intent.ACTION_VIEW,
-                Uri.parse(url)
-            )
-
-            self.open_intent(intent)
-
-            return True
-
-        except Exception as e:
-
-            print("URL error:", e)
-
-            return False
-    # ========================================================
-    # GOOGLE / WEB SEARCH
+    # GOOGLE WEB SEARCH
     # ========================================================
 
-    def google_web_search(self, query):
+    def google_search(self, query):
 
         query = query.strip()
 
         if not query:
-
-            self.set_status(
-                "Kya search karna hai?"
-            )
-
             self.speak(
                 "Kya search karna hai?"
             )
-
             Clock.schedule_once(
-                lambda dt: self.listen(),
-                2
+                self.start_listening,
+                1.5
             )
-
             return
-
-        self.set_status(
-            "Google par " + query +
-            " search kar raha hoon..."
-        )
-
-        self.speak(
-            "Google par search kar raha hoon."
-        )
 
         try:
 
-            encoded_query = Uri.encode(
+            encoded = Uri.encode(
                 query
             )
 
             url = (
                 "https://www.google.com/search?q="
-                + str(encoded_query)
+                + str(encoded)
             )
 
             intent = Intent(
@@ -478,18 +774,25 @@ class VoiceAssistant(App):
                 Uri.parse(url)
             )
 
-            self.open_intent(intent)
+            self.open_intent(
+                intent,
+                "Google search khol raha hoon."
+            )
 
         except Exception as e:
 
-            print("Google search error:", e)
-
-            self.set_status(
-                "Google Search open nahi ho saka."
+            print(
+                "Google search error:",
+                e
             )
 
+            self.speak(
+                "Google search open nahi ho paya."
+            )
+
+
     # ========================================================
-    # YOUTUBE SEARCH - v0.20
+    # YOUTUBE SEARCH
     # ========================================================
 
     def youtube_search(self, query):
@@ -497,41 +800,24 @@ class VoiceAssistant(App):
         query = query.strip()
 
         if not query:
-
-            self.set_status(
-                "YouTube par kya search karna hai?"
-            )
-
             self.speak(
                 "YouTube par kya search karna hai?"
             )
-
             Clock.schedule_once(
-                lambda dt: self.listen(),
-                2
+                self.start_listening,
+                1.5
             )
-
             return
-
-        self.set_status(
-            "YouTube par " +
-            query +
-            " search kar raha hoon..."
-        )
-
-        self.speak(
-            "YouTube par search kar raha hoon."
-        )
 
         try:
 
-            encoded_query = Uri.encode(
+            encoded = Uri.encode(
                 query
             )
 
             url = (
                 "https://www.youtube.com/results?search_query="
-                + str(encoded_query)
+                + str(encoded)
             )
 
             intent = Intent(
@@ -539,18 +825,25 @@ class VoiceAssistant(App):
                 Uri.parse(url)
             )
 
-            self.open_intent(intent)
+            self.open_intent(
+                intent,
+                "YouTube search khol raha hoon."
+            )
 
         except Exception as e:
 
-            print("YouTube search error:", e)
-
-            self.set_status(
-                "YouTube Search open nahi ho saka."
+            print(
+                "YouTube search error:",
+                e
             )
 
+            self.speak(
+                "YouTube search open nahi ho paya."
+            )
+
+
     # ========================================================
-    # MUSIC SEARCH - v0.20
+    # MUSIC SEARCH
     # ========================================================
 
     def music_search(self, query):
@@ -558,43 +851,24 @@ class VoiceAssistant(App):
         query = query.strip()
 
         if not query:
-
-            self.set_status(
-                "Music me kya search karna hai?"
-            )
-
             self.speak(
-                "Music me kya search karna hai?"
+                "Kaunsa music search karna hai?"
             )
-
             Clock.schedule_once(
-                lambda dt: self.listen(),
-                2
+                self.start_listening,
+                1.5
             )
-
             return
-
-        self.set_status(
-            "Music search kar raha hoon..."
-        )
-
-        self.speak(
-            "Music search kar raha hoon."
-        )
 
         try:
 
-            encoded_query = Uri.encode(
+            encoded = Uri.encode(
                 query
             )
 
-            # YouTube Music web search.
-            # Isse YouTube Music app/browser available
-            # hone par appropriate result khul sakta hai.
-
             url = (
                 "https://music.youtube.com/search?q="
-                + str(encoded_query)
+                + str(encoded)
             )
 
             intent = Intent(
@@ -602,106 +876,115 @@ class VoiceAssistant(App):
                 Uri.parse(url)
             )
 
-            self.open_intent(intent)
+            self.open_intent(
+                intent,
+                "Music search khol raha hoon."
+            )
 
         except Exception as e:
 
-            print("Music search error:", e)
-
-            self.set_status(
-                "Music Search open nahi ho saka."
+            print(
+                "Music search error:",
+                e
             )
 
+            self.speak(
+                "Music search open nahi ho paya."
+            )
+
+
     # ========================================================
-    # WHATSAPP FIX
+    # WHATSAPP
     # ========================================================
 
     def open_whatsapp(self):
 
-        self.set_status(
-            "WhatsApp khol raha hoon..."
-        )
+        packages = [
+            "com.whatsapp",
+            "com.whatsapp.w4b"
+        ]
 
-        self.speak(
-            "WhatsApp khol raha hoon."
-        )
-
-        def launch():
+        def do_open():
 
             try:
 
-                pm = self.activity.getPackageManager()
+                pm = activity.getPackageManager()
 
-                intent = pm.getLaunchIntentForPackage(
-                    "com.whatsapp"
-                )
+                for package_name in packages:
 
-                if intent is None:
+                    try:
 
-                    # WhatsApp Business / alternate
-                    intent = pm.getLaunchIntentForPackage(
-                        "com.whatsapp.w4b"
-                    )
+                        package_info = (
+                            pm.getPackageInfo(
+                                package_name,
+                                0
+                            )
+                        )
 
-                if intent is None:
+                        if package_info:
 
-                    self.set_status(
-                        "WhatsApp installed nahi mila."
-                    )
+                            intent = (
+                                pm.getLaunchIntentForPackage(
+                                    package_name
+                                )
+                            )
 
-                    self.speak(
-                        "WhatsApp installed nahi mila."
-                    )
+                            if intent:
 
-                    return
+                                intent.addFlags(
+                                    Intent.FLAG_ACTIVITY_NEW_TASK
+                                )
 
-                intent.addFlags(
-                    Intent.FLAG_ACTIVITY_NEW_TASK
-                )
+                                activity.startActivity(
+                                    intent
+                                )
 
-                self.activity.startActivity(
-                    intent
+                                self.speak(
+                                    "WhatsApp khol raha hoon."
+                                )
+
+                                return
+
+                    except Exception:
+                        continue
+
+                self.speak(
+                    "WhatsApp installed nahi mila."
                 )
 
             except Exception as e:
 
-                print("WhatsApp error:", e)
-
-                self.set_status(
-                    "WhatsApp open nahi ho saka."
+                print(
+                    "WhatsApp error:",
+                    e
                 )
 
-        self.run_on_android_thread(
-            launch
+                self.speak(
+                    "WhatsApp open nahi ho paya."
+                )
+
+        run_on_android_thread(
+            do_open
         )
 
+
     # ========================================================
-    # CALCULATOR FIX
+    # CALCULATOR
     # ========================================================
 
     def open_calculator(self):
 
-        self.set_status(
-            "Calculator khol raha hoon..."
-        )
+        packages = [
+            "com.miui.calculator",
+            "com.google.android.calculator",
+            "com.android.calculator2"
+        ]
 
-        self.speak(
-            "Calculator khol raha hoon."
-        )
-
-        def launch_calculator():
+        def do_open():
 
             try:
 
-                pm = self.activity.getPackageManager()
-
-                # Redmi / Xiaomi phones me commonly
-                # ye package use hota hai.
-                packages = [
-                    "com.miui.calculator",
-                    "com.google.android.calculator",
-                    "com.android.calculator2"
-                ]
+                pm = activity.getPackageManager()
 
                 for package_name in packages:
 
@@ -713,41 +996,46 @@ class VoiceAssistant(App):
                             )
                         )
 
-                        if intent is not None:
+                        if intent:
 
                             intent.addFlags(
                                 Intent.FLAG_ACTIVITY_NEW_TASK
                             )
 
-                            self.activity.startActivity(
+                            activity.startActivity(
                                 intent
+                            )
+
+                            self.speak(
+                                "Calculator khol raha hoon."
                             )
 
                             return
 
-                    except Exception as e:
+                    except Exception:
+                        continue
 
-                        print(
-                            "Calculator package error:",
-                            package_name,
-                            e
-                        )
-
-                # Last fallback:
-                # Android calculator intent
-
+                # Generic calculator fallback
                 try:
 
-                    calc_intent = Intent(
+                    intent = Intent(
                         Intent.ACTION_MAIN
                     )
 
-                    calc_intent.addCategory(
+                    intent.addCategory(
                         Intent.CATEGORY_APP_CALCULATOR
                     )
 
-                    self.activity.startActivity(
-                        calc_intent
+                    intent.addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK
+                    )
+
+                    activity.startActivity(
+                        intent
+                    )
+
+                    self.speak(
+                        "Calculator khol raha hoon."
                     )
 
                     return
@@ -755,12 +1043,8 @@ class VoiceAssistant(App):
                 except Exception:
                     pass
 
-                self.set_status(
-                    "Calculator open nahi ho saka."
-                )
-
                 self.speak(
-                    "Calculator open nahi ho saka."
+                    "Calculator open nahi ho paya."
                 )
 
             except Exception as e:
@@ -770,321 +1054,14 @@ class VoiceAssistant(App):
                     e
                 )
 
-                self.set_status(
-                    "Calculator open nahi ho saka."
+                self.speak(
+                    "Calculator open nahi ho paya."
                 )
 
-        self.run_on_android_thread(
-            launch_calculator
+        run_on_android_thread(
+            do_open
         )
 
-    # ========================================================
-    # TIME
-    # ========================================================
-
-    def tell_time(self):
-
-        try:
-
-            from datetime import datetime
-
-            now = datetime.now()
-
-            time_text = now.strftime(
-                "%I:%M %p"
-            )
-
-            self.set_status(
-                "Abhi time hai " +
-                time_text
-            )
-
-            self.speak(
-                "Abhi time hai " +
-                time_text
-            )
-
-        except Exception as e:
-
-            print("Time error:", e)
-
-            self.set_status(
-                "Time nahi bata saka."
-            )
-
-    # ========================================================
-    # DATE
-    # ========================================================
-
-    def tell_date(self):
-
-        try:
-
-            from datetime import datetime
-
-            now = datetime.now()
-
-            date_text = now.strftime(
-                "%d %B %Y"
-            )
-
-            self.set_status(
-                "Aaj ki date hai " +
-                date_text
-            )
-
-            self.speak(
-                "Aaj ki date hai " +
-                date_text
-            )
-
-        except Exception as e:
-
-            print("Date error:", e)
-
-            self.set_status(
-                "Date nahi bata saka."
-            )
-
-    # ========================================================
-    # INSTALLED APP LAUNCHER
-    # ========================================================
-
-    def open_installed_app(self, app_name):
-
-        app_name = app_name.strip()
-
-        self.set_status(
-            app_name.capitalize() +
-            " khol raha hoon..."
-        )
-
-        self.speak(
-            app_name.capitalize() +
-            " khol raha hoon."
-        )
-
-        def launch():
-
-            try:
-
-                pm = self.activity.getPackageManager()
-
-                packages = pm.getInstalledPackages(0)
-
-                found = False
-
-                for i in range(packages.size()):
-
-                    info = packages.get(i)
-
-                    label = str(
-                        info.applicationInfo.loadLabel(pm)
-                    )
-
-                    if label.lower() == app_name.lower():
-
-                        package_name = str(
-                            info.packageName
-                        )
-
-                        intent = (
-                            pm.getLaunchIntentForPackage(
-                                package_name
-                            )
-                        )
-
-                        if intent is not None:
-
-                            intent.addFlags(
-                                Intent.FLAG_ACTIVITY_NEW_TASK
-                            )
-
-                            self.activity.startActivity(
-                                intent
-                            )
-
-                            found = True
-
-                            return
-
-                if not found:
-
-                    self.set_status(
-                        app_name.capitalize() +
-                        " installed app nahi mila."
-                    )
-
-                    self.speak(
-                        app_name.capitalize() +
-                        " installed app nahi mila."
-                    )
-
-            except Exception as e:
-
-                print(
-                    "Installed app error:",
-                    e
-                )
-
-                self.set_status(
-                    app_name.capitalize() +
-                    " open nahi ho saka."
-                )
-
-        self.run_on_android_thread(
-            launch
-    )
-
-    # ========================================================
-    # SETTINGS / ANDROID ACTIONS
-    # ========================================================
-
-    def open_settings(self, setting_type):
-
-        try:
-
-            if setting_type == "main":
-
-                intent = Intent(
-                    Settings.ACTION_SETTINGS
-                )
-
-                self.set_status(
-                    "Settings khol raha hoon..."
-                )
-
-                self.speak(
-                    "Settings khol raha hoon."
-                )
-
-            elif setting_type == "wifi":
-
-                intent = Intent(
-                    Settings.ACTION_WIFI_SETTINGS
-                )
-
-                self.set_status(
-                    "Wi-Fi Settings khol raha hoon..."
-                )
-
-                self.speak(
-                    "Wi-Fi Settings khol raha hoon."
-                )
-
-            elif setting_type == "bluetooth":
-
-                intent = Intent(
-                    Settings.ACTION_BLUETOOTH_SETTINGS
-                )
-
-                self.set_status(
-                    "Bluetooth Settings khol raha hoon..."
-                )
-
-                self.speak(
-                    "Bluetooth Settings khol raha hoon."
-                )
-
-            elif setting_type == "display":
-
-                intent = Intent(
-                    Settings.ACTION_DISPLAY_SETTINGS
-                )
-
-                self.set_status(
-                    "Display Settings khol raha hoon..."
-                )
-
-                self.speak(
-                    "Display Settings khol raha hoon."
-                )
-
-            elif setting_type == "battery":
-
-                intent = Intent(
-                    Settings.ACTION_BATTERY_SAVER_SETTINGS
-                )
-
-                self.set_status(
-                    "Battery Settings khol raha hoon..."
-                )
-
-                self.speak(
-                    "Battery Settings khol raha hoon."
-                )
-
-            elif setting_type == "location":
-
-                intent = Intent(
-                    Settings.ACTION_LOCATION_SOURCE_SETTINGS
-                )
-
-                self.set_status(
-                    "Location Settings khol raha hoon..."
-                )
-
-                self.speak(
-                    "Location Settings khol raha hoon."
-                )
-
-            elif setting_type == "security":
-
-                intent = Intent(
-                    Settings.ACTION_SECURITY_SETTINGS
-                )
-
-                self.set_status(
-                    "Security Settings khol raha hoon..."
-                )
-
-                self.speak(
-                    "Security Settings khol raha hoon."
-                )
-
-            elif setting_type == "mobile":
-
-                # Mobile Network / Data Settings
-                intent = Intent(
-                    Settings.ACTION_NETWORK_OPERATOR_SETTINGS
-                )
-
-                self.set_status(
-                    "Mobile Network Settings khol raha hoon..."
-                )
-
-                self.speak(
-                    "Mobile Network Settings khol raha hoon."
-                )
-
-            else:
-
-                intent = Intent(
-                    Settings.ACTION_SETTINGS
-                )
-
-                self.set_status(
-                    "Settings khol raha hoon..."
-                )
-
-                self.speak(
-                    "Settings khol raha hoon."
-                )
-
-            self.open_intent(
-                intent
-            )
-
-        except Exception as e:
-
-            print(
-                "Settings error:",
-                e
-            )
-
-            self.set_status(
-                "Settings open nahi ho saka."
-            )
 
     # ========================================================
     # CAMERA
@@ -1098,25 +1075,22 @@ class VoiceAssistant(App):
                 "android.media.action.IMAGE_CAPTURE"
             )
 
-            self.set_status(
-                "Camera khol raha hoon..."
-            )
-
-            self.speak(
-                "Camera khol raha hoon."
-            )
-
             self.open_intent(
-                intent
+                intent,
+                "Camera khol raha hoon."
             )
 
         except Exception as e:
 
-            print("Camera error:", e)
-
-            self.set_status(
-                "Camera open nahi ho saka."
+            print(
+                "Camera error:",
+                e
             )
+
+            self.speak(
+                "Camera open nahi ho paya."
+            )
+
 
     # ========================================================
     # CHROME
@@ -1124,240 +1098,1104 @@ class VoiceAssistant(App):
 
     def open_chrome(self):
 
-        self.set_status(
-            "Chrome khol raha hoon..."
-        )
-
-        self.speak(
-            "Chrome khol raha hoon."
-        )
-
-        def launch():
+        def do_open():
 
             try:
 
-                pm = self.activity.getPackageManager()
+                pm = activity.getPackageManager()
 
-                intent = pm.getLaunchIntentForPackage(
-                    "com.android.chrome"
+                intent = (
+                    pm.getLaunchIntentForPackage(
+                        "com.android.chrome"
+                    )
                 )
 
-                if intent is None:
+                if intent:
 
-                    intent = Intent(
-                        Intent.ACTION_VIEW,
-                        Uri.parse(
-                            "https://www.google.com"
-                        )
+                    intent.addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK
                     )
 
-                self.activity.startActivity(
+                    activity.startActivity(
+                        intent
+                    )
+
+                    self.speak(
+                        "Chrome khol raha hoon."
+                    )
+
+                    return
+
+                # Browser fallback
+                intent = Intent(
+                    Intent.ACTION_VIEW,
+                    Uri.parse(
+                        "https://www.google.com"
+                    )
+                )
+
+                intent.addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK
+                )
+
+                activity.startActivity(
                     intent
+                )
+
+                self.speak(
+                    "Browser khol raha hoon."
                 )
 
             except Exception as e:
 
-                print("Chrome error:", e)
-
-                self.set_status(
-                    "Chrome open nahi ho saka."
+                print(
+                    "Chrome error:",
+                    e
                 )
 
-        self.run_on_android_thread(
-            launch
+                self.speak(
+                    "Chrome open nahi ho paya."
+                )
+
+        run_on_android_thread(
+            do_open
         )
 
+
     # ========================================================
-    # YOUTUBE APP / NORMAL OPEN
+    # YOUTUBE APP
     # ========================================================
 
     def open_youtube(self):
 
-        self.set_status(
-            "YouTube khol raha hoon..."
-        )
-
-        self.speak(
-            "YouTube khol raha hoon."
-        )
-
-        def launch():
+        def do_open():
 
             try:
 
-                pm = self.activity.getPackageManager()
+                pm = activity.getPackageManager()
 
-                intent = pm.getLaunchIntentForPackage(
-                    "com.google.android.youtube"
+                intent = (
+                    pm.getLaunchIntentForPackage(
+                        "com.google.android.youtube"
+                    )
                 )
 
-                if intent is None:
+                if intent:
 
-                    intent = Intent(
-                        Intent.ACTION_VIEW,
-                        Uri.parse(
-                            "https://www.youtube.com"
-                        )
+                    intent.addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK
                     )
 
-                self.activity.startActivity(
+                    activity.startActivity(
+                        intent
+                    )
+
+                    self.speak(
+                        "YouTube khol raha hoon."
+                    )
+
+                    return
+
+                intent = Intent(
+                    Intent.ACTION_VIEW,
+                    Uri.parse(
+                        "https://www.youtube.com"
+                    )
+                )
+
+                intent.addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK
+                )
+
+                activity.startActivity(
                     intent
+                )
+
+                self.speak(
+                    "YouTube khol raha hoon."
                 )
 
             except Exception as e:
 
-                print("YouTube error:", e)
-
-                self.set_status(
-                    "YouTube open nahi ho saka."
+                print(
+                    "YouTube error:",
+                    e
                 )
 
-        self.run_on_android_thread(
-            launch
+                self.speak(
+                    "YouTube open nahi ho paya."
+                )
+
+        run_on_android_thread(
+            do_open
         )
 
-    # ========================================================
-    # WHATSAPP MESSAGE / BASIC OPEN
-    # ========================================================
-
-    def open_whatsapp_basic(self):
-
-        self.open_whatsapp()
 
     # ========================================================
-    # COMMAND PROCESSOR
+    # SETTINGS - MAIN
+    # ========================================================
+
+    def open_settings(self):
+
+        intent = Intent(
+            Settings.ACTION_SETTINGS
+        )
+
+        self.open_intent(
+            intent,
+            "Settings khol raha hoon."
+        )
+
+
+    # ========================================================
+    # WIFI - FIXED
+    # ========================================================
+
+    def open_wifi(self):
+
+        try:
+
+            intent = Intent(
+                Settings.ACTION_WIFI_SETTINGS
+            )
+
+            self.open_intent(
+                intent,
+                "Wi-Fi settings khol raha hoon.",
+                "Wi-Fi settings open nahi ho paya."
+            )
+
+        except Exception as e:
+
+            print(
+                "Wi-Fi error:",
+                e
+            )
+
+            self.speak(
+                "Wi-Fi settings open nahi ho paya."
+            )
+
+
+    # ========================================================
+    # BLUETOOTH
+    # ========================================================
+
+    def open_bluetooth(self):
+
+        try:
+
+            intent = Intent(
+                Settings.ACTION_BLUETOOTH_SETTINGS
+            )
+
+            self.open_intent(
+                intent,
+                "Bluetooth settings khol raha hoon."
+            )
+
+        except Exception as e:
+
+            print(
+                "Bluetooth error:",
+                e
+            )
+
+            self.speak(
+                "Bluetooth settings open nahi ho paya."
+            )
+
+
+    # ========================================================
+    # DISPLAY
+    # ========================================================
+
+    def open_display(self):
+
+        try:
+
+            intent = Intent(
+                Settings.ACTION_DISPLAY_SETTINGS
+            )
+
+            self.open_intent(
+                intent,
+                "Display settings khol raha hoon."
+            )
+
+        except Exception as e:
+
+            print(
+                "Display error:",
+                e
+            )
+
+            self.speak(
+                "Display settings open nahi ho paya."
+            )
+
+
+    # ========================================================
+    # BATTERY
+    # ========================================================
+
+    def open_battery(self):
+
+        try:
+
+            intent = Intent(
+                Settings.ACTION_BATTERY_SAVER_SETTINGS
+            )
+
+            self.open_intent(
+                intent,
+                "Battery settings khol raha hoon."
+            )
+
+        except Exception as e:
+
+            print(
+                "Battery error:",
+                e
+            )
+
+            self.speak(
+                "Battery settings open nahi ho paya."
+            )
+
+
+    # ========================================================
+    # LOCATION
+    # ========================================================
+
+    def open_location(self):
+
+        try:
+
+            intent = Intent(
+                Settings.ACTION_LOCATION_SOURCE_SETTINGS
+            )
+
+            self.open_intent(
+                intent,
+                "Location settings khol raha hoon."
+            )
+
+        except Exception as e:
+
+            print(
+                "Location error:",
+                e
+            )
+
+            self.speak(
+                "Location settings open nahi ho paya."
+            )
+
+
+    # ========================================================
+    # SECURITY
+    # ========================================================
+
+    def open_security(self):
+
+        try:
+
+            intent = Intent(
+                Settings.ACTION_SECURITY_SETTINGS
+            )
+
+            self.open_intent(
+                intent,
+                "Security settings khol raha hoon."
+            )
+
+        except Exception as e:
+
+            print(
+                "Security error:",
+                e
+            )
+
+            self.speak(
+                "Security settings open nahi ho paya."
+            )
+
+
+    # ========================================================
+    # MOBILE NETWORK
+    # ========================================================
+
+    def open_mobile_network(self):
+
+        try:
+
+            intent = Intent(
+                Settings.ACTION_NETWORK_OPERATOR_SETTINGS
+            )
+
+            self.open_intent(
+                intent,
+                "Mobile network settings khol raha hoon."
+            )
+
+        except Exception as e:
+
+            print(
+                "Mobile network error:",
+                e
+            )
+
+            self.speak(
+                "Mobile network settings open nahi ho paya."
+            )
+
+
+    # ========================================================
+    # PHONE / DIALER - v0.21 NEW
+    # ========================================================
+
+    def open_phone(self):
+
+        try:
+
+            intent = Intent(
+                Intent.ACTION_DIAL
+            )
+
+            self.open_intent(
+                intent,
+                "Phone khol raha hoon.",
+                "Phone open nahi ho paya."
+            )
+
+        except Exception as e:
+
+            print(
+                "Phone error:",
+                e
+            )
+
+            self.speak(
+                "Phone open nahi ho paya."
+            )
+
+
+    # ========================================================
+    # CONTACTS - v0.21 NEW
+    # ========================================================
+
+    def open_contacts(self):
+
+        def do_open():
+
+            try:
+
+                intent = Intent(
+                    Intent.ACTION_VIEW
+                )
+
+                intent.setData(
+                    ContactsContract.Contacts.CONTENT_URI
+                )
+
+                intent.addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK
+                )
+
+                activity.startActivity(
+                    intent
+                )
+
+                self.speak(
+                    "Contacts khol raha hoon."
+                )
+
+            except Exception as e:
+
+                print(
+                    "Contacts error:",
+                    e
+                )
+
+                # Fallback: generic contacts app
+                try:
+
+                    pm = activity.getPackageManager()
+
+                    intent = Intent(
+                        Intent.ACTION_MAIN
+                    )
+
+                    intent.addCategory(
+                        Intent.CATEGORY_APP_CONTACTS
+                    )
+
+                    intent.addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK
+                    )
+
+                    activity.startActivity(
+                        intent
+                    )
+
+                    self.speak(
+                        "Contacts khol raha hoon."
+                    )
+
+                except Exception:
+
+                    self.speak(
+                        "Contacts open nahi ho paye."
+                    )
+
+        run_on_android_thread(
+            do_open
+        )
+
+
+    # ========================================================
+    # DIAL NUMBER - v0.21 NEW
+    # ========================================================
+
+    def dial_number(self, number):
+
+        number = number.strip()
+
+        # Keep only phone-number characters
+        cleaned = re.sub(
+            r"[^0-9+*#]",
+            "",
+            number
+        )
+
+        if not cleaned:
+
+            self.speak(
+                "Phone number samajh nahi aaya."
+            )
+
+            Clock.schedule_once(
+                self.start_listening,
+                1.5
+            )
+
+            return
+
+        try:
+
+            intent = Intent(
+                Intent.ACTION_DIAL
+            )
+
+            intent.setData(
+                Uri.parse(
+                    "tel:" + cleaned
+                )
+            )
+
+            self.open_intent(
+                intent,
+                "Dialer mein number khol raha hoon.",
+                "Dialer open nahi ho paya."
+            )
+
+        except Exception as e:
+
+            print(
+                "Dial number error:",
+                e
+            )
+
+            self.speak(
+                "Number dialer mein open nahi ho paya."
+            )
+
+
+    # ========================================================
+    # TIME
+    # ========================================================
+
+    def tell_time(self):
+
+        current_time = datetime.now().strftime(
+            "%I:%M %p"
+        )
+
+        self.speak(
+            "Abhi time hai "
+            + current_time
+        )
+
+        Clock.schedule_once(
+            self.start_listening,
+            2.0
+        )
+
+
+    # ========================================================
+    # DATE
+    # ========================================================
+
+    def tell_date(self):
+
+        current_date = datetime.now().strftime(
+            "%d %B %Y"
+        )
+
+        self.speak(
+            "Aaj ki date hai "
+            + current_date
+        )
+
+        Clock.schedule_once(
+            self.start_listening,
+            2.0
+        )
+
+
+# ============================================================
+# END PART 2
+# ============================================================
+
+# ============================================================
+# PART 3/3
+# INSTALLED APPS + COMMAND PROCESSOR + CLEANUP
+# ============================================================
+
+
+    # ========================================================
+    # INSTALLED APPS
+    # ========================================================
+
+    def open_installed_app(self, app_name):
+
+        app_name = app_name.strip().lower()
+
+        if not app_name:
+            self.speak(
+                "Kaunsa app kholna hai?"
+            )
+            Clock.schedule_once(
+                self.start_listening,
+                1.5
+            )
+            return
+
+        def do_open():
+
+            try:
+
+                pm = activity.getPackageManager()
+
+                packages = pm.getInstalledApplications(
+                    PackageManager.GET_META_DATA
+                )
+
+                exact_match = None
+                partial_match = None
+
+                for i in range(
+                    packages.size()
+                ):
+
+                    try:
+
+                        info = packages.get(i)
+
+                        label = str(
+                            pm.getApplicationLabel(
+                                info
+                            )
+                        ).strip()
+
+                        label_lower = (
+                            label.lower()
+                        )
+
+                        if label_lower == app_name:
+
+                            exact_match = info
+                            break
+
+                        if (
+                            app_name in label_lower
+                            and partial_match is None
+                        ):
+
+                            partial_match = info
+
+                    except Exception:
+                        continue
+
+                selected = (
+                    exact_match
+                    if exact_match is not None
+                    else partial_match
+                )
+
+                if selected is None:
+
+                    self.speak(
+                        app_name
+                        + " app nahi mila."
+                    )
+
+                    return
+
+                package_name = str(
+                    selected.packageName
+                )
+
+                intent = (
+                    pm.getLaunchIntentForPackage(
+                        package_name
+                    )
+                )
+
+                if intent is None:
+
+                    self.speak(
+                        app_name
+                        + " ko launch nahi kar paya."
+                    )
+
+                    return
+
+                intent.addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK
+                )
+
+                activity.startActivity(
+                    intent
+                )
+
+                self.speak(
+                    app_name
+                    + " khol raha hoon."
+                )
+
+            except Exception as e:
+
+                print(
+                    "Installed app error:",
+                    e
+                )
+
+                self.speak(
+                    app_name
+                    + " open nahi ho paya."
+                )
+
+        run_on_android_thread(
+            do_open
+        )
+
+
+    # ========================================================
+    # REMOVE COMMAND PREFIX
+    # ========================================================
+
+    def remove_prefix(
+        self,
+        text,
+        prefixes
+    ):
+
+        for prefix in prefixes:
+
+            if text.startswith(prefix):
+
+                return text[
+                    len(prefix):
+                ].strip()
+
+        return ""
+
+
+    # ========================================================
+    # PROCESS COMMAND
     # ========================================================
 
     def process_command(self, command):
 
-        command = command.lower().strip()
+        original = command
+
+        command = self.normalize_command(
+            command
+        )
 
         print(
-            "Processing command:",
+            "Command:",
             command
         )
 
         # ----------------------------------------------------
-        # GREETING
+        # EMPTY COMMAND
         # ----------------------------------------------------
 
-        if (
-            command == "hello"
-            or command == "hi"
-            or command == "hey"
-            or "hello jarvis" in command
-            or "hi jarvis" in command
-            or "hey jarvis" in command
-        ):
-
-            self.set_status(
-                "Hello! Main Jarvis hoon."
-            )
-
-            self.speak(
-                "Hello! Main Jarvis hoon."
-            )
+        if not command:
 
             Clock.schedule_once(
-                lambda dt: self.listen(),
-                2
+                self.start_listening,
+                0.5
             )
 
             return
 
-        # ----------------------------------------------------
-        # NAME
-        # ----------------------------------------------------
+
+        # ====================================================
+        # GREETINGS
+        # ====================================================
+
+        greetings = [
+            "hello",
+            "hi",
+            "hey",
+            "namaste",
+            "hii",
+            "helo"
+        ]
+
+        if command in greetings:
+
+            self.speak(
+                "Hello! Main tumhara voice assistant hoon."
+            )
+
+            Clock.schedule_once(
+                self.start_listening,
+                2.0
+            )
+
+            return
+
+
+        # ====================================================
+        # WHO ARE YOU
+        # ====================================================
 
         if (
-            "what is your name" in command
-            or "your name" in command
+            "who are you" in command
+            or "tum kaun ho" in command
+            or "aap kaun ho" in command
+            or "ap kaun ho" in command
+            or "tum kon ho" in command
+        ):
+
+            self.speak(
+                "Main tumhara voice assistant hoon."
+            )
+
+            Clock.schedule_once(
+                self.start_listening,
+                2.0
+            )
+
+            return
+
+
+        # ====================================================
+        # NAME
+        # ====================================================
+
+        if (
+            "your name" in command
             or "tumhara naam" in command
             or "aapka naam" in command
+            or "apka naam" in command
         ):
 
-            self.set_status(
-                "Mera naam Jarvis hai."
-            )
-
             self.speak(
-                "Mera naam Jarvis hai."
+                "Mera naam My Voice Assistant hai."
             )
 
             Clock.schedule_once(
-                lambda dt: self.listen(),
-                2
+                self.start_listening,
+                2.0
             )
 
             return
 
-        # ----------------------------------------------------
+
+        # ====================================================
         # TIME
-        # ----------------------------------------------------
+        # ====================================================
 
         if (
-            "what time" in command
-            or "time kya" in command
+            command == "time"
             or "time batao" in command
-            or "time bata" in command
-            or command == "time"
-            or "current time" in command
+            or "time kya hai" in command
+            or "kitna time hua" in command
+            or "samay batao" in command
         ):
 
             self.tell_time()
-
-            Clock.schedule_once(
-                lambda dt: self.listen(),
-                3
-            )
-
             return
 
-        # ----------------------------------------------------
+
+        # ====================================================
         # DATE
-        # ----------------------------------------------------
+        # ====================================================
 
         if (
-            "what is the date" in command
-            or "what date" in command
-            or "date kya" in command
+            command == "date"
             or "date batao" in command
-            or "date bata" in command
-            or command == "date"
-            or "today date" in command
-            or "today's date" in command
+            or "aaj ki date" in command
+            or "aaj kya date hai" in command
+            or "tarikh batao" in command
         ):
 
             self.tell_date()
-
-            Clock.schedule_once(
-                lambda dt: self.listen(),
-                3
-            )
-
             return
 
-        # ----------------------------------------------------
+
+        # ====================================================
+        # WIFI - FIX
+        # ====================================================
+        # IMPORTANT:
+        # This is checked BEFORE generic settings commands.
+        #
+        # Examples:
+        #   open wifi
+        #   wifi kholo
+        #   wifi khol
+        #   wifi open karo
+        #   wifi settings kholo
+        #   wi-fi kholo
+        # ====================================================
+
+        wifi_words = [
+            "wifi",
+            "wi fi",
+            "wi-fi"
+        ]
+
+        has_wifi = False
+
+        for wifi_word in wifi_words:
+
+            if wifi_word in command:
+                has_wifi = True
+                break
+
+        if has_wifi:
+
+            self.open_wifi()
+            return
+
+
+        # ====================================================
+        # BLUETOOTH
+        # ====================================================
+
+        if (
+            "bluetooth" in command
+            and (
+                "open" in command
+                or "khol" in command
+                or "setting" in command
+            )
+        ):
+
+            self.open_bluetooth()
+            return
+
+
+        # ====================================================
+        # DISPLAY
+        # ====================================================
+
+        if (
+            "display" in command
+            or "screen setting" in command
+            or "display setting" in command
+        ):
+
+            self.open_display()
+            return
+
+
+        # ====================================================
+        # BATTERY
+        # ====================================================
+
+        if (
+            "battery" in command
+            and (
+                "setting" in command
+                or "open" in command
+                or "khol" in command
+            )
+        ):
+
+            self.open_battery()
+            return
+
+
+        # ====================================================
+        # LOCATION
+        # ====================================================
+
+        if (
+            "location" in command
+            and (
+                "setting" in command
+                or "open" in command
+                or "khol" in command
+            )
+        ):
+
+            self.open_location()
+            return
+
+
+        # ====================================================
+        # SECURITY
+        # ====================================================
+
+        if (
+            "security" in command
+            and (
+                "setting" in command
+                or "open" in command
+                or "khol" in command
+            )
+        ):
+
+            self.open_security()
+            return
+
+
+        # ====================================================
+        # MOBILE NETWORK
+        # ====================================================
+
+        if (
+            (
+                "mobile network" in command
+                or "mobile data" in command
+                or "data setting" in command
+                or "network setting" in command
+            )
+            and (
+                "open" in command
+                or "khol" in command
+                or "setting" in command
+            )
+        ):
+
+            self.open_mobile_network()
+            return
+
+
+        # ====================================================
+        # MAIN SETTINGS
+        # ====================================================
+
+        if (
+            command == "settings"
+            or command == "setting"
+            or command == "settings kholo"
+            or command == "setting kholo"
+            or command == "settings khol"
+            or command == "setting khol"
+            or "open settings" in command
+            or "settings open karo" in command
+        ):
+
+            self.open_settings()
+            return
+
+
+        # ====================================================
+        # PHONE / DIALER - v0.21
+        # ====================================================
+
+        if (
+            command in (
+                "phone",
+                "phone kholo",
+                "phone khol",
+                "phone open karo",
+                "open phone",
+                "dialer",
+                "dialer kholo",
+                "dialer khol",
+                "dialer open karo",
+                "open dialer"
+            )
+        ):
+
+            self.open_phone()
+            return
+
+
+        # ====================================================
+        # CONTACTS - v0.21
+        # ====================================================
+
+        if (
+            command in (
+                "contacts",
+                "contact",
+                "contacts kholo",
+                "contact kholo",
+                "contacts khol",
+                "contact khol",
+                "contacts open karo",
+                "contact open karo",
+                "open contacts",
+                "open contact"
+            )
+        ):
+
+            self.open_contacts()
+            return
+
+
+        # ====================================================
+        # CALL / DIAL NUMBER - v0.21
+        # ====================================================
+
+        call_prefixes = [
+            "call ",
+            "dial ",
+            "number dial karo ",
+            "number call karo ",
+            "number milao "
+        ]
+
+        for prefix in call_prefixes:
+
+            if command.startswith(prefix):
+
+                number = command[
+                    len(prefix):
+                ].strip()
+
+                # If speech recognition gives
+                # "call 9876543210"
+                # this opens the Android Dialer
+                # with the number filled in.
+                self.dial_number(
+                    number
+                )
+
+                return
+
+
+        # ====================================================
         # GOOGLE SEARCH
-        # ----------------------------------------------------
+        # ====================================================
 
         google_prefixes = [
-            "google pe search karo ",
-            "google par search karo ",
-            "google me search karo ",
-            "google mein search karo ",
-            "google search karo ",
-            "google pe ",
-            "google par ",
-            "google me ",
-            "google mein ",
             "google search ",
-            "search karo ",
-            "search kar ",
-            "web search karo ",
-            "web search ",
-            "internet par ",
-            "internet pe "
+            "google pe search ",
+            "google par search ",
+            "google me search ",
+            "search on google ",
+            "google kholo aur search "
         ]
 
         for prefix in google_prefixes:
@@ -1368,30 +2206,45 @@ class VoiceAssistant(App):
                     len(prefix):
                 ].strip()
 
-                self.google_web_search(
+                self.google_search(
                     query
                 )
 
                 return
 
-        # ----------------------------------------------------
-        # YOUTUBE SEARCH - v0.20
-        # ----------------------------------------------------
 
-        youtube_prefixes = [
-            "youtube pe search karo ",
-            "youtube par search karo ",
-            "youtube me search karo ",
-            "youtube mein search karo ",
-            "youtube search karo ",
-            "youtube pe ",
-            "youtube par ",
-            "youtube me ",
-            "youtube mein ",
-            "youtube search "
+        # ====================================================
+        # SIMPLE GOOGLE SEARCH
+        # ====================================================
+
+        if command.startswith(
+            "search "
+        ):
+
+            query = command[
+                len("search "):
+            ].strip()
+
+            self.google_search(
+                query
+            )
+
+            return
+
+
+        # ====================================================
+        # YOUTUBE SEARCH
+        # ====================================================
+
+        youtube_search_prefixes = [
+            "youtube pe search ",
+            "youtube par search ",
+            "youtube me search ",
+            "youtube search ",
+            "search on youtube "
         ]
 
-        for prefix in youtube_prefixes:
+        for prefix in youtube_search_prefixes:
 
             if command.startswith(prefix):
 
@@ -1405,21 +2258,18 @@ class VoiceAssistant(App):
 
                 return
 
-        # ----------------------------------------------------
-        # MUSIC SEARCH - v0.20
-        # ----------------------------------------------------
+
+        # ====================================================
+        # MUSIC SEARCH
+        # ====================================================
 
         music_prefixes = [
-            "music pe search karo ",
-            "music par search karo ",
-            "music me search karo ",
-            "music mein search karo ",
-            "music search karo ",
             "music search ",
-            "song search karo ",
+            "music me search ",
+            "music par search ",
+            "music pe search ",
             "song search ",
-            "gaana search karo ",
-            "gana search karo "
+            "songs search "
         ]
 
         for prefix in music_prefixes:
@@ -1436,225 +2286,121 @@ class VoiceAssistant(App):
 
                 return
 
-        # ----------------------------------------------------
+
+        # ====================================================
         # WHATSAPP
-        # ----------------------------------------------------
+        # ====================================================
 
         if (
-            "open whatsapp" in command
+            command in (
+                "whatsapp",
+                "whatsapp kholo",
+                "whatsapp khol",
+                "whatsapp open karo",
+                "open whatsapp"
+            )
             or "whatsapp kholo" in command
             or "whatsapp khol" in command
-            or command == "whatsapp"
         ):
 
             self.open_whatsapp()
-
             return
 
-        # ----------------------------------------------------
+
+        # ====================================================
         # CALCULATOR
-        # ----------------------------------------------------
+        # ====================================================
 
         if (
-            "open calculator" in command
+            command in (
+                "calculator",
+                "calculator kholo",
+                "calculator khol",
+                "calculator open karo",
+                "open calculator"
+            )
             or "calculator kholo" in command
             or "calculator khol" in command
-            or command == "calculator"
         ):
 
             self.open_calculator()
-
             return
 
-        # ----------------------------------------------------
+
+        # ====================================================
         # CAMERA
-        # ----------------------------------------------------
+        # ====================================================
 
         if (
-            "open camera" in command
+            command in (
+                "camera",
+                "camera kholo",
+                "camera khol",
+                "camera open karo",
+                "open camera"
+            )
             or "camera kholo" in command
             or "camera khol" in command
-            or command == "camera"
         ):
 
             self.open_camera()
-
             return
 
-        # ----------------------------------------------------
+
+        # ====================================================
         # CHROME
-        # ----------------------------------------------------
+        # ====================================================
 
         if (
-            "open chrome" in command
+            command in (
+                "chrome",
+                "chrome kholo",
+                "chrome khol",
+                "chrome open karo",
+                "open chrome"
+            )
             or "chrome kholo" in command
             or "chrome khol" in command
-            or command == "chrome"
         ):
 
             self.open_chrome()
-
             return
 
-        # ----------------------------------------------------
-        # YOUTUBE OPEN
-        # ----------------------------------------------------
+
+        # ====================================================
+        # YOUTUBE APP
+        # ====================================================
 
         if (
-            "open youtube" in command
+            command in (
+                "youtube",
+                "youtube kholo",
+                "youtube khol",
+                "youtube open karo",
+                "open youtube"
+            )
             or "youtube kholo" in command
             or "youtube khol" in command
-            or command == "youtube"
         ):
 
             self.open_youtube()
-
             return
 
-        # ----------------------------------------------------
-        # MAIN SETTINGS
-        # ----------------------------------------------------
 
-        if (
-            "open settings" in command
-            or "settings kholo" in command
-            or "settings khol" in command
-            or command == "settings"
-        ):
-
-            self.open_settings(
-                "main"
-            )
-
-            return
-
-        # ----------------------------------------------------
-        # WIFI
-        # ----------------------------------------------------
-
-        if (
-            "open wifi" in command
-            or "wifi kholo" in command
-            or "wifi khol" in command
-            or "wifi settings" in command
-        ):
-
-            self.open_settings(
-                "wifi"
-            )
-
-            return
-
-        # ----------------------------------------------------
-        # BLUETOOTH
-        # ----------------------------------------------------
-
-        if (
-            "open bluetooth" in command
-            or "bluetooth kholo" in command
-            or "bluetooth khol" in command
-            or "bluetooth settings" in command
-        ):
-
-            self.open_settings(
-                "bluetooth"
-            )
-
-            return
-
-        # ----------------------------------------------------
-        # DISPLAY
-        # ----------------------------------------------------
-
-        if (
-            "open display" in command
-            or "display kholo" in command
-            or "display khol" in command
-            or "display settings" in command
-        ):
-
-            self.open_settings(
-                "display"
-            )
-
-            return
-
-        # ----------------------------------------------------
-        # BATTERY
-        # ----------------------------------------------------
-
-        if (
-            "open battery" in command
-            or "battery kholo" in command
-            or "battery khol" in command
-            or "battery settings" in command
-        ):
-
-            self.open_settings(
-                "battery"
-            )
-
-            return
-
-        # ----------------------------------------------------
-        # LOCATION
-        # ----------------------------------------------------
-
-        if (
-            "open location" in command
-            or "location kholo" in command
-            or "location khol" in command
-            or "location settings" in command
-        ):
-
-            self.open_settings(
-                "location"
-            )
-
-            return
-
-        # ----------------------------------------------------
-        # SECURITY
-        # ----------------------------------------------------
-
-        if (
-            "open security" in command
-            or "security kholo" in command
-            or "security khol" in command
-            or "security settings" in command
-        ):
-
-            self.open_settings(
-                "security"
-            )
-
-            return
-
-        # ----------------------------------------------------
-        # MOBILE NETWORK
-        # ----------------------------------------------------
-
-        if (
-            "mobile network" in command
-            or "mobile networks" in command
-            or "mobile data" in command
-            or "data settings" in command
-        ):
-
-            self.open_settings(
-                "mobile"
-            )
-
-            return
-
-        # ----------------------------------------------------
-        # INSTALLED APP
-        # ----------------------------------------------------
+        # ====================================================
+        # INSTALLED APP COMMAND
+        # ====================================================
 
         app_prefixes = [
             "open app ",
+            "open the app ",
+            "app open ",
             "app kholo ",
-            "app khol "
+            "app khol ",
+            "application kholo ",
+            "application khol ",
+            "khol do ",
+            "kholna "
         ]
 
         for prefix in app_prefixes:
@@ -1671,43 +2417,81 @@ class VoiceAssistant(App):
                         app_name
                     )
 
-                return
+                    return
 
-        # ----------------------------------------------------
-        # DIRECT COMMON APP COMMAND
-        # ----------------------------------------------------
 
-        common_apps = [
-            "instagram",
-            "facebook",
-            "telegram",
-            "spotify",
-            "gmail",
-            "maps",
-            "google maps"
-        ]
+        # ====================================================
+        # GENERIC "OPEN X" APP COMMAND
+        # ====================================================
 
-        for app_name in common_apps:
+        if command.startswith(
+            "open "
+        ):
 
-            if (
-                command == app_name
-                or "open " + app_name in command
-                or app_name + " kholo" in command
-                or app_name + " khol" in command
-            ):
+            target = command[
+                len("open "):
+            ].strip()
 
+            if target:
+
+                # Known settings/app commands have
+                # already been handled above.
                 self.open_installed_app(
-                    app_name
+                    target
                 )
 
                 return
 
-        # ----------------------------------------------------
-        # UNKNOWN COMMAND
-        # ----------------------------------------------------
 
-        self.set_status(
-            "Command samajh nahi aaya."
+        # ====================================================
+        # GENERIC "X KHOLO" APP COMMAND
+        # ====================================================
+
+        if command.endswith(
+            " kholo"
+        ):
+
+            target = command[
+                :-len(" kholo")
+            ].strip()
+
+            if target:
+
+                self.open_installed_app(
+                    target
+                )
+
+                return
+
+
+        # ====================================================
+        # GENERIC "X KHOL" APP COMMAND
+        # ====================================================
+
+        if command.endswith(
+            " khol"
+        ):
+
+            target = command[
+                :-len(" khol")
+            ].strip()
+
+            if target:
+
+                self.open_installed_app(
+                    target
+                )
+
+                return
+
+
+        # ====================================================
+        # UNKNOWN COMMAND
+        # ====================================================
+
+        print(
+            "Unknown command:",
+            original
         )
 
         self.speak(
@@ -1715,58 +2499,84 @@ class VoiceAssistant(App):
         )
 
         Clock.schedule_once(
-            lambda dt: self.listen(),
-            2
+            self.start_listening,
+            2.0
         )
 
+
     # ========================================================
-    # APP STOP
+    # APP STOP / CLEANUP
     # ========================================================
 
     def on_stop(self):
+
+        self.is_stopping = True
+
+        try:
+
+            if self.retry_event is not None:
+
+                self.retry_event.cancel()
+
+        except Exception:
+            pass
 
         def cleanup():
 
             try:
 
-                if self.speech_recognizer is not None:
+                if self.speech is not None:
 
-                    self.speech_recognizer.stopListening()
+                    try:
+                        self.speech.stopListening()
+                    except Exception:
+                        pass
 
-            except Exception:
-                pass
+                    try:
+                        self.speech.cancel()
+                    except Exception:
+                        pass
 
-            try:
+                    try:
+                        self.speech.destroy()
+                    except Exception:
+                        pass
 
-                if self.speech_recognizer is not None:
+                    self.speech = None
 
-                    self.speech_recognizer.cancel()
+            except Exception as e:
 
-            except Exception:
-                pass
-
-            try:
-
-                if self.speech_recognizer is not None:
-
-                    self.speech_recognizer.destroy()
-
-            except Exception:
-                pass
+                print(
+                    "Speech cleanup error:",
+                    e
+                )
 
             try:
 
                 if self.tts is not None:
 
-                    self.tts.stop()
-                    self.tts.shutdown()
+                    try:
+                        self.tts.stop()
+                    except Exception:
+                        pass
 
-            except Exception:
-                pass
+                    try:
+                        self.tts.shutdown()
+                    except Exception:
+                        pass
+
+                    self.tts = None
+
+            except Exception as e:
+
+                print(
+                    "TTS cleanup error:",
+                    e
+                )
 
         try:
 
-            self.run_on_android_thread(
+            run_on_android_thread(
                 cleanup
             )
 
@@ -1780,4 +2590,9 @@ class VoiceAssistant(App):
 
 if __name__ == "__main__":
 
-    VoiceAssistant().run()
+    VoiceAssistantApp().run()
+
+
+# ============================================================
+# v0.21 END
+# ============================================================
