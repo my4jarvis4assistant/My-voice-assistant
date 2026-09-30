@@ -1409,7 +1409,7 @@ class VoiceAssistant(App):
         )
 
     # ========================================================
-    # CONTACTS - v0.21
+    # CONTACTS - v0.21 FIXED
     # ========================================================
 
     def open_contacts(self):
@@ -1426,36 +1426,56 @@ class VoiceAssistant(App):
 
             try:
 
-                ContactsContract = autoclass(
-                    "android.provider.ContactsContract"
+                pm = (
+                    self.activity
+                    .getPackageManager()
                 )
 
-                contacts_uri = (
-                    ContactsContract.Contacts.CONTENT_URI
-                )
+                # ------------------------------------------------
+                # METHOD 1:
+                # Xiaomi/MIUI Contacts app
+                # ------------------------------------------------
 
-                intent = Intent(
-                    Intent.ACTION_VIEW,
-                    contacts_uri
-                )
+                contacts_packages = [
+                    "com.android.contacts",
+                    "com.google.android.contacts"
+                ]
 
-                intent.addFlags(
-                    Intent.FLAG_ACTIVITY_NEW_TASK
-                )
+                for package_name in contacts_packages:
 
-                self.activity.startActivity(
-                    intent
-                )
+                    try:
 
-            except Exception as e:
+                        intent = (
+                            pm.getLaunchIntentForPackage(
+                                package_name
+                            )
+                        )
 
-                print(
-                    "Contacts error:",
-                    e
-                )
+                        if intent is not None:
 
-                # Fallback:
-                # Android contacts application
+                            intent.addFlags(
+                                Intent.FLAG_ACTIVITY_NEW_TASK
+                            )
+
+                            self.activity.startActivity(
+                                intent
+                            )
+
+                            return
+
+                    except Exception as e:
+
+                        print(
+                            "Contacts package error:",
+                            package_name,
+                            e
+                        )
+
+                # ------------------------------------------------
+                # METHOD 2:
+                # Android Contacts category
+                # ------------------------------------------------
+
                 try:
 
                     intent = Intent(
@@ -1474,16 +1494,85 @@ class VoiceAssistant(App):
                         intent
                     )
 
-                except Exception as e2:
+                    return
+
+                except Exception as e:
 
                     print(
-                        "Contacts fallback error:",
-                        e2
+                        "Contacts category error:",
+                        e
                     )
 
-                    self.set_status(
-                        "Contacts open nahi ho saka."
+                # ------------------------------------------------
+                # METHOD 3:
+                # ContactsContract URI
+                # ------------------------------------------------
+
+                try:
+
+                    ContactsContract = autoclass(
+                        "android.provider.ContactsContract"
                     )
+
+                    contacts_uri = (
+                        ContactsContract
+                        .Contacts
+                        .CONTENT_URI
+                    )
+
+                    intent = Intent(
+                        Intent.ACTION_VIEW,
+                        contacts_uri
+                    )
+
+                    intent.addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK
+                    )
+
+                    self.activity.startActivity(
+                        intent
+                    )
+
+                    return
+
+                except Exception as e:
+
+                    print(
+                        "Contacts URI error:",
+                        e
+                    )
+
+                # ------------------------------------------------
+                # NOTHING WORKED
+                # ------------------------------------------------
+
+                self.set_status(
+                    "Contacts app nahi mili."
+                )
+
+                self.speak(
+                    "Contacts app nahi mili."
+                )
+
+            except Exception as e:
+
+                print(
+                    "Contacts launch error:",
+                    e
+                )
+
+                self.set_status(
+                    "Contacts open nahi ho saka."
+                )
+
+                self.speak(
+                    "Contacts open nahi ho saka."
+                )
+
+        self.run_on_android_thread(
+            launch_contacts
+        )
+
 
     # ========================================================
     # SETTINGS / ANDROID ACTIONS
