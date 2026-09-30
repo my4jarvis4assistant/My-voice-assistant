@@ -1622,92 +1622,102 @@ class VoiceAssistant(App):
     # ========================================================
 
     def send_sms(self, number, message):
-        try:
-            number = number.strip()
-            message = message.strip()
+    try:
+        number = number.strip()
+        message = message.strip()
 
-            if not number:
-                self.set_status("Phone number nahi mila.")
-                self.speak("Phone number nahi mila.")
-                Clock.schedule_once(lambda dt: self.listen(), 2)
-                return
-
-            if not message:
-                self.set_status("Message nahi mila.")
-                self.speak("Message nahi mila.")
-                Clock.schedule_once(lambda dt: self.listen(), 2)
-                return
-
-            clean_number = ""
-            for char in number:
-                if char.isdigit() or char == "+":
-                    clean_number += char
-
-            if not clean_number or len(clean_number.replace("+", "")) < 5:
-                self.set_status("Valid phone number boliye.")
-                self.speak("Valid phone number boliye.")
-                Clock.schedule_once(lambda dt: self.listen(), 2)
-                return
-
-            self.set_status("SMS compose kar raha hoon...")
-            self.speak("SMS compose kar raha hoon.")
-
-            def launch_sms():
-                try:
-                    sms_uri = Uri.parse("smsto:" + clean_number)
-                    intent = Intent(Intent.ACTION_SENDTO)
-                    intent.setData(sms_uri)
-                    intent.putExtra("sms_body", message)
-                    intent.putExtra(Intent.EXTRA_TEXT, message)
-
-                    message_packages = [
-                        "com.google.android.apps.messaging",
-                        "com.android.mms",
-                        "com.android.messaging",
-                        "com.google.android.messaging"
-                    ]
-
-                    launched = False
-                    for package_name in message_packages:
-                        try:
-                            intent.setPackage(package_name)
-                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            self.activity.startActivity(intent)
-                            launched = True
-                            break
-                        except Exception:
-                            continue
-
-                    if not launched:
-                        try:
-                            intent.setPackage(None)
-                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            self.activity.startActivity(intent)
-                            launched = True
-                        except Exception:
-                            pass
-
-                    if launched:
-                        self.set_status("SMS ready hai. Send button dabaiye.")
-                    else:
-                        self.set_status("SMS app open nahi ho payi.")
-                        self.speak("SMS app open nahi ho payi.")
-                        Clock.schedule_once(lambda dt: self.listen(), 2)
-
-                except Exception as e:
-                    print("SMS LAUNCH ERROR:", e)
-                    self.set_status("SMS open karne mein problem hui.")
-                    self.speak("SMS open karne mein problem hui.")
-                    Clock.schedule_once(lambda dt: self.listen(), 2)
-
-            # Yeh line ensure karegi ki code main thread par chale
-            self.run_on_android_thread(launch_sms)
-
-        except Exception as e:
-            print("SMS ERROR:", e)
-            self.set_status("SMS open karne mein problem hui.")
-            self.speak("SMS open karne mein problem hui.")
+        if not number:
+            self.set_status("Phone number nahi mila.")
+            self.speak("Phone number nahi mila.")
             Clock.schedule_once(lambda dt: self.listen(), 2)
+            return
+
+        if not message:
+            self.set_status("Message nahi mila.")
+            self.speak("Message nahi mila.")
+            Clock.schedule_once(lambda dt: self.listen(), 2)
+            return
+
+        # Number ko clean karo
+        clean_number = ""
+
+        for char in number:
+            if char.isdigit() or char == "+":
+                clean_number += char
+
+        if not clean_number or len(clean_number.replace("+", "")) < 5:
+            self.set_status("Valid phone number boliye.")
+            self.speak("Valid phone number boliye.")
+            Clock.schedule_once(lambda dt: self.listen(), 2)
+            return
+
+        self.set_status("SMS compose kar raha hoon...")
+        self.speak("SMS compose kar raha hoon.")
+
+        # SMS URI
+        sms_uri = Uri.parse("smsto:" + clean_number)
+
+        # SMS compose intent
+        intent = Intent(Intent.ACTION_SENDTO)
+        intent.setData(sms_uri)
+
+        # Message ko multiple compatible extras ke through bhejo
+        intent.putExtra("sms_body", message)
+        intent.putExtra(Intent.EXTRA_TEXT, message)
+
+        # Kuch Android Messages versions ke liye package try karo
+        message_packages = [
+            "com.google.android.apps.messaging",
+            "com.android.mms",
+            "com.android.messaging",
+            "com.google.android.messaging"
+        ]
+
+        launched = False
+
+        for package_name in message_packages:
+            try:
+                intent.setPackage(package_name)
+                self.activity.startActivity(intent)
+                launched = True
+                break
+            except Exception:
+                continue
+
+        # Agar specific package se nahi khula,
+        # to normal SMS handler open karo
+        if not launched:
+            try:
+                intent.setPackage(None)
+                self.activity.startActivity(intent)
+                launched = True
+            except Exception:
+                pass
+
+        if launched:
+            self.set_status(
+                "SMS ready hai. Send button dabaiye."
+            )
+        else:
+            self.set_status(
+                "SMS app open nahi ho payi."
+            )
+            self.speak(
+                "SMS app open nahi ho payi."
+            )
+            Clock.schedule_once(lambda dt: self.listen(), 2)
+
+    except Exception as e:
+        print("SMS ERROR:", e)
+
+        self.set_status(
+            "SMS open karne mein problem hui."
+        )
+        self.speak(
+            "SMS open karne mein problem hui."
+        )
+
+        Clock.schedule_once(lambda dt: self.listen(), 2)
                             
 
     # ========================================================
