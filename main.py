@@ -1621,103 +1621,113 @@ class VoiceAssistant(App):
     # SMS COMPOSER - v0.22
     # ========================================================
 
-    def send_sms(self, number, message):
-    try:
+    def send_sms(
+        self,
+        number,
+        message
+    ):
+
         number = number.strip()
         message = message.strip()
 
         if not number:
-            self.set_status("Phone number nahi mila.")
-            self.speak("Phone number nahi mila.")
-            Clock.schedule_once(lambda dt: self.listen(), 2)
+
+            self.set_status(
+                "SMS number nahi mila."
+            )
+
+            self.speak(
+                "SMS number nahi mila."
+            )
+
             return
 
         if not message:
-            self.set_status("Message nahi mila.")
-            self.speak("Message nahi mila.")
-            Clock.schedule_once(lambda dt: self.listen(), 2)
+
+            self.set_status(
+                "SMS message nahi mila."
+            )
+
+            self.speak(
+                "SMS message nahi mila."
+            )
+
             return
 
-        # Number ko clean karo
         clean_number = ""
 
         for char in number:
-            if char.isdigit() or char == "+":
+
+            if (
+                char.isdigit()
+                or char == "+"
+            ):
+
                 clean_number += char
 
-        if not clean_number or len(clean_number.replace("+", "")) < 5:
-            self.set_status("Valid phone number boliye.")
-            self.speak("Valid phone number boliye.")
-            Clock.schedule_once(lambda dt: self.listen(), 2)
+        if not clean_number:
+
+            self.set_status(
+                "Valid mobile number nahi mila."
+            )
+
+            self.speak(
+                "Valid mobile number nahi mila."
+            )
+
             return
 
-        self.set_status("SMS compose kar raha hoon...")
-        self.speak("SMS compose kar raha hoon.")
-
-        # SMS URI
-        sms_uri = Uri.parse("smsto:" + clean_number)
-
-        # SMS compose intent
-        intent = Intent(Intent.ACTION_SENDTO)
-        intent.setData(sms_uri)
-
-        # Message ko multiple compatible extras ke through bhejo
-        intent.putExtra("sms_body", message)
-        intent.putExtra(Intent.EXTRA_TEXT, message)
-
-        # Kuch Android Messages versions ke liye package try karo
-        message_packages = [
-            "com.google.android.apps.messaging",
-            "com.android.mms",
-            "com.android.messaging",
-            "com.google.android.messaging"
-        ]
-
-        launched = False
-
-        for package_name in message_packages:
-            try:
-                intent.setPackage(package_name)
-                self.activity.startActivity(intent)
-                launched = True
-                break
-            except Exception:
-                continue
-
-        # Agar specific package se nahi khula,
-        # to normal SMS handler open karo
-        if not launched:
-            try:
-                intent.setPackage(None)
-                self.activity.startActivity(intent)
-                launched = True
-            except Exception:
-                pass
-
-        if launched:
-            self.set_status(
-                "SMS ready hai. Send button dabaiye."
-            )
-        else:
-            self.set_status(
-                "SMS app open nahi ho payi."
-            )
-            self.speak(
-                "SMS app open nahi ho payi."
-            )
-            Clock.schedule_once(lambda dt: self.listen(), 2)
-
-    except Exception as e:
-        print("SMS ERROR:", e)
-
         self.set_status(
-            "SMS open karne mein problem hui."
-        )
-        self.speak(
-            "SMS open karne mein problem hui."
+            "SMS compose kar raha hoon..."
         )
 
-        Clock.schedule_once(lambda dt: self.listen(), 2)
+        self.speak(
+            "SMS message ready kar raha hoon."
+        )
+
+        def launch_sms():
+
+            try:
+
+                intent = Intent(
+                    Intent.ACTION_SENDTO,
+                    Uri.parse(
+                        "smsto:" +
+                        clean_number
+                    )
+                )
+
+                intent.putExtra(
+                    "sms_body",
+                    message
+                )
+
+                intent.addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK
+                )
+
+                self.activity.startActivity(
+                    intent
+                )
+
+            except Exception as e:
+
+                print(
+                    "SMS compose error:",
+                    e
+                )
+
+                self.set_status(
+                    "SMS compose open nahi ho saka."
+                )
+
+                self.speak(
+                    "SMS compose open nahi ho saka."
+                )
+
+        self.run_on_android_thread(
+            launch_sms
+        )
                             
 
     # ========================================================
