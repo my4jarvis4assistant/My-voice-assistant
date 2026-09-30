@@ -1701,7 +1701,7 @@ class VoiceAssistant(App):
                     Clock.schedule_once(lambda dt: self.listen(), 2)
 
             # Yeh line ensure karegi ki code main thread par chale
-        self.run_on_android_thread(launch_sms)
+            self.run_on_android_thread(launch_sms)
 
         except Exception as e:
             print("SMS ERROR:", e)
