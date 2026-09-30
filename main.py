@@ -1413,33 +1413,77 @@ class VoiceAssistant(App):
     # ========================================================
 
     def open_contacts(self):
-    try:
-        ContactsContract = autoclass("android.provider.ContactsContract")
 
-        intent = Intent()
-        intent.setAction(Intent.ACTION_VIEW)
-        intent.setData(ContactsContract.Contacts.CONTENT_URI)
+        self.set_status(
+            "Contacts khol raha hoon..."
+        )
 
-        self.activity.startActivity(intent)
+        self.speak(
+            "Contacts khol raha hoon."
+        )
 
-    except Exception as e:
-        print("Contacts error:", e)
+        def launch_contacts():
 
-        try:
-            # Fallback: Android Contacts app ko directly launch karo
-            pm = self.activity.getPackageManager()
-            intent = pm.getLaunchIntentForPackage("com.android.contacts")
+            try:
 
-            if intent is not None:
-                self.activity.startActivity(intent)
-            else:
-                self.set_status("Contacts app nahi mili.")
-                self.speak("Contacts app nahi mili.")
+                ContactsContract = autoclass(
+                    "android.provider.ContactsContract"
+                )
 
-        except Exception as e2:
-            print("Contacts fallback error:", e2)
-            self.set_status("Contacts open nahi ho pa raha.")
-            self.speak("Contacts open nahi ho pa raha.")
+                contacts_uri = (
+                    ContactsContract.Contacts.CONTENT_URI
+                )
+
+                intent = Intent(
+                    Intent.ACTION_VIEW,
+                    contacts_uri
+                )
+
+                intent.addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK
+                )
+
+                self.activity.startActivity(
+                    intent
+                )
+
+            except Exception as e:
+
+                print(
+                    "Contacts error:",
+                    e
+                )
+
+                # Fallback:
+                # Android contacts application
+                try:
+
+                    intent = Intent(
+                        Intent.ACTION_MAIN
+                    )
+
+                    intent.addCategory(
+                        "android.intent.category.APP_CONTACTS"
+                    )
+
+                    intent.addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK
+                    )
+
+                    self.activity.startActivity(
+                        intent
+                    )
+
+                except Exception as e2:
+
+                    print(
+                        "Contacts fallback error:",
+                        e2
+                    )
+
+                    self.set_status(
+                        "Contacts open nahi ho saka."
+                    )
 
     # ========================================================
     # SETTINGS / ANDROID ACTIONS
