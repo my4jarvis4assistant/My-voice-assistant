@@ -1622,105 +1622,117 @@ class VoiceAssistant(App):
     # ========================================================
 
     def send_sms(
-    self,
-    number,
-    message
-):
-    try:
-        number = number.strip()
-        message = message.strip()
+        self,
+        number,
+        message
+    ):
 
-        if not number:
-            self.set_status(
-                "SMS number nahi mila."
-            )
-            self.speak(
-                "SMS number nahi mila."
-            )
-            return
+        try:
 
-        if not message:
-            self.set_status(
-                "SMS message nahi mila."
-            )
-            self.speak(
-                "SMS message nahi mila."
-            )
-            return
+            number = number.strip()
+            message = message.strip()
 
-        clean_number = ""
-
-        for char in number:
-            if char.isdigit() or char == "+":
-                clean_number += char
-
-        if not clean_number:
-            self.set_status(
-                "Valid mobile number nahi mila."
-            )
-            self.speak(
-                "Valid mobile number nahi mila."
-            )
-            return
-
-        self.set_status(
-            "SMS compose kar raha hoon..."
-        )
-
-        self.speak(
-            "SMS message ready kar raha hoon."
-        )
-
-        def launch_sms():
-
-            try:
-
-                intent = Intent(
-                    Intent.ACTION_SENDTO,
-                    Uri.parse(
-                        "smsto:" +
-                        clean_number
-                    )
-                )
-
-                # Message text
-                intent.putExtra(
-                    "sms_body",
-                    message
-                )
-
-                # Extra compatibility
-                intent.putExtra(
-                    Intent.EXTRA_TEXT,
-                    message
-                )
-
-                intent.addFlags(
-                    Intent.FLAG_ACTIVITY_NEW_TASK
-                )
-
-                self.activity.startActivity(
-                    intent
-                )
-
-            except Exception as e:
-
-                print(
-                    "SMS compose error:",
-                    e
-                )
+            if not number:
 
                 self.set_status(
-                    "SMS compose open nahi ho saka."
+                    "SMS number nahi mila."
                 )
 
                 self.speak(
-                    "SMS compose open nahi ho saka."
+                    "SMS number nahi mila."
                 )
 
-        self.run_on_android_thread(
-            launch_sms
-        )
+                return
+
+            if not message:
+
+                self.set_status(
+                    "SMS message nahi mila."
+                )
+
+                self.speak(
+                    "SMS message nahi mila."
+                )
+
+                return
+
+            clean_number = ""
+
+            for char in number:
+
+                if char.isdigit() or char == "+":
+
+                    clean_number += char
+
+            if not clean_number:
+
+                self.set_status(
+                    "Valid mobile number nahi mila."
+                )
+
+                self.speak(
+                    "Valid mobile number nahi mila."
+                )
+
+                return
+
+            self.set_status(
+                "SMS compose kar raha hoon..."
+            )
+
+            self.speak(
+                "SMS message ready kar raha hoon."
+            )
+
+            def launch_sms():
+
+                try:
+
+                    intent = Intent(
+                        Intent.ACTION_SENDTO,
+                        Uri.parse(
+                            "smsto:" +
+                            clean_number
+                        )
+                    )
+
+                    intent.putExtra(
+                        "sms_body",
+                        message
+                    )
+
+                    intent.putExtra(
+                        Intent.EXTRA_TEXT,
+                        message
+                    )
+
+                    intent.addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK
+                    )
+
+                    self.activity.startActivity(
+                        intent
+                    )
+
+                except Exception as e:
+
+                    print(
+                        "SMS compose error:",
+                        e
+                    )
+
+                    self.set_status(
+                        "SMS compose open nahi ho saka."
+                    )
+
+                    self.speak(
+                        "SMS compose open nahi ho saka."
+                    )
+
+            self.run_on_android_thread(
+                launch_sms
+                    )
+
                             
 
     # ========================================================
