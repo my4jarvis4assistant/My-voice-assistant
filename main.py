@@ -1622,59 +1622,45 @@ class VoiceAssistant(App):
     # ========================================================
 
     def send_sms(
-        self,
-        number,
-        message
-    ):
-
+    self,
+    number,
+    message
+):
+    try:
         number = number.strip()
         message = message.strip()
 
         if not number:
-
             self.set_status(
                 "SMS number nahi mila."
             )
-
             self.speak(
                 "SMS number nahi mila."
             )
-
             return
 
         if not message:
-
             self.set_status(
                 "SMS message nahi mila."
             )
-
             self.speak(
                 "SMS message nahi mila."
             )
-
             return
 
         clean_number = ""
 
         for char in number:
-
-            if (
-                char.isdigit()
-                or char == "+"
-            ):
-
+            if char.isdigit() or char == "+":
                 clean_number += char
 
         if not clean_number:
-
             self.set_status(
                 "Valid mobile number nahi mila."
             )
-
             self.speak(
                 "Valid mobile number nahi mila."
             )
-
             return
 
         self.set_status(
@@ -1697,8 +1683,15 @@ class VoiceAssistant(App):
                     )
                 )
 
+                # Message text
                 intent.putExtra(
                     "sms_body",
+                    message
+                )
+
+                # Extra compatibility
+                intent.putExtra(
+                    Intent.EXTRA_TEXT,
                     message
                 )
 
