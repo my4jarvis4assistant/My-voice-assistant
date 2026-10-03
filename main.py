@@ -2,7 +2,6 @@ from kivy.app import App
 from kivy.uix.label import Label
 from kivy.clock import Clock
 from jnius import autoclass, PythonJavaClass, java_method
-
 PythonActivity = autoclass("org.kivy.android.PythonActivity")
 Intent = autoclass("android.content.Intent")
 Uri = autoclass("android.net.Uri")
@@ -13,30 +12,22 @@ Locale = autoclass("java.util.Locale")
 TextToSpeech = autoclass("android.speech.tts.TextToSpeech")
 Settings = autoclass("android.provider.Settings")
 PackageManager = autoclass("android.content.pm.PackageManager")
-
-
 class MainThreadRunnable(PythonJavaClass):
     __javainterfaces__ = ["java/lang/Runnable"]
-
     def __init__(self, callback):
         super().__init__()
         self.callback = callback
-
     @java_method("()V")
     def run(self):
         try:
             self.callback()
         except Exception as e:
             print("Main thread error:", e)
-
-
 class RecognitionListener(PythonJavaClass):
     __javainterfaces__ = ["android/speech/RecognitionListener"]
-
     def __init__(self, app):
         super().__init__()
         self.app = app
-
     @java_method("(Landroid/os/Bundle;)V")
     def onReadyForSpeech(self, params):
         self.app.set_status("Listening...")
@@ -507,7 +498,7 @@ class VoiceAssistant(App):
     # ========================================================
     # OPEN INTENT
     # ========================================================
-
+    
     def open_intent(self, intent):
 
         def open_main():
@@ -1006,8 +997,7 @@ class VoiceAssistant(App):
 
         return aliases.get(
             text,
-            text
-        )
+                    )
 
     def open_installed_app(
         self,
@@ -1497,7 +1487,8 @@ class VoiceAssistant(App):
 
                 self.speak(
                     "Contacts open nahi ho saka."
-                        )
+                )
+
         self.run_on_android_thread(
             launch_contacts
         )
@@ -1505,7 +1496,7 @@ class VoiceAssistant(App):
     # ========================================================
     # SMS / MESSAGES - v0.22
     # ========================================================
-
+        
     def open_messages(self):
 
         self.set_status(
@@ -1630,48 +1621,110 @@ class VoiceAssistant(App):
         message = message.strip()
 
         if not number:
-            self.set_status("SMS number nahi mila.")
-            self.speak("SMS number nahi mila.")
+
+            self.set_status(
+                "SMS number nahi mila."
+            )
+
+            self.speak(
+                "SMS number nahi mila."
+            )
+
             return
 
         if not message:
-            self.set_status("SMS message nahi mila.")
-            self.speak("SMS message nahi mila.")
+
+            self.set_status(
+                "SMS message nahi mila."
+            )
+
+            self.speak(
+                "SMS message nahi mila."
+            )
+
             return
 
         clean_number = ""
+
         for char in number:
-            if char.isdigit() or char == "+":
+
+            if (
+                char.isdigit()
+                or char == "+"
+            ):
+
                 clean_number += char
 
         if not clean_number:
-            self.set_status("Valid mobile number nahi mila.")
-            self.speak("Valid mobile number nahi mila.")
+
+            self.set_status(
+                "Valid mobile number nahi mila."
+            )
+
+            self.speak(
+                "Valid mobile number nahi mila."
+            )
+
             return
 
-        self.set_status("SMS compose kar raha hoon...")
-        self.speak("SMS message ready kar raha hoon.")
+        self.set_status(
+            "SMS compose kar raha hoon..."
+        )
+
+        self.speak(
+            "SMS message ready kar raha hoon."
+        )
 
         def launch_sms():
+
             try:
+
                 intent = Intent(
                     Intent.ACTION_SENDTO,
-                    Uri.parse("smsto:" + clean_number)
+                    Uri.parse(
+                        "smsto:" +
+                        clean_number
+                    )
                 )
 
-                # Pre-fill message for Android Messages and other SMS apps.
-                intent.putExtra("sms_body", message)
-                intent.putExtra(Intent.EXTRA_TEXT, message)
+                intent.putExtra(
+                    "sms_body",
+                    message
+                )
 
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                self.activity.startActivity(intent)
+                intent.putExtra(
+                    Intent.EXTRA_TEXT,
+                    message
+                )
+
+                intent.addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK
+                )
+
+                self.activity.startActivity(
+                    intent
+                )
 
             except Exception as e:
-                print("SMS compose error:", e)
-                self.set_status("SMS compose open nahi ho saka.")
-                self.speak("SMS compose open nahi ho saka.")
 
-        self.run_on_android_thread(launch_sms)
+                print(
+                    "SMS compose error:",
+                    e
+                )
+
+                self.set_status(
+                    "SMS compose open nahi ho saka."
+                )
+
+                self.speak(
+                    "SMS compose open nahi ho saka."
+                )
+
+        self.run_on_android_thread(
+            launch_sms
+        )
+
+
 
 
     # ========================================================
@@ -1997,6 +2050,7 @@ class VoiceAssistant(App):
         # ----------------------------------------------------
         # TIME
         # ----------------------------------------------------
+
         if (
             "what time" in command
             or "time kya" in command
@@ -2481,61 +2535,7 @@ class VoiceAssistant(App):
             or "display kholo" in command
             or "display khol" in command
             or "display settings" in command
-        ):
-
-            self.open_settings(
-                "display"
-            )
-
-            return
-
-        # ----------------------------------------------------
-        # BATTERY
-        # ----------------------------------------------------
-
-        if (
-            "open battery" in command
-            or "battery kholo" in command
-            or command in (
-                "wifi",
-                "wi fi",
-                "wi-fi"
-            )
-        ):
-
-            self.open_settings(
-                "wifi"
-            )
-
-            return
-
-        # ----------------------------------------------------
-        # BLUETOOTH
-        # ----------------------------------------------------
-
-        if (
-            "open bluetooth" in command
-            or "bluetooth kholo" in command
-            or "bluetooth khol" in command
-            or "bluetooth settings" in command
-            or command == "bluetooth"
-        ):
-
-            self.open_settings(
-                "bluetooth"
-            )
-
-            return
-
-        # ----------------------------------------------------
-        # DISPLAY
-        # ----------------------------------------------------
-
-        if (
-            "open display" in command
-            or "display kholo" in command
-            or "display khol" in command
-            or "display settings" in command
+            or command == "display"
         ):
 
             self.open_settings(
@@ -2570,6 +2570,7 @@ class VoiceAssistant(App):
             or "location kholo" in command
             or "location khol" in command
             or "location settings" in command
+            or command == "location"
         ):
 
             self.open_settings(
@@ -2587,6 +2588,7 @@ class VoiceAssistant(App):
             or "security kholo" in command
             or "security khol" in command
             or "security settings" in command
+            or command == "security"
         ):
 
             self.open_settings(
@@ -2596,15 +2598,25 @@ class VoiceAssistant(App):
             return
 
         # ----------------------------------------------------
-        # MOBILE NETWORK
+        # MOBILE NETWORK / DATA
         # ----------------------------------------------------
 
         if (
-            "mobile network" in command
-            or "mobile networks" in command
-            or "mobile data" in command
+            "open mobile network" in command
+            or "mobile network kholo" in command
+            or "mobile network khol" in command
+            or "mobile network settings" in command
+            or "open mobile data" in command
+            or "mobile data kholo" in command
+            or "mobile data khol" in command
+            or "mobile data settings" in command
             or "data settings" in command
-            or "mobile setting" in command
+            or "network settings" in command
+            or command in (
+                "mobile network",
+                "mobile data",
+                "data"
+            )
         ):
 
             self.open_settings(
@@ -2614,14 +2626,18 @@ class VoiceAssistant(App):
             return
 
         # ----------------------------------------------------
-        # INSTALLED APP
+        # INSTALLED APP LAUNCHER - v0.18
         # ----------------------------------------------------
 
-        for prefix in [
-            "open app ",
-            "app kholo ",
-            "app khol "
-        ]:
+        app_prefixes = [
+            "open installed app ",
+            "open installed apps ",
+            "installed app ",
+            "installed apps ",
+            "open app "
+        ]
+
+        for prefix in app_prefixes:
 
             if command.startswith(prefix):
 
@@ -2635,92 +2651,45 @@ class VoiceAssistant(App):
                         app_name
                     )
 
-                return
+                else:
 
-        # ----------------------------------------------------
-        # COMMON INSTALLED APPS
-        # ----------------------------------------------------
+                    self.set_status(
+                        "App ka naam boliye."
+                    )
 
-        common_apps = [
-            "instagram",
-            "facebook",
-            "telegram",
-            "spotify",
-            "gmail",
-            "maps",
-            "google maps"
-        ]
+                    self.speak(
+                        "App ka naam boliye."
+                    )
 
-        for app_name in common_apps:
-
-            if (
-                command == app_name
-                or "open " + app_name in command
-                or app_name + " kholo" in command
-                or app_name + " khol" in command
-            ):
-
-                self.open_installed_app(
-                    app_name
-                )
+                    Clock.schedule_once(
+                        lambda dt:
+                        self.listen(),
+                        2
+                    )
 
                 return
 
         # ----------------------------------------------------
-        # GENERAL INSTALLED APP VOICE LAUNCH
-        # v0.22 FIX
+        # EXACT INSTALLED APP COMMAND
         # ----------------------------------------------------
 
-        general_app_name = ""
+        if command == "open installed apps":
 
-        if command.startswith("open "):
+            self.set_status(
+                "Installed apps ke liye app ka naam boliye."
+            )
 
-            general_app_name = command[
-                5:
-            ].strip()
+            self.speak(
+                "Installed apps ke liye app ka naam boliye."
+            )
 
-        elif command.startswith("khol "):
+            Clock.schedule_once(
+                lambda dt:
+                self.listen(),
+                2
+            )
 
-            general_app_name = command[
-                5:
-            ].strip()
-
-        elif command.startswith("kholo "):
-
-            general_app_name = command[
-                6:
-            ].strip()
-
-        if general_app_name:
-
-            blocked = [
-                "settings",
-                "wifi",
-                "wi fi",
-                "wi-fi",
-                "bluetooth",
-                "display",
-                "battery",
-                "location",
-                "security",
-                "mobile network",
-                "mobile data",
-                "phone",
-                "dialer",
-                "contacts",
-                "contact",
-                "messages",
-                "message",
-                "sms"
-            ]
-
-            if general_app_name not in blocked:
-
-                self.open_installed_app(
-                    general_app_name
-                )
-
-                return
+            return
 
         # ----------------------------------------------------
         # UNKNOWN COMMAND
@@ -2741,74 +2710,40 @@ class VoiceAssistant(App):
         )
 
     # ========================================================
-    # APP STOP / CLEANUP
+    # BUILD
     # ========================================================
 
-    def on_stop(self):
+    def build(self):
 
-        def cleanup():
+        self.label = Label(
+            text="Jarvis Starting...",
+            font_size="22sp",
+            halign="center",
+            valign="middle"
+        )
 
-            try:
-
-                if (
-                    self.speech_recognizer
-                    is not None
-                ):
-
-                    self.speech_recognizer.stopListening()
-
-            except Exception:
-                pass
-
-            try:
-
-                if (
-                    self.speech_recognizer
-                    is not None
-                ):
-
-                    self.speech_recognizer.cancel()
-
-            except Exception:
-                pass
-
-            try:
-
-                if (
-                    self.speech_recognizer
-                    is not None
-                ):
-
-                    self.speech_recognizer.destroy()
-
-            except Exception:
-                pass
-
-            try:
-
-                if self.tts is not None:
-
-                    self.tts.stop()
-                    self.tts.shutdown()
-
-            except Exception:
-                pass
-
-        try:
-
-            self.run_on_android_thread(
-                cleanup
+        self.label.bind(
+            size=self.label.setter(
+                "text_size"
             )
+        )
 
-        except Exception:
-            pass
+        self.setup_android()
+
+        return self.label
 
 
 # ============================================================
-# START APPLICATION
+# APP
 # ============================================================
+
+class JarvisApp(App):
+
+    def build(self):
+
+        return VoiceAssistant().build()
+
 
 if __name__ == "__main__":
 
-    VoiceAssistant().run()
-            
+    JarvisApp().run()
