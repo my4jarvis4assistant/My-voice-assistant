@@ -498,7 +498,7 @@ class VoiceAssistant(App):
     # ========================================================
     # OPEN INTENT
     # ========================================================
-    
+
     def open_intent(self, intent):
 
         def open_main():
@@ -997,7 +997,8 @@ class VoiceAssistant(App):
 
         return aliases.get(
             text,
-                    )
+            text
+        )
 
     def open_installed_app(
         self,
@@ -1496,7 +1497,7 @@ class VoiceAssistant(App):
     # ========================================================
     # SMS / MESSAGES - v0.22
     # ========================================================
-        
+
     def open_messages(self):
 
         self.set_status(
@@ -1692,11 +1693,6 @@ class VoiceAssistant(App):
                     message
                 )
 
-                intent.putExtra(
-                    Intent.EXTRA_TEXT,
-                    message
-                )
-
                 intent.addFlags(
                     Intent.FLAG_ACTIVITY_NEW_TASK
                 )
@@ -1723,7 +1719,6 @@ class VoiceAssistant(App):
         self.run_on_android_thread(
             launch_sms
         )
-
 
 
 
@@ -2005,502 +2000,12 @@ class VoiceAssistant(App):
         ):
 
             self.set_status(
-                "Hello! Main Jarvis hoon."
+                "Wi-Fi Settings khol raha hoon..."
             )
 
             self.speak(
-                "Hello! Main Jarvis hoon."
+                "Wi-Fi Settings khol raha hoon."
             )
-
-            Clock.schedule_once(
-                lambda dt:
-                self.listen(),
-                2
-            )
-
-            return
-
-        # ----------------------------------------------------
-        # NAME
-        # ----------------------------------------------------
-
-        if (
-            "what is your name" in command
-            or "your name" in command
-            or "tumhara naam" in command
-            or "aapka naam" in command
-        ):
-
-            self.set_status(
-                "Mera naam Jarvis hai."
-            )
-
-            self.speak(
-                "Mera naam Jarvis hai."
-            )
-
-            Clock.schedule_once(
-                lambda dt:
-                self.listen(),
-                2
-            )
-
-            return
-
-        # ----------------------------------------------------
-        # TIME
-        # ----------------------------------------------------
-
-        if (
-            "what time" in command
-            or "time kya" in command
-            or "time batao" in command
-            or "time bata" in command
-            or command == "time"
-            or "current time" in command
-        ):
-
-            self.tell_time()
-
-            Clock.schedule_once(
-                lambda dt:
-                self.listen(),
-                3
-            )
-
-            return
-
-        # ----------------------------------------------------
-        # DATE
-        # ----------------------------------------------------
-
-        if (
-            "what is the date" in command
-            or "what date" in command
-            or "date kya" in command
-            or "date batao" in command
-            or "date bata" in command
-            or command == "date"
-            or "today date" in command
-            or "today's date" in command
-        ):
-
-            self.tell_date()
-
-            Clock.schedule_once(
-                lambda dt:
-                self.listen(),
-                3
-            )
-
-            return
-
-        # ----------------------------------------------------
-        # GOOGLE SEARCH
-        # ----------------------------------------------------
-
-        google_prefixes = [
-            "google pe search karo ",
-            "google par search karo ",
-            "google me search karo ",
-            "google mein search karo ",
-            "google search karo ",
-            "google pe ",
-            "google par ",
-            "google me ",
-            "google mein ",
-            "google search ",
-            "search karo ",
-            "search kar ",
-            "web search karo ",
-            "web search ",
-            "internet par ",
-            "internet pe "
-        ]
-
-        for prefix in google_prefixes:
-
-            if command.startswith(prefix):
-
-                self.google_web_search(
-                    command[
-                        len(prefix):
-                    ].strip()
-                )
-
-                return
-
-        # ----------------------------------------------------
-        # YOUTUBE SEARCH
-        # ----------------------------------------------------
-
-        youtube_prefixes = [
-            "youtube pe search karo ",
-            "youtube par search karo ",
-            "youtube me search karo ",
-            "youtube mein search karo ",
-            "youtube search karo ",
-            "youtube pe ",
-            "youtube par ",
-            "youtube me ",
-            "youtube mein ",
-            "youtube search "
-        ]
-
-        for prefix in youtube_prefixes:
-
-            if command.startswith(prefix):
-
-                self.youtube_search(
-                    command[
-                        len(prefix):
-                    ].strip()
-                )
-
-                return
-
-        # ----------------------------------------------------
-        # MUSIC SEARCH
-        # ----------------------------------------------------
-
-        music_prefixes = [
-            "music pe search karo ",
-            "music par search karo ",
-            "music me search karo ",
-            "music mein search karo ",
-            "music search karo ",
-            "music search ",
-            "song search karo ",
-            "song search ",
-            "gaana search karo ",
-            "gana search karo "
-        ]
-
-        for prefix in music_prefixes:
-
-            if command.startswith(prefix):
-
-                self.music_search(
-                    command[
-                        len(prefix):
-                    ].strip()
-                )
-
-                return
-
-        # ----------------------------------------------------
-        # WHATSAPP
-        # ----------------------------------------------------
-
-        if (
-            "open whatsapp" in command
-            or "whatsapp kholo" in command
-            or "whatsapp khol" in command
-            or command == "whatsapp"
-        ):
-
-            self.open_whatsapp()
-
-            return
-
-        # ----------------------------------------------------
-        # CALCULATOR
-        # ----------------------------------------------------
-
-        if (
-            "open calculator" in command
-            or "calculator kholo" in command
-            or "calculator khol" in command
-            or command == "calculator"
-        ):
-
-            self.open_calculator()
-
-            return
-
-        # ----------------------------------------------------
-        # CAMERA
-        # ----------------------------------------------------
-
-        if (
-            "open camera" in command
-            or "camera kholo" in command
-            or "camera khol" in command
-            or command == "camera"
-        ):
-
-            self.open_camera()
-
-            return
-
-        # ----------------------------------------------------
-        # CHROME
-        # ----------------------------------------------------
-
-        if (
-            "open chrome" in command
-            or "chrome kholo" in command
-            or "chrome khol" in command
-            or command == "chrome"
-        ):
-
-            self.open_chrome()
-
-            return
-
-        # ----------------------------------------------------
-        # YOUTUBE
-        # ----------------------------------------------------
-
-        if (
-            "open youtube" in command
-            or "youtube kholo" in command
-            or "youtube khol" in command
-            or command == "youtube"
-        ):
-
-            self.open_youtube()
-
-            return
-
-        # ----------------------------------------------------
-        # PHONE / DIALER - v0.21
-        # ----------------------------------------------------
-
-        if (
-            "open phone" in command
-            or "phone kholo" in command
-            or "phone khol" in command
-            or "open dialer" in command
-            or "dialer kholo" in command
-            or "dialer khol" in command
-            or command in (
-                "phone",
-                "dialer"
-            )
-        ):
-
-            self.open_phone()
-
-            return
-
-        # ----------------------------------------------------
-        # DIAL NUMBER - v0.21
-        # ----------------------------------------------------
-
-        for prefix in [
-            "dial ",
-            "dial number ",
-            "number dial ",
-            "call ",
-            "phone number "
-        ]:
-
-            if command.startswith(prefix):
-
-                self.dial_number(
-                    command[
-                        len(prefix):
-                    ].strip()
-                )
-
-                return
-
-        # ----------------------------------------------------
-        # CONTACTS - v0.21
-        # ----------------------------------------------------
-
-        if (
-            "open contacts" in command
-            or "contacts kholo" in command
-            or "contacts khol" in command
-            or "contact kholo" in command
-            or "contact khol" in command
-            or command in (
-                "contacts",
-                "contact"
-            )
-        ):
-
-            self.open_contacts()
-
-            return
-
-        # ----------------------------------------------------
-        # SMS / MESSAGES - v0.22
-        # ----------------------------------------------------
-
-        if (
-            "open messages" in command
-            or "messages kholo" in command
-            or "messages khol" in command
-            or "message kholo" in command
-            or "message khol" in command
-            or "open sms" in command
-            or "sms kholo" in command
-            or "sms khol" in command
-            or command in (
-                "messages",
-                "message",
-                "sms"
-            )
-        ):
-
-            self.open_messages()
-
-            return
-
-        # ----------------------------------------------------
-        # SMS COMPOSE - v0.22
-        # ----------------------------------------------------
-
-        for prefix in [
-            "send sms to ",
-            "send message to ",
-            "sms to ",
-            "message to ",
-            "text to "
-        ]:
-
-            if command.startswith(prefix):
-
-                remaining = command[
-                    len(prefix):
-                ].strip()
-
-                number_part = ""
-                message_part = ""
-
-                markers = [
-                    " message ",
-                    " sms ",
-                    " saying ",
-                    " bolo "
-                ]
-
-                found = None
-
-                for marker in markers:
-
-                    index = remaining.find(
-                        marker
-                    )
-
-                    if (
-                        index != -1
-                        and (
-                            found is None
-                            or index < found[0]
-                        )
-                    ):
-
-                        found = (
-                            index,
-                            marker
-                        )
-
-                if found:
-
-                    index, marker = found
-
-                    number_part = (
-                        remaining[
-                            :index
-                        ].strip()
-                    )
-
-                    message_part = (
-                        remaining[
-                            index +
-                            len(marker):
-                        ].strip()
-                    )
-
-                else:
-
-                    parts = remaining.split(
-                        " ",
-                        1
-                    )
-
-                    if len(parts) == 2:
-
-                        number_part = (
-                            parts[0].strip()
-                        )
-
-                        message_part = (
-                            parts[1].strip()
-                        )
-
-                if (
-                    number_part
-                    and message_part
-                ):
-
-                    self.send_sms(
-                        number_part,
-                        message_part
-                    )
-
-                else:
-
-                    self.set_status(
-                        "Number aur message dono boliye."
-                    )
-
-                    self.speak(
-                        "Number aur message dono boliye."
-                    )
-
-                    Clock.schedule_once(
-                        lambda dt:
-                        self.listen(),
-                        2
-                    )
-
-                return
-
-        # ----------------------------------------------------
-        # MAIN SETTINGS
-        # ----------------------------------------------------
-
-        if (
-            "open settings" in command
-            or "settings kholo" in command
-            or "settings khol" in command
-            or command == "settings"
-        ):
-
-            self.open_settings(
-                "main"
-            )
-
-            return
-
-        # ----------------------------------------------------
-        # WIFI
-        # ----------------------------------------------------
-
-        if (
-            "open wifi" in command
-            or "open wi fi" in command
-            or "open wi-fi" in command
-            or "wifi kholo" in command
-            or "wi fi kholo" in command
-            or "wi-fi kholo" in command
-            or "wifi khol" in command
-            or "wi fi khol" in command
-            or "wi-fi khol" in command
-            or "wifi settings" in command
-            or "wi fi settings" in command
-            or "wi-fi settings" in command
-            or command in (
-                "wifi",
-                "wi fi",
-                "wi-fi"
-            )
-        ):
 
             self.open_settings(
                 "wifi"
@@ -2598,7 +2103,7 @@ class VoiceAssistant(App):
             return
 
         # ----------------------------------------------------
-        # MOBILE NETWORK / DATA
+        # MOBILE NETWORK / DATA - v0.17
         # ----------------------------------------------------
 
         if (
@@ -2611,12 +2116,9 @@ class VoiceAssistant(App):
             or "mobile data khol" in command
             or "mobile data settings" in command
             or "data settings" in command
-            or "network settings" in command
-            or command in (
-                "mobile network",
-                "mobile data",
-                "data"
-            )
+            or command == "mobile"
+            or command == "mobile network"
+            or command == "mobile data"
         ):
 
             self.open_settings(
@@ -2626,15 +2128,17 @@ class VoiceAssistant(App):
             return
 
         # ----------------------------------------------------
-        # INSTALLED APP LAUNCHER - v0.18
+        # INSTALLED APPS - v0.18
         # ----------------------------------------------------
 
         app_prefixes = [
+            "open app ",
+            "open the app ",
+            "app kholo ",
+            "app khol ",
+            "app open karo ",
             "open installed app ",
-            "open installed apps ",
-            "installed app ",
-            "installed apps ",
-            "open app "
+            "open installed apps "
         ]
 
         for prefix in app_prefixes:
@@ -2653,41 +2157,22 @@ class VoiceAssistant(App):
 
                 else:
 
-                    self.set_status(
-                        "App ka naam boliye."
-                    )
-
-                    self.speak(
-                        "App ka naam boliye."
-                    )
-
-                    Clock.schedule_once(
-                        lambda dt:
-                        self.listen(),
-                        2
-                    )
+                    self.open_installed_apps()
 
                 return
 
-        # ----------------------------------------------------
-        # EXACT INSTALLED APP COMMAND
-        # ----------------------------------------------------
+        if command in (
+            "open installed apps",
+            "installed apps kholo",
+            "installed apps khol",
+            "installed apps",
+            "apps kholo",
+            "apps khol",
+            "open apps",
+            "apps"
+        ):
 
-        if command == "open installed apps":
-
-            self.set_status(
-                "Installed apps ke liye app ka naam boliye."
-            )
-
-            self.speak(
-                "Installed apps ke liye app ka naam boliye."
-            )
-
-            Clock.schedule_once(
-                lambda dt:
-                self.listen(),
-                2
-            )
+            self.open_installed_apps()
 
             return
 
@@ -2700,7 +2185,7 @@ class VoiceAssistant(App):
         )
 
         self.speak(
-            "Command samajh nahi aaya."
+            "Sorry, main is command ko samajh nahi paaya."
         )
 
         Clock.schedule_once(
@@ -2710,40 +2195,74 @@ class VoiceAssistant(App):
         )
 
     # ========================================================
-    # BUILD
+    # START ASSISTANT
+    # ========================================================
+
+    def start_assistant(self):
+
+        self.set_status(
+            "Jarvis start ho raha hai..."
+        )
+
+        self.speak(
+            "Jarvis start ho raha hai."
+        )
+
+        Clock.schedule_once(
+            lambda dt:
+            self.listen(),
+            2
+        )
+
+    # ========================================================
+    # APP BUILD
     # ========================================================
 
     def build(self):
 
-        self.label = Label(
-            text="Jarvis Starting...",
+        self.title = "My Voice Assistant"
+
+        root = BoxLayout(
+            orientation="vertical",
+            padding=20,
+            spacing=15
+        )
+
+        self.status_label = Label(
+            text="Jarvis ready",
             font_size="22sp",
             halign="center",
             valign="middle"
         )
 
-        self.label.bind(
-            size=self.label.setter(
+        self.status_label.bind(
+            size=self.status_label.setter(
                 "text_size"
             )
         )
 
-        self.setup_android()
+        root.add_widget(
+            self.status_label
+        )
 
-        return self.label
+        self.start_button = Button(
+            text="START JARVIS",
+            font_size="24sp",
+            size_hint_y=None,
+            height=80
+        )
 
+        self.start_button.bind(
+            on_press=self.start_assistant
+        )
 
-# ============================================================
-# APP
-# ============================================================
+        root.add_widget(
+            self.start_button
+        )
 
-class JarvisApp(App):
-
-    def build(self):
-
-        return VoiceAssistant().build()
+        return root
 
 
 if __name__ == "__main__":
 
-    JarvisApp().run()
+    VoiceAssistantApp().run()
