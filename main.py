@@ -998,4 +998,505 @@ class VoiceAssistant(App):
         aliases = {
             "you tube": "youtube",
             "face book": "facebook",
-            
+            "insta gram": "instagram",
+            "telegram": "telegram",
+            "spot ify": "spotify",
+            "g mail": "gmail",
+            "google maps": "google maps"
+        }
+
+        return aliases.get(
+            text,
+            text
+        )
+
+    def open_installed_app(
+        self,
+        app_name
+    ):
+
+        app_name = self.normalize_app_name(
+            app_name
+        )
+
+        self.set_status(
+            app_name.capitalize() +
+            " khol raha hoon..."
+        )
+
+        self.speak(
+            app_name.capitalize() +
+            " khol raha hoon."
+        )
+
+        def launch():
+
+            try:
+
+                pm = (
+                    self.activity
+                    .getPackageManager()
+                )
+
+                # ------------------------------------------------
+                # v0.22 FIX:
+                # Launcher activities ko directly search karna.
+                # Isse sirf hard-coded Instagram nahi chalega.
+                # ------------------------------------------------
+
+                launcher_intent = Intent(
+                    Intent.ACTION_MAIN
+                )
+
+                launcher_intent.addCategory(
+                    Intent.CATEGORY_LAUNCHER
+                )
+
+                activities = (
+                    pm.queryIntentActivities(
+                        launcher_intent,
+                        0
+                    )
+                )
+
+                requested = (
+                    app_name
+                    .lower()
+                    .strip()
+                )
+
+                exact = []
+                prefix = []
+                contains = []
+
+                for i in range(
+                    activities.size()
+                ):
+
+                    try:
+
+                        item = activities.get(i)
+
+                        info = item.activityInfo
+
+                        label = str(
+                            info.loadLabel(pm)
+                        ).strip()
+
+                        package_name = str(
+                            info.packageName
+                        ).strip()
+
+                        label_lower = (
+                            label.lower()
+                        )
+
+                        entry = (
+                            label,
+                            package_name,
+                            info.name
+                        )
+
+                        if (
+                            label_lower
+                            ==
+                            requested
+                        ):
+
+                            exact.append(
+                                entry
+                            )
+
+                        elif (
+                            label_lower.startswith(
+                                requested
+                            )
+                        ):
+
+                            prefix.append(
+                                entry
+                            )
+
+                        elif (
+                            requested
+                            in label_lower
+                        ):
+
+                            contains.append(
+                                entry
+                            )
+
+                    except Exception as e:
+
+                        print(
+                            "App scan error:",
+                            e
+                        )
+
+                candidates = (
+                    exact +
+                    prefix +
+                    contains
+                )
+
+                seen = set()
+
+                for (
+                    label,
+                    package_name,
+                    activity_name
+                ) in candidates:
+
+                    key = (
+                        package_name +
+                        "/" +
+                        activity_name
+                    )
+
+                    if key in seen:
+                        continue
+
+                    seen.add(key)
+
+                    try:
+
+                        intent = Intent(
+                            Intent.ACTION_MAIN
+                        )
+
+                        intent.addCategory(
+                            Intent.CATEGORY_LAUNCHER
+                        )
+
+                        intent.setClassName(
+                            package_name,
+                            activity_name
+                        )
+
+                        intent.addFlags(
+                            Intent.FLAG_ACTIVITY_NEW_TASK
+                        )
+
+                        self.activity.startActivity(
+                            intent
+                        )
+
+                        return
+
+                    except Exception as e:
+
+                        print(
+                            "App launch error:",
+                            label,
+                            package_name,
+                            e
+                        )
+
+                self.set_status(
+                    app_name.capitalize() +
+                    " installed app nahi mila."
+                )
+
+                self.speak(
+                    app_name.capitalize() +
+                    " installed app nahi mila."
+                )
+
+            except Exception as e:
+
+                print(
+                    "Installed app error:",
+                    e
+                )
+
+                self.set_status(
+                    app_name.capitalize() +
+                    " open nahi ho saka."
+                )
+
+                self.speak(
+                    app_name.capitalize() +
+                    " open nahi ho saka."
+                )
+
+        self.run_on_android_thread(
+            launch
+        )
+
+    # ========================================================
+    # PHONE / DIALER - v0.21
+    # ========================================================
+
+    def open_phone(self):
+
+        self.set_status(
+            "Phone khol raha hoon..."
+        )
+
+        self.speak(
+            "Phone khol raha hoon."
+        )
+
+        def launch_phone():
+
+            try:
+
+                intent = Intent(
+                    Intent.ACTION_DIAL
+                )
+
+                intent.addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK
+                )
+
+                self.activity.startActivity(
+                    intent
+                )
+
+            except Exception as e:
+
+                print(
+                    "Phone error:",
+                    e
+                )
+
+                self.set_status(
+                    "Phone open nahi ho saka."
+                )
+
+        self.run_on_android_thread(
+            launch_phone
+        )
+
+    # ========================================================
+    # DIAL NUMBER - v0.21
+    # ========================================================
+
+    def dial_number(
+        self,
+        number
+    ):
+
+        number = number.strip()
+
+        if not number:
+
+            self.set_status(
+                "Number nahi mila."
+            )
+
+            self.speak(
+                "Number nahi mila."
+            )
+
+            Clock.schedule_once(
+                lambda dt:
+                self.listen(),
+                2
+            )
+
+            return
+
+        self.set_status(
+            "Dialer me number khol raha hoon..."
+        )
+
+        self.speak(
+            "Dialer me number khol raha hoon."
+        )
+
+        def launch_dialer():
+
+            try:
+
+                clean_number = ""
+
+                for char in number:
+
+                    if (
+                        char.isdigit()
+                        or char == "+"
+                    ):
+
+                        clean_number += char
+
+                if not clean_number:
+
+                    self.set_status(
+                        "Valid number nahi mila."
+                    )
+
+                    self.speak(
+                        "Valid number nahi mila."
+                    )
+
+                    return
+
+                intent = Intent(
+                    Intent.ACTION_DIAL,
+                    Uri.parse(
+                        "tel:" +
+                        clean_number
+                    )
+                )
+
+                intent.addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK
+                )
+
+                self.activity.startActivity(
+                    intent
+                )
+
+            except Exception as e:
+
+                print(
+                    "Dial number error:",
+                    e
+                )
+
+                self.set_status(
+                    "Number Dialer me open nahi ho saka."
+                )
+
+        self.run_on_android_thread(
+            launch_dialer
+        )
+
+    # ========================================================
+    # CONTACTS - v0.21 FIXED
+    # ========================================================
+
+    def open_contacts(self):
+
+        self.set_status(
+            "Contacts khol raha hoon..."
+        )
+
+        self.speak(
+            "Contacts khol raha hoon."
+        )
+
+        def launch_contacts():
+
+            try:
+
+                pm = (
+                    self.activity
+                    .getPackageManager()
+                )
+
+                contacts_packages = [
+                    "com.android.contacts",
+                    "com.google.android.contacts"
+                ]
+
+                for package_name in contacts_packages:
+
+                    try:
+
+                        intent = (
+                            pm.getLaunchIntentForPackage(
+                                package_name
+                            )
+                        )
+
+                        if intent is not None:
+
+                            intent.addFlags(
+                                Intent.FLAG_ACTIVITY_NEW_TASK
+                            )
+
+                            self.activity.startActivity(
+                                intent
+                            )
+
+                            return
+
+                    except Exception as e:
+
+                        print(
+                            "Contacts package error:",
+                            package_name,
+                            e
+                        )
+
+                try:
+
+                    intent = Intent(
+                        Intent.ACTION_MAIN
+                    )
+
+                    intent.addCategory(
+                        "android.intent.category.APP_CONTACTS"
+                    )
+
+                    intent.addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK
+                    )
+
+                    self.activity.startActivity(
+                        intent
+                    )
+
+                    return
+
+                except Exception as e:
+
+                    print(
+                        "Contacts category error:",
+                        e
+                    )
+
+                try:
+
+                    ContactsContract = autoclass(
+                        "android.provider.ContactsContract"
+                    )
+
+                    intent = Intent(
+                        Intent.ACTION_VIEW,
+                        ContactsContract
+                        .Contacts
+                        .CONTENT_URI
+                    )
+
+                    intent.addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK
+                    )
+
+                    self.activity.startActivity(
+                        intent
+                    )
+
+                    return
+
+                except Exception as e:
+
+                    print(
+                        "Contacts URI error:",
+                        e
+                    )
+
+                self.set_status(
+                    "Contacts app nahi mili."
+                )
+
+                self.speak(
+                    "Contacts app nahi mili."
+                )
+
+            except Exception as e:
+
+                print(
+                    "Contacts launch error:",
+                    e
+                )
+
+                self.set_status(
+                    "Contacts open nahi ho saka."
+                )
+
+                self.speak(
+                    "Contacts open nahi ho saka."
+        )
