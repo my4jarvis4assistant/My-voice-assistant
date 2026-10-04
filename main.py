@@ -2998,3 +2998,156 @@ class VoiceAssistant(App):
                 or "open " + app_name in command
                 or app_name + " kholo" in command
                 or app_name + " khol" in command
+        ):
+
+                self.open_installed_app(
+                    app_name
+                )
+
+                return
+
+        # ----------------------------------------------------
+        # GENERAL INSTALLED APP VOICE LAUNCH
+        # v0.22 FIX
+        # ----------------------------------------------------
+
+        general_app_name = ""
+
+        if command.startswith("open "):
+
+            general_app_name = command[
+                5:
+            ].strip()
+
+        elif command.startswith("khol "):
+
+            general_app_name = command[
+                5:
+            ].strip()
+
+        elif command.startswith("kholo "):
+
+            general_app_name = command[
+                6:
+            ].strip()
+
+        if general_app_name:
+
+            blocked = [
+                "settings",
+                "wifi",
+                "wi fi",
+                "wi-fi",
+                "bluetooth",
+                "display",
+                "battery",
+                "location",
+                "security",
+                "mobile network",
+                "mobile data",
+                "phone",
+                "dialer",
+                "contacts",
+                "contact",
+                "messages",
+                "message",
+                "sms"
+            ]
+
+            if general_app_name not in blocked:
+
+                self.open_installed_app(
+                    general_app_name
+                )
+
+                return
+
+        # ----------------------------------------------------
+        # UNKNOWN COMMAND
+        # ----------------------------------------------------
+
+        self.set_status(
+            "Command samajh nahi aaya."
+        )
+
+        self.speak(
+            "Command samajh nahi aaya."
+        )
+
+        Clock.schedule_once(
+            lambda dt:
+            self.listen(),
+            2
+        )
+
+    # ========================================================
+    # APP STOP / CLEANUP
+    # ========================================================
+
+    def on_stop(self):
+
+        def cleanup():
+
+            try:
+
+                if (
+                    self.speech_recognizer
+                    is not None
+                ):
+
+                    self.speech_recognizer.stopListening()
+
+            except Exception:
+                pass
+
+            try:
+
+                if (
+                    self.speech_recognizer
+                    is not None
+                ):
+
+                    self.speech_recognizer.cancel()
+
+            except Exception:
+                pass
+
+            try:
+
+                if (
+                    self.speech_recognizer
+                    is not None
+                ):
+
+                    self.speech_recognizer.destroy()
+
+            except Exception:
+                pass
+
+            try:
+
+                if self.tts is not None:
+
+                    self.tts.stop()
+                    self.tts.shutdown()
+
+            except Exception:
+                pass
+
+        try:
+
+            self.run_on_android_thread(
+                cleanup
+            )
+
+        except Exception:
+            pass
+
+
+# ============================================================
+# START APPLICATION
+# ============================================================
+
+if __name__ == "__main__":
+
+    VoiceAssistant().run()
