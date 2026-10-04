@@ -1680,16 +1680,19 @@ class VoiceAssistant(App):
 
             try:
 
-                sms_uri = (
-                    "smsto:" +
-                    clean_number +
-                    "?body=" +
-                    str(Uri.encode(message))
+                intent = Intent(
+                    Intent.ACTION_SEND
                 )
 
-                intent = Intent(
-                    Intent.ACTION_SENDTO,
-                    Uri.parse(sms_uri)
+                intent.setType(
+                    "text/plain"
+                )
+
+                intent.setData(
+                    Uri.parse(
+                        "smsto:" +
+                        clean_number
+                    )
                 )
 
                 intent.putExtra(
@@ -1727,7 +1730,8 @@ class VoiceAssistant(App):
 
         self.run_on_android_thread(
             launch_sms
-    )
+        )
+
 
 
 
