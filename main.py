@@ -1500,3 +1500,501 @@ class VoiceAssistant(App):
                 self.speak(
                     "Contacts open nahi ho saka."
         )
+
+        self.run_on_android_thread(
+            launch_contacts
+        )
+
+    # ========================================================
+    # SMS / MESSAGES - v0.22
+    # ========================================================
+
+    def open_messages(self):
+
+        self.set_status(
+            "Messages khol raha hoon..."
+        )
+
+        self.speak(
+            "Messages khol raha hoon."
+        )
+
+        def launch_messages():
+
+            try:
+
+                pm = (
+                    self.activity
+                    .getPackageManager()
+                )
+
+                message_packages = [
+                    "com.google.android.apps.messaging",
+                    "com.android.mms",
+                    "com.android.messaging",
+                    "com.google.android.messaging"
+                ]
+
+                for package_name in message_packages:
+
+                    try:
+
+                        intent = (
+                            pm.getLaunchIntentForPackage(
+                                package_name
+                            )
+                        )
+
+                        if intent is not None:
+
+                            intent.addFlags(
+                                Intent.FLAG_ACTIVITY_NEW_TASK
+                            )
+
+                            self.activity.startActivity(
+                                intent
+                            )
+
+                            return
+
+                    except Exception as e:
+
+                        print(
+                            "Messages package error:",
+                            package_name,
+                            e
+                        )
+
+                try:
+
+                    intent = Intent(
+                        Intent.ACTION_MAIN
+                    )
+
+                    intent.addCategory(
+                        "android.intent.category.APP_MESSAGING"
+                    )
+
+                    intent.addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK
+                    )
+
+                    self.activity.startActivity(
+                        intent
+                    )
+
+                    return
+
+                except Exception as e:
+
+                    print(
+                        "Messages category error:",
+                        e
+                    )
+
+                self.set_status(
+                    "Messages app nahi mili."
+                )
+
+                self.speak(
+                    "Messages app nahi mili."
+                )
+
+            except Exception as e:
+
+                print(
+                    "Messages error:",
+                    e
+                )
+
+                self.set_status(
+                    "Messages open nahi ho saka."
+                )
+
+                self.speak(
+                    "Messages open nahi ho saka."
+                )
+
+        self.run_on_android_thread(
+            launch_messages
+        )
+
+    # ========================================================
+    # SMS COMPOSER - v0.22
+    # ========================================================
+
+    def send_sms(
+        self,
+        number,
+        message
+    ):
+
+        number = number.strip()
+        message = message.strip()
+
+        if not number:
+
+            self.set_status(
+                "SMS number nahi mila."
+            )
+
+            self.speak(
+                "SMS number nahi mila."
+            )
+
+            return
+
+        if not message:
+
+            self.set_status(
+                "SMS message nahi mila."
+            )
+
+            self.speak(
+                "SMS message nahi mila."
+            )
+
+            return
+
+        clean_number = ""
+
+        for char in number:
+
+            if (
+                char.isdigit()
+                or char == "+"
+            ):
+
+                clean_number += char
+
+        if not clean_number:
+
+            self.set_status(
+                "Valid mobile number nahi mila."
+            )
+
+            self.speak(
+                "Valid mobile number nahi mila."
+            )
+
+            return
+
+        self.set_status(
+            "SMS compose kar raha hoon..."
+        )
+
+        self.speak(
+            "SMS message ready kar raha hoon."
+        )
+
+        def launch_sms():
+
+            try:
+
+                intent = Intent(
+                    Intent.ACTION_SENDTO,
+                    Uri.parse(
+                        "smsto:" +
+                        clean_number
+                    )
+                )
+
+                intent.putExtra(
+                    "sms_body",
+                    message
+                )
+
+                intent.addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK
+                )
+
+                self.activity.startActivity(
+                    intent
+                )
+
+            except Exception as e:
+
+                print(
+                    "SMS compose error:",
+                    e
+                )
+
+                self.set_status(
+                    "SMS compose open nahi ho saka."
+                )
+
+                self.speak(
+                    "SMS compose open nahi ho saka."
+                )
+
+        self.run_on_android_thread(
+            launch_sms
+        )
+
+
+
+    # ========================================================
+    # SETTINGS / ANDROID ACTIONS
+    # ========================================================
+
+    def open_settings(
+        self,
+        setting_type
+    ):
+
+        try:
+
+            actions = {
+
+                "main": (
+                    Settings.ACTION_SETTINGS,
+                    "Settings"
+                ),
+
+                "wifi": (
+                    Settings.ACTION_WIFI_SETTINGS,
+                    "Wi-Fi Settings"
+                ),
+
+                "bluetooth": (
+                    Settings.ACTION_BLUETOOTH_SETTINGS,
+                    "Bluetooth Settings"
+                ),
+
+                "display": (
+                    Settings.ACTION_DISPLAY_SETTINGS,
+                    "Display Settings"
+                ),
+
+                "battery": (
+                    Settings.ACTION_BATTERY_SAVER_SETTINGS,
+                    "Battery Settings"
+                ),
+
+                "location": (
+                    Settings.ACTION_LOCATION_SOURCE_SETTINGS,
+                    "Location Settings"
+                ),
+
+                "security": (
+                    Settings.ACTION_SECURITY_SETTINGS,
+                    "Security Settings"
+                ),
+
+                "mobile": (
+                    Settings.ACTION_NETWORK_OPERATOR_SETTINGS,
+                    "Mobile Network Settings"
+                )
+            }
+
+            action, title = actions.get(
+                setting_type,
+                (
+                    Settings.ACTION_SETTINGS,
+                    "Settings"
+                )
+            )
+
+            self.set_status(
+                title +
+                " khol raha hoon..."
+            )
+
+            self.speak(
+                title +
+                " khol raha hoon."
+            )
+
+            self.open_intent(
+                Intent(action)
+            )
+
+        except Exception as e:
+
+            print(
+                "Settings error:",
+                e
+            )
+
+            self.set_status(
+                "Settings open nahi ho saka."
+            )
+
+    # ========================================================
+    # CAMERA
+    # ========================================================
+
+    def open_camera(self):
+
+        try:
+
+            self.set_status(
+                "Camera khol raha hoon..."
+            )
+
+            self.speak(
+                "Camera khol raha hoon."
+            )
+
+            self.open_intent(
+                Intent(
+                    "android.media.action.IMAGE_CAPTURE"
+                )
+            )
+
+        except Exception as e:
+
+            print(
+                "Camera error:",
+                e
+            )
+
+            self.set_status(
+                "Camera open nahi ho saka."
+            )
+
+    # ========================================================
+    # CHROME
+    # ========================================================
+
+    def open_chrome(self):
+
+        self.set_status(
+            "Chrome khol raha hoon..."
+        )
+
+        self.speak(
+            "Chrome khol raha hoon."
+        )
+
+        def launch():
+
+            try:
+
+                pm = (
+                    self.activity
+                    .getPackageManager()
+                )
+
+                intent = (
+                    pm.getLaunchIntentForPackage(
+                        "com.android.chrome"
+                    )
+                )
+
+                if intent is None:
+
+                    intent = Intent(
+                        Intent.ACTION_VIEW,
+                        Uri.parse(
+                            "https://www.google.com"
+                        )
+                    )
+
+                intent.addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK
+                )
+
+                self.activity.startActivity(
+                    intent
+                )
+
+            except Exception as e:
+
+                print(
+                    "Chrome error:",
+                    e
+                )
+
+                self.set_status(
+                    "Chrome open nahi ho saka."
+                )
+
+        self.run_on_android_thread(
+            launch
+        )
+
+    # ========================================================
+    # YOUTUBE APP
+    # ========================================================
+
+    def open_youtube(self):
+
+        self.set_status(
+            "YouTube khol raha hoon..."
+        )
+
+        self.speak(
+            "YouTube khol raha hoon."
+        )
+
+        def launch():
+
+            try:
+
+                pm = (
+                    self.activity
+                    .getPackageManager()
+                )
+
+                intent = (
+                    pm.getLaunchIntentForPackage(
+                        "com.google.android.youtube"
+                    )
+                )
+
+                if intent is None:
+
+                    intent = Intent(
+                        Intent.ACTION_VIEW,
+                        Uri.parse(
+                            "https://www.youtube.com"
+                        )
+                    )
+
+                intent.addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK
+                )
+
+                self.activity.startActivity(
+                    intent
+                )
+
+            except Exception as e:
+
+                print(
+                    "YouTube error:",
+                    e
+                )
+
+                self.set_status(
+                    "YouTube open nahi ho saka."
+                )
+
+        self.run_on_android_thread(
+            launch
+        )
+
+    # ========================================================
+    # COMMAND PROCESSOR
+    # ========================================================
+
+    def process_command(
+        self,
+        command
+    ):
+
+        command = (
+            command
+            .lower()
+            .strip()
+        )
+
+        print(
+            "Processing command:",
+            command
+        )
+
+        # ----------------------------------------------------
+        # GREETING
+        # ----------------------------------------------------
