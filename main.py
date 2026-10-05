@@ -1999,4 +1999,1155 @@ class VoiceAssistant(App):
         # ----------------------------------------------------
 
         if (
-            command in (
+            command in (                
+                "hello",
+                "hi",
+                "hey"
+            )
+            or "hello jarvis" in command
+            or "hi jarvis" in command
+            or "hey jarvis" in command
+        ):
+
+            self.set_status(
+                "Hello! Main Jarvis hoon."
+            )
+
+            self.speak(
+                "Hello! Main Jarvis hoon."
+            )
+
+            Clock.schedule_once(
+                lambda dt:
+                self.listen(),
+                2
+            )
+
+            return
+        # ----------------------------------------------------
+        # ALARM + TIMER - v0.23
+        # ----------------------------------------------------
+
+        if (
+            "alarm" in command
+            and (
+                "laga" in command
+                or "lagao" in command
+                or "alarm" in command
+            )
+        ):
+
+            alarm_command = command
+            alarm_command = alarm_command.replace(
+                "alarm", " "
+            )
+            alarm_command = alarm_command.replace(
+                "laga do", " "
+            )
+            alarm_command = alarm_command.replace(
+                "lagao", " "
+            )
+            alarm_command = alarm_command.replace(
+                "laga", " "
+            )
+            alarm_command = alarm_command.replace(
+                "ka", " "
+            )
+            alarm_command = alarm_command.replace(
+                "baje", " "
+            )
+            alarm_command = alarm_command.replace(
+                "subah", " subah "
+            )
+            alarm_command = alarm_command.replace(
+                "raat", " raat "
+            )
+            alarm_command = alarm_command.replace(
+                "shaam", " shaam "
+            )
+            alarm_command = alarm_command.replace(
+                "dopahar", " dopahar "
+            )
+
+            tokens = alarm_command.split()
+            hour = None
+            minute = 0
+            period = ""
+
+            for token in tokens:
+
+                if token in (
+                    "am",
+                    "pm"
+                ):
+                    period = token
+
+            for token in tokens:
+
+                if ":" in token:
+
+                    time_parts = token.split(":")
+
+                    if len(time_parts) >= 2:
+
+                        try:
+                            hour = int(time_parts[0])
+                            minute = int(
+                                time_parts[1]
+                            )
+                            break
+                        except Exception:
+                            pass
+
+                elif token.isdigit():
+
+                    try:
+                        value = int(token)
+                    except Exception:
+                        continue
+
+                    if hour is None:
+                        hour = value
+
+            if hour is not None:
+
+                if hour < 0 or hour > 23:
+
+                    hour = None
+
+                if minute < 0 or minute > 59:
+
+                    hour = None
+
+            if hour is not None:
+
+                if period == "pm" and hour < 12:
+                    hour += 12
+
+                elif period == "am" and hour == 12:
+                    hour = 0
+
+                elif "raat" in tokens and hour < 12:
+
+                    hour += 12
+
+                elif (
+                    "subah" in tokens
+                    and hour == 12
+                ):
+                    hour = 0
+
+                def launch_alarm():
+
+                    try:
+
+                        intent = Intent(
+                            AlarmClock.ACTION_SET_ALARM
+                        )
+
+                        intent.putExtra(
+                            AlarmClock.EXTRA_HOUR,
+                            hour
+                        )
+
+                        intent.putExtra(
+                            AlarmClock.EXTRA_MINUTES,
+                            minute
+                        )
+
+                        intent.putExtra(
+                            AlarmClock.EXTRA_MESSAGE,
+                            "Jarvis Alarm"
+                        )
+
+                        intent.addFlags(
+                            Intent.FLAG_ACTIVITY_NEW_TASK
+                        )
+
+                        self.activity.startActivity(
+                            intent
+                        )
+
+                        self.set_status(
+                            "Alarm set ho raha hai."
+                        )
+
+                        self.speak(
+                            "Alarm set kar raha hoon."
+                        )
+
+                    except Exception as e:
+
+                        print(
+                            "Alarm error:",
+                            e
+                        )
+
+                        self.set_status(
+                            "Alarm set nahi ho saka."
+                        )
+
+                        self.speak(
+                            "Alarm set nahi ho saka."
+                        )
+
+                self.run_on_android_thread(
+                    launch_alarm
+                )
+
+                return
+
+            self.set_status(
+                "Alarm ka sahi time boliye."
+            )
+
+            self.speak(
+                "Alarm ka sahi time boliye."
+            )
+
+            Clock.schedule_once(
+                lambda dt:
+                self.listen(),
+                2
+            )
+
+            return
+
+        if (
+            "timer" in command
+            and (
+                "laga" in command
+                or "lagao" in command
+                or "timer" in command
+            )
+        ):
+
+            timer_command = command
+            timer_command = timer_command.replace(
+                "timer", " "
+            )
+            timer_command = timer_command.replace(
+                "laga do", " "
+            )
+            timer_command = timer_command.replace(
+                "lagao", " "
+            )
+            timer_command = timer_command.replace(
+                "laga", " "
+            )
+            timer_command = timer_command.replace(
+                "ka", " "
+            )
+
+            tokens = timer_command.split()
+            amount = None
+            unit = ""
+
+            for index, token in enumerate(tokens):
+
+                if token.isdigit():
+
+                    amount = int(token)
+
+                    if index + 1 < len(tokens):
+                        unit = tokens[index + 1]
+
+                    break
+
+            minute_units = (
+                "minute",
+                "minutes",
+                "min"
+            )
+
+            second_units = (
+                "second",
+                "seconds",
+                "sec",
+                "secs"
+            )
+
+            hour_units = (
+                "hour",
+                "hours",
+                "ghanta",
+                "ghante",
+                "ghanton"
+            )
+
+            seconds = None
+
+            if amount is not None:
+
+                if unit in minute_units:
+                    seconds = amount * 60
+
+                elif unit in second_units:
+                    seconds = amount
+
+                elif unit in hour_units:
+                    seconds = amount * 3600
+
+            if seconds is not None and seconds > 0:
+
+                def launch_timer():
+
+                    try:
+
+                        intent = Intent(
+                            AlarmClock.ACTION_SET_TIMER
+                        )
+
+                        intent.putExtra(
+                            AlarmClock.EXTRA_LENGTH,
+                            seconds
+                        )
+
+                        intent.putExtra(
+                            AlarmClock.EXTRA_MESSAGE,
+                            "Jarvis Timer"
+                        )
+
+                        intent.addFlags(
+                            Intent.FLAG_ACTIVITY_NEW_TASK
+                        )
+
+                        self.activity.startActivity(
+                            intent
+                        )
+
+                        self.set_status(
+                            "Timer set ho raha hai."
+                        )
+
+                        self.speak(
+                            "Timer set kar raha hoon."
+                        )
+
+                    except Exception as e:
+
+                        print(
+                            "Timer error:",
+                            e
+                        )
+
+                        self.set_status(
+                            "Timer set nahi ho saka."
+                        )
+
+                        self.speak(
+                            "Timer set nahi ho saka."
+                        )
+
+                self.run_on_android_thread(
+                    launch_timer
+                )
+
+                return
+
+            self.set_status(
+                "Timer ka sahi samay boliye."
+            )
+
+            self.speak(
+                "Timer ka sahi samay boliye."
+            )
+
+            Clock.schedule_once(
+                lambda dt:
+                self.listen(),
+                2
+            )
+
+            return
+
+        # ----------------------------------------------------
+        # NAME
+        # ----------------------------------------------------
+
+        if (
+            "what is your name" in command
+            or "your name" in command
+            or "tumhara naam" in command
+            or "aapka naam" in command
+        ):
+
+            self.set_status(
+                "Mera naam Jarvis hai."
+            )
+
+            self.speak(
+                "Mera naam Jarvis hai."
+            )
+
+            Clock.schedule_once(
+                lambda dt:
+                self.listen(),
+                2
+            )
+
+            return
+
+        # ----------------------------------------------------
+        # TIME
+        # ----------------------------------------------------
+
+        if (
+            "what time" in command
+            or "time kya" in command
+            or "time batao" in command
+            or "time bata" in command
+            or command == "time"
+            or "current time" in command
+        ):
+
+            self.tell_time()
+
+            Clock.schedule_once(
+                lambda dt:
+                self.listen(),
+                3
+            )
+
+            return
+
+        # ----------------------------------------------------
+        # DATE
+        # ----------------------------------------------------
+
+        if (
+            "what is the date" in command
+            or "what date" in command
+            or "date kya" in command
+            or "date batao" in command
+            or "date bata" in command
+            or command == "date"
+            or "today date" in command
+            or "today's date" in command
+        ):
+
+            self.tell_date()
+
+            Clock.schedule_once(
+                lambda dt:
+                self.listen(),
+                3
+            )
+
+            return
+
+        # ----------------------------------------------------
+        # GOOGLE SEARCH
+        # ----------------------------------------------------
+
+        google_prefixes = [
+            "google pe search karo ",
+            "google par search karo ",
+            "google me search karo ",
+            "google mein search karo ",
+            "google search karo ",
+            "google pe ",
+            "google par ",
+            "google me ",
+            "google mein ",
+            "google search ",
+            "search karo ",
+            "search kar ",
+            "web search karo ",
+            "web search ",
+            "internet par ",
+            "internet pe "
+        ]
+
+        for prefix in google_prefixes:
+
+            if command.startswith(prefix):
+
+                self.google_web_search(
+                    command[
+                        len(prefix):
+                    ].strip()
+                )
+
+                return
+
+        # ----------------------------------------------------
+        # YOUTUBE SEARCH
+        # ----------------------------------------------------
+
+        youtube_prefixes = [
+            "youtube pe search karo ",
+            "youtube par search karo ",
+            "youtube me search karo ",
+            "youtube mein search karo ",
+            "youtube search karo ",
+            "youtube pe ",
+            "youtube par ",
+            "youtube me ",
+            "youtube mein ",
+            "youtube search "
+        ]
+
+        for prefix in youtube_prefixes:
+
+            if command.startswith(prefix):
+
+                self.youtube_search(
+                    command[
+                        len(prefix):
+                    ].strip()
+                )
+
+                return
+            
+            # ----------------------------------------------------
+            # MUSIC SEARCH
+            # ----------------------------------------------------
+
+            music_prefixes = [
+                "music pe search karo ",
+                "music par search karo ",
+                "music me search karo ",
+                "music mein search karo ",
+                "music search karo ",
+                "music search ",
+                "song search karo ",
+                "song search ",
+                "gaana search karo ",
+                "gana search karo "
+            ]
+
+            for prefix in music_prefixes:
+
+                if command.startswith(prefix):
+
+                    self.music_search(
+                        command[
+                            len(prefix):
+                        ].strip()
+                    )
+
+                    return
+
+            # ----------------------------------------------------
+            # WHATSAPP
+            # ----------------------------------------------------
+
+            if (
+                "open whatsapp" in command
+                or "whatsapp kholo" in command
+                or "whatsapp khol" in command
+                or command == "whatsapp"
+            ):
+
+                self.open_whatsapp()
+
+                return
+
+            # ----------------------------------------------------
+            # CALCULATOR
+            # ----------------------------------------------------
+
+            if (
+                "open calculator" in command
+                or "calculator kholo" in command
+                or "calculator khol" in command
+                or command == "calculator"
+            ):
+
+                self.open_calculator()
+
+                return
+
+            # ----------------------------------------------------
+            # CAMERA
+            # ----------------------------------------------------
+
+            if (
+                "open camera" in command
+                or "camera kholo" in command
+                or "camera khol" in command
+                or command == "camera"
+            ):
+
+                self.open_camera()
+
+                return
+
+            # ----------------------------------------------------
+            # CHROME
+            # ----------------------------------------------------
+
+            if (
+                "open chrome" in command
+                or "chrome kholo" in command
+                or "chrome khol" in command
+                or command == "chrome"
+            ):
+
+                self.open_chrome()
+
+                return
+
+            # ----------------------------------------------------
+            # YOUTUBE
+            # ----------------------------------------------------
+
+            if (
+                "open youtube" in command
+                or "youtube kholo" in command
+                or "youtube khol" in command
+                or command == "youtube"
+            ):
+
+                self.open_youtube()
+
+                return
+
+            # ----------------------------------------------------
+            # PHONE / DIALER - v0.21
+            # ----------------------------------------------------
+
+            if (
+                "open phone" in command
+                or "phone kholo" in command
+                or "phone khol" in command
+                or "open dialer" in command
+                or "dialer kholo" in command
+                or "dialer khol" in command
+                or command in (
+                    "phone",
+                    "dialer"
+                )
+            ):
+
+                self.open_phone()
+
+                return
+
+            # ----------------------------------------------------
+            # DIAL NUMBER - v0.21
+            # ----------------------------------------------------
+
+            for prefix in [
+                "dial ",
+                "dial number ",
+                "number dial ",
+                "call ",
+                "phone number "
+            ]:
+
+                if command.startswith(prefix):
+
+                    self.dial_number(
+                        command[
+                            len(prefix):
+                        ].strip()
+                    )
+
+                    return
+
+            # ----------------------------------------------------
+            # CONTACTS - v0.21
+            # ----------------------------------------------------
+
+            if (
+                "open contacts" in command
+                or "contacts kholo" in command
+                or "contacts khol" in command
+                or "contact kholo" in command
+                or "contact khol" in command
+                or command in (
+                    "contacts",
+                    "contact"
+                )
+            ):
+
+                self.open_contacts()
+
+                return
+
+            # ----------------------------------------------------
+            # SMS / MESSAGES - v0.22
+            # ----------------------------------------------------
+
+            if (
+                "open messages" in command
+                or "messages kholo" in command
+                or "messages khol" in command
+                or "message kholo" in command
+                or "message khol" in command
+                or "open sms" in command
+                or "sms kholo" in command
+                or "sms khol" in command
+                or command in (
+                    "messages",
+                    "message",
+                    "sms"
+                )
+            ):
+
+                self.open_messages()
+
+                return
+
+            # ----------------------------------------------------
+            # SMS COMPOSE - v0.22
+            # ----------------------------------------------------
+
+            for prefix in [
+                "send sms to ",
+                "send message to ",
+                "sms to ",
+                "message to ",
+                "text to "
+            ]:
+
+                if command.startswith(prefix):
+
+                    remaining = command[
+                        len(prefix):
+                    ].strip()
+
+                    number_part = ""
+                    message_part = ""
+
+                    markers = [
+                        " message ",
+                        " sms ",
+                        " saying ",
+                        " bolo "
+                    ]
+
+                    found = None
+
+                    for marker in markers:
+
+                        index = remaining.find(
+                            marker
+                        )
+
+                        if (
+                            index != -1
+                            and (
+                                found is None
+                                or index < found[0]
+                            )
+                        ):
+
+                            found = (
+                                index,
+                                marker
+                            )
+
+                    if found:
+
+                        index, marker = found
+
+                        number_part = (
+                            remaining[
+                                :index
+                            ].strip()
+                        )
+
+                        message_part = (
+                            remaining[
+                                index +
+                                len(marker):
+                            ].strip()
+                        )
+
+                    else:
+
+                        parts = remaining.split(
+                            " ",
+                            1
+                        )
+
+                        if len(parts) == 2:
+
+                            number_part = (
+                                parts[0].strip()
+                            )
+
+                            message_part = (
+                                parts[1].strip()
+                            )
+
+                    if (
+                        number_part
+                        and message_part
+                    ):
+
+                        self.send_sms(
+                            number_part,
+                            message_part
+                        )
+
+                    else:
+
+                        self.set_status(
+                            "Number aur message dono boliye."
+                        )
+
+                        self.speak(
+                            "Number aur message dono boliye."
+                        )
+
+                        Clock.schedule_once(
+                            lambda dt:
+                            self.listen(),
+                            2
+                        )
+
+                    return
+
+            # ----------------------------------------------------
+            # MAIN SETTINGS
+            # ----------------------------------------------------
+
+            if (
+                "open settings" in command
+                or "settings kholo" in command
+                or "settings khol" in command
+                or command == "settings"
+            ):
+
+                self.open_settings(
+                    "main"
+                )
+
+                return
+
+            # ----------------------------------------------------
+            # WIFI
+            # ----------------------------------------------------
+
+            if (
+                "open wifi" in command
+                or "open wi fi" in command
+                or "open wi-fi" in command
+                or "wifi kholo" in command
+                or "wi fi kholo" in command
+                or "wi-fi kholo" in command
+                or "wifi khol" in command
+                or "wi fi khol" in command
+                or "wi-fi khol" in command
+                or "wifi settings" in command
+                or "wi fi settings" in command
+                or "wi-fi settings" in command
+                or command in (
+                    "wifi",
+                    "wi fi",
+                    "wi-fi"
+                )
+            ):
+
+                self.open_settings(
+                    "wifi"
+                )
+
+                return
+
+            # ----------------------------------------------------
+            # BLUETOOTH
+            # ----------------------------------------------------
+
+            if (
+                "open bluetooth" in command
+                or "bluetooth kholo" in command
+                or "bluetooth khol" in command
+                or "bluetooth settings" in command
+                or command == "bluetooth"
+            ):
+
+                self.open_settings(
+                    "bluetooth"
+                )
+
+                return
+
+            # ----------------------------------------------------
+            # DISPLAY
+            # ----------------------------------------------------
+
+            if (
+                "open display" in command
+                or "display kholo" in command
+                or "display khol" in command
+                or "display settings" in command
+            ):
+
+                self.open_settings(
+                    "display"
+                )
+
+                return
+
+            # ----------------------------------------------------
+            # BATTERY
+            # ----------------------------------------------------
+
+            if (
+                "open battery" in command
+                or "battery kholo" in command
+                or "battery khol" in command
+                or "battery settings" in command
+            ):
+
+                self.open_settings(
+                    "battery"
+                )
+
+                return
+
+            # ----------------------------------------------------
+            # LOCATION
+            # ----------------------------------------------------
+
+            if (
+                "open location" in command
+                or "location kholo" in command
+                or "location khol" in command
+                or "location settings" in command
+            ):
+
+                self.open_settings(
+                    "location"
+                )
+
+                return
+
+            # ----------------------------------------------------
+            # SECURITY
+            # ----------------------------------------------------
+
+            if (
+                "open security" in command
+                or "security kholo" in command
+                or "security khol" in command
+                or "security settings" in command
+            ):
+
+                self.open_settings(
+                    "security"
+                )
+
+                return
+
+            # ----------------------------------------------------
+            # MOBILE NETWORK
+            # ----------------------------------------------------
+
+            if (
+                "mobile network" in command
+                or "mobile networks" in command
+                or "mobile data" in command
+                or "data settings" in command
+                or "mobile setting" in command
+            ):
+
+                self.open_settings(
+                    "mobile"
+                )
+
+                return
+
+            # ----------------------------------------------------
+            # INSTALLED APP
+            # ----------------------------------------------------
+
+            for prefix in [
+                "open app ",
+                "app kholo ",
+                "app khol "
+            ]:
+
+                if command.startswith(prefix):
+
+                    app_name = command[
+                        len(prefix):
+                    ].strip()
+
+                    if app_name:
+
+                        self.open_installed_app(
+                            app_name
+                        )
+
+                    return
+
+            # ----------------------------------------------------
+            # COMMON INSTALLED APPS
+            # ----------------------------------------------------
+
+            common_apps = [
+                "instagram",
+                "facebook",
+                "telegram",
+                "spotify",
+                "gmail",
+                "maps",
+                "google maps"
+            ]
+
+            for app_name in common_apps:
+            
+            if (
+                command == app_name
+                or "open " + app_name in command
+                or app_name + " kholo" in command
+                or app_name + " khol" in command
+            ):
+
+                self.open_installed_app(
+                    app_name
+                )
+
+                return
+
+        # ----------------------------------------------------
+        # GENERAL INSTALLED APP VOICE LAUNCH
+        # v0.22 FIX
+        # ----------------------------------------------------
+
+        general_app_name = ""
+
+        if command.startswith("open "):
+
+            general_app_name = command[
+                5:
+            ].strip()
+
+        elif command.startswith("khol "):
+
+            general_app_name = command[
+                5:
+            ].strip()
+
+        elif command.startswith("kholo "):
+
+            general_app_name = command[
+                6:
+            ].strip()
+
+        if general_app_name:
+
+            blocked = [
+                "settings",
+                "wifi",
+                "wi fi",
+                "wi-fi",
+                "bluetooth",
+                "display",
+                "battery",
+                "location",
+                "security",
+                "mobile network",
+                "mobile data",
+                "phone",
+                "dialer",
+                "contacts",
+                "contact",
+                "messages",
+                "message",
+                "sms"
+            ]
+
+            if general_app_name not in blocked:
+
+                self.open_installed_app(
+                    general_app_name
+                )
+
+                return
+
+        # ----------------------------------------------------
+        # UNKNOWN COMMAND
+        # ----------------------------------------------------
+
+        self.set_status(
+            "Command samajh nahi aaya."
+        )
+
+        self.speak(
+            "Command samajh nahi aaya."
+        )
+
+        Clock.schedule_once(
+            lambda dt:
+            self.listen(),
+            2
+        )
+
+    # ========================================================
+    # APP STOP / CLEANUP
+    # ========================================================
+
+    def on_stop(self):
+
+        def cleanup():
+
+            try:
+
+                if (
+                    self.speech_recognizer
+                    is not None
+                ):
+
+                    self.speech_recognizer.stopListening()
+
+            except Exception:
+                pass
+
+            try:
+
+                if (
+                    self.speech_recognizer
+                    is not None
+                ):
+
+                    self.speech_recognizer.cancel()
+
+            except Exception:
+                pass
+
+            try:
+
+                if (
+                    self.speech_recognizer
+                    is not None
+                ):
+
+                    self.speech_recognizer.destroy()
+
+            except Exception:
+                pass
+
+            try:
+
+                if self.tts is not None:
+
+                    self.tts.stop()
+                    self.tts.shutdown()
+
+            except Exception:
+                pass
+
+        try:
+
+            self.run_on_android_thread(
+                cleanup
+            )
+
+        except Exception:
+            pass
+
+
+# ============================================================
+# START APPLICATION
+# ============================================================
+
+if __name__ == "__main__":
+
+    VoiceAssistant().run()
