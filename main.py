@@ -2992,7 +2992,7 @@ class VoiceAssistant(App):
             ]
 
             for app_name in common_apps:
-            
+
             if (
                 command == app_name
                 or "open " + app_name in command
