@@ -8,43 +8,11 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Checkout project
+
+      - name: Get source code
         uses: actions/checkout@v4
 
-      - name: Check project files
-        run: |
-          echo "Project directory:"
-          pwd
-
-          echo ""
-          echo "Project files:"
-          ls -la
-
-          echo ""
-          echo "Git tracked files:"
-          git ls-files
-
-          echo ""
-          echo "Checking main.py..."
-
-          if [ ! -f "main.py" ]; then
-            echo "ERROR: main.py not found"
-            exit 1
-          fi
-
-          echo "OK: main.py found"
-
-          echo ""
-          echo "Checking buildozer.spec..."
-
-          if [ ! -f "buildozer.spec" ]; then
-            echo "ERROR: buildozer.spec not found"
-            exit 1
-          fi
-
-          echo "OK: buildozer.spec found"
-
-      - name: Setup Python 3.11
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -52,7 +20,6 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-
           sudo apt-get install -y \
             git \
             zip \
@@ -68,46 +35,27 @@ jobs:
             libffi-dev \
             libssl-dev
 
-      - name: Setup Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-
-      - name: Verify Java
-        run: |
-          echo "JAVA_HOME=$JAVA_HOME"
-          echo ""
-          java -version
-          echo ""
-          javac -version
-
       - name: Install Buildozer
         run: |
           python -m pip install --upgrade pip
-          pip install buildozer==1.5.0
-          pip install cython==0.29.34
+          pip install buildozer cython
+
+      - name: Clean previous Android build
+        run: |
+          rm -rf .buildozer
+          rm -rf bin
 
       - name: Build APK
         run: |
-          set -o pipefail
+          buildozer -v android debug
 
-          buildozer -v android debug 2>&1 | tee build.log
-
-          exit ${PIPESTATUS[0]}
-
-      - name: Upload Build Log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Build-Log
-          path: build.log
-          if-no-files-found: warn
+      - name: Check APK permissions
+        run: |
+          sudo apt-get install -y aapt
+          aapt dump permissions bin/*.apk
 
       - name: Upload APK
-        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: My-Voice-Assistant-APK
           path: bin/*.apk
-          if-no-files-found: error
