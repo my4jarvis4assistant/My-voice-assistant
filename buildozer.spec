@@ -14,12 +14,11 @@ requirements = python3,kivy,pyjnius
 orientation = portrait
 fullscreen = 0
 
-android.permissions = android.permission.RECORD_AUDIO, com.google.android.alarm.permission.SET_ALARM
+android.permissions = android.permission.RECORD_AUDIO,com.google.android.alarm.permission.SET_ALARM
 
 android.api = 33
 android.minapi = 21
 android.archs = arm64-v8a
-
 android.accept_sdk_license = True
 
 p4a.branch = master
