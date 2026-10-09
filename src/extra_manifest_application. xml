@@ -1,0 +1,4 @@
+<receiver
+    android:name="org.myassistant.myvoiceassistant.JarvisAlarmReceiver"
+    android:enabled="true"
+    android:exported="false" />
