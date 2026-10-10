@@ -22,7 +22,7 @@ android.archs = arm64-v8a
 android.accept_sdk_license = True
 
 android.add_src = src
-android.extra_manifest_application_arguments = <receiver android:name="org.myassistant.myvoiceassistant.JarvisAlarmReceiver" android:enabled="true" android:exported="false" />
+android.extra_manifest_application_xml = src/extra_manifest_application.xml
 
 p4a.branch = master
 
