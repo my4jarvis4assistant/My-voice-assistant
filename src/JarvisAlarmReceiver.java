@@ -19,23 +19,26 @@ public class JarvisAlarmReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context context, Intent intent) {
         String type = intent.getStringExtra("jarvis_type");
+
         if (type == null) {
             type = "alarm";
         }
 
-        String title = "JARVIS " +
-                ("timer".equals(type) ? "Timer" : "Alarm");
+        String title = "JARVIS "
+                + ("timer".equals(type) ? "Timer" : "Alarm");
+
         String message = "timer".equals(type)
                 ? "Timer complete."
                 : "Alarm time reached.";
 
-        showNotification(context, title, message);
+        showNotification(context, title, message, type);
     }
 
     private void showNotification(
             Context context,
             String title,
-            String message) {
+            String message,
+            String type) {
 
         NotificationManager manager =
                 (NotificationManager) context.getSystemService(
@@ -45,28 +48,39 @@ public class JarvisAlarmReceiver extends BroadcastReceiver {
                 RingtoneManager.TYPE_ALARM);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            AudioAttributes attributes = new AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ALARM)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                    .build();
+            AudioAttributes attributes =
+                    new AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_ALARM)
+                            .setContentType(
+                                    AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                            .build();
 
-            NotificationChannel channel = new NotificationChannel(
-                    CHANNEL_ID,
-                    "JARVIS Alarm and Timer",
-                    NotificationManager.IMPORTANCE_HIGH);
-            channel.setDescription("JARVIS alarm and timer alerts");
+            NotificationChannel channel =
+                    new NotificationChannel(
+                            CHANNEL_ID,
+                            "JARVIS Alarm and Timer",
+                            NotificationManager.IMPORTANCE_HIGH);
+
+            channel.setDescription(
+                    "JARVIS alarm and timer alerts");
             channel.setSound(sound, attributes);
             channel.enableVibration(true);
             manager.createNotificationChannel(channel);
         }
 
         Intent launchIntent = context.getPackageManager()
-                .getLaunchIntentForPackage(context.getPackageName());
+                .getLaunchIntentForPackage(
+                        context.getPackageName());
 
         PendingIntent contentIntent = null;
+
         if (launchIntent != null) {
-            int flags = PendingIntent.FLAG_UPDATE_CURRENT
-                    | PendingIntent.FLAG_IMMUTABLE;
+            int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                flags |= PendingIntent.FLAG_IMMUTABLE;
+            }
+
             contentIntent = PendingIntent.getActivity(
                     context,
                     9001,
@@ -75,14 +89,17 @@ public class JarvisAlarmReceiver extends BroadcastReceiver {
         }
 
         Notification.Builder builder;
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            builder = new Notification.Builder(context, CHANNEL_ID);
+            builder = new Notification.Builder(
+                    context, CHANNEL_ID);
         } else {
             builder = new Notification.Builder(context)
                     .setSound(sound);
         }
 
-        builder.setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+        builder.setSmallIcon(
+                        android.R.drawable.ic_lock_idle_alarm)
                 .setContentTitle(title)
                 .setContentText(message)
                 .setAutoCancel(true)
@@ -94,8 +111,9 @@ public class JarvisAlarmReceiver extends BroadcastReceiver {
             builder.setContentIntent(contentIntent);
         }
 
-        manager.notify(
-                "timer".equals(type) ? 9002 : 9001,
-                builder.build());
+        int notificationId =
+                "timer".equals(type) ? 9002 : 9001;
+
+        manager.notify(notificationId, builder.build());
     }
 }
