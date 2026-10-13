@@ -2371,153 +2371,157 @@ class VoiceAssistant(App):
 
             return
 
-        timer_unit_words = (
-            "minute", "minutes", "min", "mins",
-            "minit", "mint",
-            "second", "seconds", "sec", "secs",
-            "sekand", "sekands",
-            "hour", "hours",
-            "ghanta", "ghante", "ghanton"
+    # ----------------------------------------------------
+    # TIMER - v0.24 REPAIR
+    # ----------------------------------------------------
+
+    import re
+
+    timer_unit_words = (
+        "minute", "minutes", "min", "mins",
+        "minit", "minits", "mint", "mints",
+        "second", "seconds", "sec", "secs",
+        "sekand", "sekands",
+        "hour", "hours",
+        "ghanta", "ghante", "ghanton"
+    )
+
+    has_timer_word = (
+        "timer" in command.split()
+        or "countdown" in command.split()
+    )
+
+    has_duration_word = any(
+        word in command.split()
+        for word in timer_unit_words
+    )
+
+    if has_timer_word or (
+        "countdown" in command and has_duration_word
+    ):
+
+        print(
+            "JARVIS TIMER COMMAND RECEIVED:",
+            repr(command)
         )
 
-        has_timer_duration_word = any(
-            word in command.split()
-            for word in timer_unit_words
+        number_words = {
+            "one": 1, "ek": 1,
+            "two": 2, "do": 2,
+            "three": 3, "teen": 3,
+            "four": 4, "char": 4,
+            "five": 5, "paanch": 5, "panch": 5,
+            "six": 6, "chhe": 6, "che": 6,
+            "seven": 7, "saat": 7,
+            "eight": 8, "aath": 8,
+            "nine": 9, "nau": 9,
+            "ten": 10, "das": 10,
+            "eleven": 11, "gyarah": 11,
+            "twelve": 12, "barah": 12,
+            "fifteen": 15, "pandrah": 15,
+            "twenty": 20, "bees": 20,
+            "thirty": 30, "tees": 30,
+            "forty": 40, "chalis": 40,
+            "fifty": 50, "pachaas": 50
+        }
+
+        seconds = None
+
+        match = re.search(
+            r"\b(\d+)\s*"
+            r"(seconds?|secs?|sekands?|"
+            r"minutes?|mins?|minits?|mints?|"
+            r"hours?|ghante|ghanton|ghanta)\b",
+            command
         )
 
-        if (
-            ("timer" in command or "time" in command)
-            and has_timer_duration_word
-        ):
+        if match:
+            amount = int(match.group(1))
+            unit = match.group(2)
 
-            timer_command = command
-            timer_command = timer_command.replace(
-                "timer", " "
-            )
-            timer_command = timer_command.replace(
-                "laga do", " "
-            )
-            timer_command = timer_command.replace(
-                "lagao", " "
-            )
-            timer_command = timer_command.replace(
-                "laga", " "
-            )
-            timer_command = timer_command.replace(
-                "ka", " "
-            )
+            if unit in (
+                "second", "seconds", "sec", "secs",
+                "sekand", "sekands"
+            ):
+                seconds = amount
 
-            tokens = timer_command.split()
-            amount = None
-            unit = ""
+            elif unit in (
+                "minute", "minutes", "min", "mins",
+                "minit", "minits", "mint", "mints"
+            ):
+                seconds = amount * 60
 
-            number_words = {
-                "one": 1, "ek": 1,
-                "two": 2, "do": 2,
-                "three": 3, "teen": 3,
-                "four": 4, "char": 4,
-                "five": 5, "paanch": 5, "panch": 5,
-                "six": 6, "chhe": 6, "che": 6,
-                "seven": 7, "saat": 7,
-                "eight": 8, "aath": 8,
-                "nine": 9, "nau": 9,
-                "ten": 10, "das": 10,
-                "eleven": 11, "gyarah": 11,
-                "twelve": 12, "barah": 12,
-                "fifteen": 15, "pandrah": 15,
-                "twenty": 20, "bees": 20,
-                "thirty": 30, "tees": 30,
-                "forty": 40, "chalis": 40,
-                "fifty": 50, "pachaas": 50
-            }
+            else:
+                seconds = amount * 3600
+
+        else:
+            tokens = command.split()
 
             for index, token in enumerate(tokens):
-
-                if token.isdigit():
-                    amount = int(token)
-                elif token in number_words:
-                    amount = number_words[token]
-                else:
+                if token not in number_words:
                     continue
 
-                if index + 1 < len(tokens):
-                    unit = tokens[index + 1]
-                break
+                if index + 1 >= len(tokens):
+                    continue
 
-            minute_units = (
-                "minute",
-                "minutes",
-                "min",
-                "mins",
-                "minit",
-                "mint"
-            )
+                unit = tokens[index + 1]
+                amount = number_words[token]
 
-            second_units = (
-                "second",
-                "seconds",
-                "sec",
-                "secs",
-                "sekand",
-                "sekands"
-            )
-
-            hour_units = (
-                "hour",
-                "hours",
-                "ghanta",
-                "ghante",
-                "ghanton"
-            )
-
-            seconds = None
-
-            if amount is not None:
-
-                if unit in minute_units:
-                    seconds = amount * 60
-
-                elif unit in second_units:
+                if unit in (
+                    "second", "seconds", "sec", "secs",
+                    "sekand", "sekands"
+                ):
                     seconds = amount
 
-                elif unit in hour_units:
+                elif unit in (
+                    "minute", "minutes", "min", "mins",
+                    "minit", "minits", "mint", "mints"
+                ):
+                    seconds = amount * 60
+
+                elif unit in (
+                    "hour", "hours", "ghanta",
+                    "ghante", "ghanton"
+                ):
                     seconds = amount * 3600
 
-            if seconds is not None and seconds > 0:
+                if seconds is not None:
+                    break
 
-                self._schedule_android_timer(seconds)
-
-                return
-
-            diagnostic_message = (
-                "TIMER PARSE ERROR | command=" +
-                command +
-                " | tokens=" +
-                str(tokens) +
-                " | amount=" +
-                str(amount) +
-                " | unit=" +
-                str(unit)
+        if seconds is not None and 0 < seconds <= 86400:
+            print(
+                "JARVIS TIMER PARSED:",
+                repr(command),
+                "seconds=",
+                seconds
             )
 
-            print(diagnostic_message)
+            self._schedule_android_timer(seconds)
+
+        else:
+            print(
+                "JARVIS TIMER PARSE FAILED:",
+                repr(command),
+                "seconds=",
+                seconds
+            )
 
             self.set_status(
-                diagnostic_message
+                "Timer duration samajh nahi aayi: " + command
             )
 
             self.speak(
-                "Timer command samajh nahi aaya. " +
-                "Command screen par dekhiye."
+                "Timer ka samay samajh nahi aaya. "
+                "Das seconds ka timer bolkar dekhiye."
             )
 
             Clock.schedule_once(
-                lambda dt:
-                self.listen(),
+                lambda dt: self.listen_again(),
                 2
             )
 
             return
+
 
         # ----------------------------------------------------
         # NAME
