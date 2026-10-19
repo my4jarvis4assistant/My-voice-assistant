@@ -1,49 +1,25 @@
+
 name: Build Android APK
 
 on:
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-22.04
 
     steps:
-
       - name: Checkout project
         uses: actions/checkout@v4
 
       - name: Check project files
         run: |
-          echo "Project directory:"
-          pwd
-
-          echo ""
-          echo "Project files:"
-          ls -la
-
-          echo ""
-          echo "Git tracked files:"
-          git ls-files
-
-          echo ""
-          echo "Checking main.py..."
-
-          if [ ! -f "main.py" ]; then
-            echo "ERROR: main.py not found"
-            exit 1
-          fi
-
-          echo "OK: main.py found"
-
-          echo ""
-          echo "Checking buildozer.spec..."
-
-          if [ ! -f "buildozer.spec" ]; then
-            echo "ERROR: buildozer.spec not found"
-            exit 1
-          fi
-
-          echo "OK: buildozer.spec found"
+          test -f main.py || { echo "ERROR: main.py not found"; exit 1; }
+          test -f buildozer.spec || { echo "ERROR: buildozer.spec not found"; exit 1; }
+          echo "Project files OK"
 
       - name: Setup Python 3.11
         uses: actions/setup-python@v5
@@ -53,35 +29,16 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-
           sudo apt-get install -y \
-            git \
-            zip \
-            unzip \
-            openjdk-17-jdk \
-            autoconf \
-            libtool \
-            pkg-config \
-            zlib1g-dev \
-            libncurses5-dev \
-            libncursesw5-dev \
-            cmake \
-            libffi-dev \
-            libssl-dev
+            git zip unzip openjdk-17-jdk autoconf libtool \
+            pkg-config zlib1g-dev libncurses5-dev \
+            libncursesw5-dev cmake libffi-dev libssl-dev
 
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
-
-      - name: Verify Java
-        run: |
-          echo "JAVA_HOME=$JAVA_HOME"
-          echo ""
-          java -version
-          echo ""
-          javac -version
 
       - name: Install Buildozer
         run: |
@@ -97,33 +54,22 @@ jobs:
       - name: Build APK
         run: |
           set -o pipefail
-
           buildozer -v android debug 2>&1 | tee build.log
 
-          exit ${PIPESTATUS[0]}
-
-      - name: Check APK permissions
-        if: success()
+      - name: Check APK exists
         run: |
-          sudo apt-get update
-          sudo apt-get install -y aapt
+          ls -lh bin/*.apk
 
-          echo "APK permissions:"
-          aapt dump permissions bin/*.apk
+      - name: Create release tag
+        id: release_tag
+        run: |
+          echo "tag=v0.26-build-${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
 
-      - name: Upload Build Log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Build-Log
-          path: build.log
-          if-no-files-found: warn
-
-      - name: Upload APK
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: My-Voice-Assistant-APK
-          path: bin/*.apk
-          if-no-files-found: error
-          
+      - name: Publish APK as GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ steps.release_tag.outputs.tag }}
+        run: |
+          gh release create "$TAG_NAME" bin/*.apk \
+            --title "JARVIS APK Build ${GITHUB_RUN_NUMBER}" \
+            --notes "Automatically built Android APK from commit ${GITHUB_SHA}."
