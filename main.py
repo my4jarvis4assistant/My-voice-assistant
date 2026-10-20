@@ -332,9 +332,57 @@ class VoiceAssistant(App):
                 print("JARVIS calculator restart error:", repr(listen_exc))
         return result
 
+    def _normalize_spoken_calculator_numbers(self, text):
+        """Convert common Hindi/English spoken number words into digits for calculator commands."""
+        text = text.lower().replace("crore", "karo")
+        words = {
+            "zero":0,"oh":0,"shunya":0,"sunya":0,
+            "one":1,"ek":1,"एक":1,"two":2,"do":2,"दो":2,"three":3,"teen":3,"तीन":3,
+            "four":4,"char":4,"chaar":4,"चार":4,"five":5,"panch":5,"paanch":5,"पांच":5,"छह":6,"cheh":6,"chhe":6,"six":6,
+            "seven":7,"saat":7,"सात":7,"eight":8,"aath":8,"आठ":8,"nine":9,"nau":9,"नौ":9,"ten":10,"das":10,"दस":10,
+            "gyarah":11,"eleven":11,"barah":12,"twelve":12,"terah":13,"thirteen":13,"chaudah":14,"fourteen":14,
+            "pandrah":15,"fifteen":15,"solah":16,"sixteen":16,"satrah":17,"seventeen":17,"atharah":18,"eighteen":18,
+            "unnis":19,"nineteen":19,"bees":20,"twenty":20,"ikkees":21,"ikkis":21,"baees":22,"teis":23,"chaubis":24,
+            "pachis":25,"pachchis":25,"twenty five":25,"chhabbis":26,"sattais":27,"athais":28,"untees":29,"tees":30,
+            "chalees":40,"chaalis":40,"pachaas":50,"saath":60,"sattar":70,"assi":80,"nabbe":90,
+            "hundred":100,"sau":100,"सौ":100,"thousand":1000,"hazaar":1000,"hazar":1000,"हजार":1000,
+            "lakh":100000,"lac":100000," लाख":100000,"crore":10000000,"karod":10000000,
+        }
+        # Convert contiguous spoken-number sequences, e.g. "pachis", "ek sau pachis".
+        number_words = sorted((k for k in words if k.strip()), key=len, reverse=True)
+        token_alt = "(?:" + "|".join(re.escape(k.strip()) for k in number_words) + ")"
+        def convert_run(match):
+            toks = re.findall(token_alt, match.group(0).lower())
+            total = 0
+            current = 0
+            for tok in toks:
+                val = words.get(tok.strip(), 0)
+                if val == 100:
+                    current = max(1, current) * 100
+                elif val in (1000, 100000, 10000000):
+                    total += max(1, current) * val
+                    current = 0
+                else:
+                    current += val
+            value = total + current
+            return str(value) if value else match.group(0)
+        number_run = r"\b" + token_alt + r"(?:[ -]+" + token_alt + r")*\b"
+        text = re.sub(number_run, convert_run, text)
+        aliases = {
+            "plus":"+", "jodo":"+", "jod do":"+", "add":"+", "minus":"-", "ghatao":"-", "ghata do":"-",
+            "guna":"*", "gunaa":"*", "gunnah":"*", "multiply":"*", "multiplied by":"*", "times":"*", "into":"*",
+            "divide by":"/", "divided by":"/", "bhaag":"/", "bhag":"/", "power of":"**", "raised to the power of":"**", "power":"**"
+        }
+        for phrase, symbol in sorted(aliases.items(), key=lambda x: len(x[0]), reverse=True):
+            text = re.sub(r"\b" + re.escape(phrase) + r"\b", symbol, text)
+        text = re.sub(r"\b(?:karo|kar do|batao|bataiye|please|jarvis|kitna|kitni|hota|hai|hain|answer|jawab)\b", " ", text)
+        text = text.replace("गुणा", "*").replace("जोड़", "+").replace("जोड", "+").replace("घटा", "-").replace("भाग", "/")
+        return re.sub(r"\s+", " ", text).strip()
+
     def _voice_calculation(self, command):
         spoken_question = command.strip()
         text = command.lower().strip()
+        text = self._normalize_spoken_calculator_numbers(text)
 
         # Robust fast path for simple arithmetic from Android speech recognition.
         # Handles both symbols ("2 + 5") and spoken operators ("8 guna 12").
@@ -3249,6 +3297,12 @@ class VoiceAssistant(App):
         # ----------------------------------------------------
         if any(phrase in command for phrase in ("scientific calculator", "open scientific calculator", "scientific calculator kholo", "scientific calculator khol")):
             self.show_scientific_calculator()
+            return
+
+        # Catch spoken arithmetic even when ASR renders "karo" as "crore" or uses number words.
+        normalized_math = self._normalize_spoken_calculator_numbers(command)
+        if re.search(r"(?:\d|\+|\*|/|\b(?:plus|minus|guna|gunaa|divide|power|pachis|pachchis|ek|do|teen|char|chaar|sau|hazaar)\b)", normalized_math) and re.search(r"(?:\+|(?<!\*)\*(?!\*)|/|\*\*|sqrt|square root|vargmool|percent|percentage|sin|cos|tan|log|ln|plus|minus|guna|gunaa|divide|power)", normalized_math):
+            self._voice_calculation(command)
             return
 
         calc_triggers = ("calculate ", "calculation ", "compute ", "what is ", "kitna hota hai ", "kitna ", "hisab karo ", "hisab lagao ", "solve ", "jodo ", "ghatao ", "guna ", "gunaa ", "bhaag ", "bhag ", "square root of ", "square root ", "sine of ", "sin of ", "sin ", "cosine of ", "cos of ", "cos ", "tangent of ", "tan of ", "tan ", "natural log of ", "log of ", "log ", "ln ")
