@@ -2634,6 +2634,13 @@ class VoiceAssistant(App):
         original_command = " ".join(str(command).split()).strip()
         command = " ".join(str(command).lower().split()).strip()
 
+        # v0.27: normalize common speech-recognition variants without
+        # changing the original text used for diagnostics.
+        command = command.replace("crore", "karo")
+        command = re.sub(r"\b(please|pleasee)\b", "", command)
+        command = re.sub(r"\b(jarvis ji|jarvisjee)\b", "jarvis", command)
+        command = re.sub(r"\s+", " ", command).strip()
+
         # Remove a spoken wake word only when it is at the beginning.
         # This lets both "note karo ..." and "Jarvis, note karo ..." work.
         wake_prefixes = ("hey jarvis", "hello jarvis", "hi jarvis", "jarvis")
@@ -2726,6 +2733,45 @@ class VoiceAssistant(App):
                 note_text = command[len(prefix):].strip(" :,-")
                 self._save_voice_note(note_text)
                 return
+
+        # ----------------------------------------------------
+        # NATURAL CONVERSATION / HELP - v0.27
+        # Keep these specific checks before the general app launcher.
+        # ----------------------------------------------------
+        if command in ("how are you", "how are you jarvis", "kaise ho", "kaise ho jarvis", "jarvis kaise ho", "kya haal hai"):
+            reply = "Main bilkul theek hoon. Aapki madad ke liye taiyar hoon."
+            self.set_status(reply)
+            self.speak(reply)
+            Clock.schedule_once(lambda dt: self.listen(), 2)
+            return
+
+        if command in ("who are you", "who are you jarvis", "tum kaun ho", "aap kaun ho", "apna parichay do", "jarvis kaun hai"):
+            reply = "Main JARVIS hoon, aapka voice assistant. Aap bolkar supported commands chala sakte hain."
+            self.set_status(reply)
+            self.speak(reply)
+            Clock.schedule_once(lambda dt: self.listen(), 2)
+            return
+
+        if command in ("thank you", "thanks", "thank you jarvis", "shukriya", "dhanyawad", "bahut achha", "good job"):
+            reply = "Aapka swagat hai. Bataiye, main aur kya karoon?"
+            self.set_status(reply)
+            self.speak(reply)
+            Clock.schedule_once(lambda dt: self.listen(), 2)
+            return
+
+        if command in ("help", "help me", "what can you do", "what can you do jarvis", "jarvis help", "madad karo", "meri madad karo", "tum kya kar sakte ho", "aap kya kar sakte ho", "commands batao", "command list"):
+            reply = ("Main voice se calculator, time aur date, notes, supported apps kholna, web ya YouTube search, aur alarm ya timer jaise supported kaam kar sakta hoon. Aap ek command boliye, jaise pachis plus pandrah, time batao, note karo, ya YouTube kholo.")
+            self.set_status("Help: supported voice commands")
+            self.speak(reply)
+            Clock.schedule_once(lambda dt: self.listen(), 3)
+            return
+
+        if command in ("repeat", "repeat that", "say again", "dobara bolo", "phir se bolo", "fir se bolo"):
+            reply = "Maaf kijiye, pichhla jawab dobara sunane ki suvidha abhi is version mein nahi hai. Aap command phir se bol sakte hain."
+            self.set_status(reply)
+            self.speak(reply)
+            Clock.schedule_once(lambda dt: self.listen(), 2)
+            return
 
         # ----------------------------------------------------
         # GREETING
@@ -3812,16 +3858,16 @@ class VoiceAssistant(App):
         # UNKNOWN COMMAND
         # ----------------------------------------------------
 
-        # Temporary diagnostic status: lets us see recognition vs parsing.
-        # Keep the spoken response unchanged; alarm/timer/reminder code is untouched.
+        # Friendly fallback: do not pretend an unsupported command succeeded.
+        # Keep recognized text visible so future fixes can target real examples.
         self.set_status(
-            "Command samajh nahi aaya.\n"
+            "Command clear nahi hui. Dobara boliye.\n"
             "Heard: " + original_command + "\n"
             "Processed: " + command
         )
 
         self.speak(
-            "Command samajh nahi aaya."
+            "Maaf kijiye, command clear nahi hui. Kripya thoda alag ya dheere boliye."
         )
 
         Clock.schedule_once(
