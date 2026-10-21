@@ -1,261 +1,230 @@
-"""JARVIS v0.29 visual module: responsive cyan/gold core and central fingerprint control. Keep UI isolated from main.py."""
+"""Alex AI / JARVIS reference-layout UI, isolated from assistant logic.
+UI-only update: does not alter main.py or alarm/timer/reminder/calculator handlers.
+"""
 import math
 from kivy.metrics import dp
 from kivy.clock import Clock
-from kivy.core.window import Window
 from kivy.graphics import Color, Ellipse, Line, RoundedRectangle
-from kivy.uix.label import Label
+from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.gridlayout import GridLayout
+from kivy.uix.label import Label
 from kivy.uix.button import Button
 from kivy.uix.widget import Widget
+from kivy.uix.textinput import TextInput
 from kivy.uix.scrollview import ScrollView
 
-class JarvisCore(Widget):
-    """Procedurally drawn, animated JARVIS reactor logo (no external assets)."""
-
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.phase = 0.0
-        self.bind(pos=self.redraw, size=self.redraw)
-        Clock.schedule_interval(self._tick, 1.0 / 24.0)
-        self.redraw()
-
-    def _tick(self, dt):
-        self.phase = (self.phase + dt * 0.75) % (2 * math.pi)
-        self.redraw()
-
-    def redraw(self, *args):
-        self.canvas.clear()
-        cx = self.x + self.width / 2.0
-        cy = self.y + self.height / 2.0
-        radius = max(dp(35), min(self.width, self.height) * 0.34)
-        pulse = 1.0 + 0.035 * math.sin(self.phase * 2.0)
-        with self.canvas:
-            # Soft cyan aura and deep central reactor.
-            Color(0.02, 0.62, 1.0, 0.055)
-            Ellipse(pos=(cx-radius*1.28, cy-radius*1.28), size=(radius*2.56, radius*2.56))
-            Color(0.02, 0.55, 1.0, 0.10)
-            Ellipse(pos=(cx-radius*1.08, cy-radius*1.08), size=(radius*2.16, radius*2.16))
-            Color(0.015, 0.035, 0.075, 1)
-            Ellipse(pos=(cx-radius*0.78, cy-radius*0.78), size=(radius*1.56, radius*1.56))
-            # Layered rings.
-            Color(0.12, 0.78, 1.0, 0.95)
-            Line(circle=(cx, cy, radius*pulse), width=dp(1.5))
-            Color(0.20, 0.55, 1.0, 0.72)
-            Line(circle=(cx, cy, radius*0.86), width=dp(1.0))
-            Color(0.20, 0.90, 1.0, 0.90)
-            Line(circle=(cx, cy, radius*0.68), width=dp(1.2))
-            # Segmented rotating arcs.
-            for ring_r, count, offset, arc_len in ((radius*1.12, 4, self.phase, 0.48), (radius*0.94, 6, -self.phase*1.3, 0.25)):
-                for i in range(count):
-                    start = offset + (2*math.pi*i/count)
-                    pts = []
-                    for j in range(17):
-                        a = start + arc_len*j/16.0
-                        pts.extend((cx + ring_r*math.cos(a), cy + ring_r*math.sin(a)))
-                    Color(0.10, 0.78, 1.0, 0.92 if ring_r > radius else 0.68)
-                    Line(points=pts, width=dp(2.0 if ring_r > radius else 1.4))
-            # Inner glowing core.
-            Color(0.05, 0.58, 1.0, 0.22)
-            Ellipse(pos=(cx-radius*0.49, cy-radius*0.49), size=(radius*0.98, radius*0.98))
-            Color(0.12, 0.85, 1.0, 0.92)
-            Line(circle=(cx, cy, radius*0.43), width=dp(1.4))
-            Color(0.36, 0.94, 1.0, 1)
-            Ellipse(pos=(cx-radius*0.22, cy-radius*0.22), size=(radius*0.44, radius*0.44))
-            Color(0.015, 0.09, 0.16, 1)
-            Ellipse(pos=(cx-radius*0.16, cy-radius*0.16), size=(radius*0.32, radius*0.32))
-            # Orbit nodes.
-            for i in range(8):
-                a = self.phase * (1 if i % 2 else -1) + (2*math.pi*i/8)
-                rr = radius * (1.12 if i % 2 == 0 else 0.86)
-                x, y = cx + rr*math.cos(a), cy + rr*math.sin(a)
-                Color(0.35, 0.94, 1.0, 0.95)
-                Ellipse(pos=(x-dp(2.3), y-dp(2.3)), size=(dp(4.6), dp(4.6)))
+BG=(.008,.018,.030,1); PANEL=(.018,.040,.057,.97); PANEL2=(.026,.060,.079,.98)
+CYAN=(.27,.91,1,1); CYAN2=(.10,.62,.78,1); GOLD=(.96,.77,.43,1)
+WHITE=(.88,.94,.98,1); MUTED=(.52,.68,.76,1); GREEN=(.27,.98,.61,1)
 
 
-
-class FingerprintButton(Button):
-    """Custom central microphone/fingerprint-style control inspired by the reference."""
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.text = ''
-        self.background_normal = ''
-        self.background_down = ''
-        self.background_color = (0, 0, 0, 0)
-        self.bind(pos=self.redraw, size=self.redraw, state=self.redraw)
-        self.redraw()
-
-    def redraw(self, *args):
-        self.canvas.clear()
-        cx, cy = self.center_x, self.center_y
-        r = min(self.width, self.height) * 0.43
-        pressed = self.state == 'down'
-        with self.canvas:
-            # Outer metallic housing and cyan aura.
-            Color(0.02, 0.55, 0.82, 0.14 if not pressed else 0.24)
-            Ellipse(pos=(cx-r*1.22, cy-r*1.22), size=(r*2.44, r*2.44))
-            Color(0.48, 0.68, 0.75, 0.95)
-            Line(circle=(cx, cy, r*1.08), width=dp(1.5))
-            Color(0.06, 0.15, 0.20, 1)
-            Ellipse(pos=(cx-r, cy-r), size=(r*2, r*2))
-            Color(0.16, 0.84, 0.96, 0.95)
-            Line(circle=(cx, cy, r*0.88), width=dp(1.5))
-            Color(0.025, 0.055, 0.08, 1)
-            Ellipse(pos=(cx-r*0.76, cy-r*0.76), size=(r*1.52, r*1.52))
-            # Fingerprint ridges, drawn as smooth open curves.
-            Color(0.32, 0.91, 1.0, 1)
-            for idx in range(6):
-                half_w = r * (0.12 + idx * 0.095)
-                top = cy + r * (0.55 - idx * 0.035)
-                bottom = cy - r * (0.55 - idx * 0.045)
-                pts = []
-                steps = 44
-                for j in range(steps + 1):
-                    t = j / steps
-                    y = top - (top-bottom)*t
-                    # Rounded arch at top, then slightly narrowing lower ridges.
-                    xoff = half_w * math.sin(math.pi * t * 0.92)
-                    x = cx + xoff * math.sin(math.pi * (t*0.88 + 0.06))
-                    pts.extend((x, y))
-                if len(pts) >= 4:
-                    Line(points=pts, width=dp(1.35), cap='round')
-            # Center ridge / sensor glint.
-            Color(0.78, 0.95, 1.0, 0.95)
-            Line(points=[cx, cy-r*0.43, cx, cy+r*0.20], width=dp(1.15), cap='round')
-
-
-
-BG = (0.012, 0.025, 0.043, 1)
-CYAN = (0.25, 0.88, 1, 1)
-GOLD = (0.91, 0.76, 0.48, 1)
-MUTED = (0.61, 0.75, 0.83, 1)
-
-
-def panel(widget, color=(0.025, 0.065, 0.09, 0.94), radius=dp(18), border=(0.18,0.73,0.88,0.65)):
-    with widget.canvas.before:
-        Color(*color)
-        widget._panel_bg = RoundedRectangle(pos=widget.pos, size=widget.size, radius=[radius])
-        Color(*border)
-        widget._panel_line = Line(rounded_rectangle=(widget.x, widget.y, widget.width, widget.height, radius), width=1.05)
-    def update(*_):
-        widget._panel_bg.pos = widget.pos; widget._panel_bg.size = widget.size
-        widget._panel_line.rounded_rectangle = (widget.x, widget.y, widget.width, widget.height, radius)
-    widget.bind(pos=update, size=update)
-    return widget
-
-
-def txt(text, size=14, color=MUTED, bold=False, halign='left'):
-    w=Label(text=text, font_size=f'{size}sp', color=color, bold=bold, halign=halign, valign='middle')
-    w.bind(size=lambda inst, val: setattr(inst, 'text_size', (max(0, val[0]-dp(8)), val[1])))
+def make_label(text, size=12, color=WHITE, bold=False, align='left'):
+    w=Label(text=text,font_size=f'{size}sp',color=color,bold=bold,halign=align,valign='middle',shorten=True,shorten_from='right')
+    w.bind(size=lambda o,s:setattr(o,'text_size',(max(0,s[0]-dp(8)),s[1])))
     return w
 
+def panel(widget, fill=PANEL, edge=CYAN2, radius=dp(15), width=1):
+    with widget.canvas.before:
+        Color(*fill); widget._panel_bg=RoundedRectangle(pos=widget.pos,size=widget.size,radius=[radius])
+        Color(*edge); widget._panel_line=Line(rounded_rectangle=(widget.x,widget.y,widget.width,widget.height,radius),width=width)
+    def sync(*_):
+        widget._panel_bg.pos=widget.pos; widget._panel_bg.size=widget.size
+        widget._panel_line.rounded_rectangle=(widget.x,widget.y,widget.width,widget.height,radius)
+    widget.bind(pos=sync,size=sync)
+    return widget
 
-def action_button(text, callback, height=42):
-    b=Button(text=text, size_hint_y=None, height=dp(height), font_size='13sp', color=(0.84,0.94,0.98,1),
-             background_normal='', background_down='', background_color=(0.025,0.12,0.17,0.98))
+def make_button(text, callback, h=dp(38), color=WHITE, bg=(.025,.075,.096,1), fs=11):
+    b=Button(text=text,size_hint_y=None,height=h,font_size=f'{fs}sp',bold=True,color=color,
+             background_normal='',background_down='',background_color=bg)
     b.bind(on_release=lambda *_: callback())
     return b
 
+def set_status(app,text):
+    try: app.set_status(text)
+    except Exception:
+        try: app.status_label.text=text
+        except Exception: pass
 
-def _safe_status(app, message):
-    try: app.set_status(message)
+def prompt(app,text):
+    set_status(app,'READY • '+text.upper())
+    try:
+        if getattr(app,'tts',None): app.tts.speak(text,0,None)
     except Exception: pass
 
+class Reactor(Widget):
+    def __init__(self,**kwargs):
+        super().__init__(**kwargs); self.phase=0; self.bind(pos=self.draw,size=self.draw); Clock.schedule_interval(self.tick,1/30); self.draw()
+    def tick(self,dt): self.phase=(self.phase+dt*.55)%(math.pi*2); self.draw()
+    def draw(self,*_):
+        self.canvas.clear(); cx,cy=self.center; r=max(dp(18),min(self.width,self.height)*.30); ph=self.phase
+        with self.canvas:
+            Color(.0,.52,.92,.035); Ellipse(pos=(cx-r*1.65,cy-r*1.65),size=(r*3.3,r*3.3))
+            Color(.0,.7,1,.06); Ellipse(pos=(cx-r*1.32,cy-r*1.32),size=(r*2.64,r*2.64))
+            Color(.012,.035,.052,1); Ellipse(pos=(cx-r,cy-r),size=(2*r,2*r))
+            Color(*CYAN); Line(circle=(cx,cy,r),width=dp(1.5))
+            Color(*GOLD); Line(circle=(cx,cy,r*.91),width=dp(.8))
+            Color(.08,.5,.7,.9); Line(circle=(cx,cy,r*.78),width=dp(1.2))
+            for i in range(72):
+                a=2*math.pi*i/72+ph*.06; ri=r*(1.04 if i%6==0 else .99); ro=r*(1.12 if i%6==0 else 1.025)
+                Color(*(GOLD if i%6==0 else CYAN2)); Line(points=[cx+ri*math.cos(a),cy+ri*math.sin(a),cx+ro*math.cos(a),cy+ro*math.sin(a)],width=dp(.9))
+            for rad,n,off,col in ((.68,8,ph,CYAN),(.55,7,-ph*1.1,GOLD),(.42,9,ph*.8,CYAN2)):
+                for i in range(n):
+                    a=off+2*math.pi*i/n; pts=[]
+                    for j in range(12):
+                        aa=a+j*.035; rr=r*rad*(1+.04*math.sin(ph*2+j*.5)); pts += [cx+rr*math.cos(aa),cy+rr*math.sin(aa)]
+                    Color(*col); Line(points=pts,width=dp(1.5))
+            Color(.02,.14,.2,1); Ellipse(pos=(cx-r*.34,cy-r*.34),size=(r*.68,r*.68))
+            Color(*CYAN); Line(circle=(cx,cy,r*.31),width=dp(1.2))
+            Color(.35,.9,1,.9); Ellipse(pos=(cx-r*.07,cy-r*.07),size=(r*.14,r*.14))
+            # Horizontal audio waveform through reactor.
+            Color(.3,.9,1,.9); pts=[]; count=45
+            for i in range(count):
+                x=cx-r*1.25+(r*2.5*i/(count-1)); amp=r*(.08+.30*abs(math.sin(i*.83+ph*2))*abs(math.sin(i*.23+ph)))
+                pts += [x,cy-amp,x,cy+amp]
+            Line(points=pts,width=dp(1.05))
+            for i in range(4):
+                a=ph*(1 if i%2 else -1)+i*math.pi/2; rr=r*(.95 if i%2 else 1.06)
+                Color(*(GOLD if i in (0,2) else CYAN)); Ellipse(pos=(cx+rr*math.cos(a)-dp(2),cy+rr*math.sin(a)-dp(2)),size=(dp(4),dp(4)))
 
-def _voice_action(app, command):
-    # Voice-first: use existing recognizer for microphone; otherwise announce the feature.
-    try:
-        app.set_status('Boliye: ' + command)
-        if getattr(app, 'tts', None): app.tts.speak('Kripya ' + command + ' boliye.', 0, None)
-    except Exception:
-        pass
+class FingerprintButton(Button):
+    """Fingerprint-style visual trigger. Not Android biometric authentication."""
+    def __init__(self,**kw):
+        super().__init__(text='',background_normal='',background_down='',background_color=(0,0,0,0),**kw); self.bind(pos=self.draw,size=self.draw); self.draw()
+    def draw(self,*_):
+        self.canvas.clear(); cx,cy=self.center; r=max(dp(12),min(self.width,self.height)*.39)
+        with self.canvas:
+            Color(.0,.7,1,.10); Ellipse(pos=(cx-r*1.35,cy-r*1.35),size=(r*2.7,r*2.7))
+            Color(.018,.06,.085,1); Ellipse(pos=(cx-r,cy-r),size=(2*r,2*r))
+            Color(*GOLD); Line(circle=(cx,cy,r*1.04),width=dp(1))
+            Color(*CYAN); Line(circle=(cx,cy,r*.92),width=dp(1.6))
+            Color(.035,.12,.16,1); Ellipse(pos=(cx-r*.74,cy-r*.74),size=(r*1.48,r*1.48))
+            Color(.48,.94,1,1)
+            # Rounded, nested fingerprint ridges drawn as smooth segmented lines.
+            for i in range(7):
+                half=r*(.18+i*.075); top=cy+r*(.52-i*.035); bottom=cy-r*(.40-i*.022); pts=[]
+                for j in range(31):
+                    t=j/30; y=top-(top-bottom)*t; x=cx+half*math.sin(math.pi*t)
+                    pts += [x,y]
+                Line(points=pts,width=dp(1.0))
+            Color(*GOLD); Line(points=[cx,cy-r*.18,cx,cy+r*.13],width=dp(1.0))
 
+class SettingsPanel(BoxLayout):
+    def __init__(self,app,on_close,**kwargs):
+        super().__init__(orientation='vertical',spacing=dp(5),padding=[dp(9),dp(8),dp(9),dp(8)],**kwargs)
+        self.app=app; self.on_close=on_close; panel(self,(.014,.033,.049,.985),(.20,.67,.79,.95),dp(18),1.2)
+        head=BoxLayout(size_hint_y=None,height=dp(32),spacing=dp(3)); head.add_widget(make_label('Voice Selection',15,GOLD,True))
+        head.add_widget(make_button('×',on_close,dp(30),GOLD,(.05,.10,.13,1),17)); self.add_widget(head)
+        names=['Alate troiina','Tioteerabuh','Wardsolstae','Suienger fight','Mginall shceratioe','Etseoabrck']
+        self.voice_buttons=[]
+        for i,name in enumerate(names):
+            def choose(n=name,idx=i): self.select_voice(n,idx)
+            b=make_button('◉   '+name+'    ···',choose,dp(38),CYAN if i==0 else WHITE,(.025,.064,.083,1),10)
+            panel(b,(.025,.064,.083,1),(.20,.38,.47,.85),dp(16),.8); self.voice_buttons.append(b); self.add_widget(b)
+        self.add_widget(make_label('Wake-word',11,WHITE,True))
+        self.wake_input=TextInput(text=getattr(app,'wake_word','Chene'),hint_text='Chene',multiline=False,size_hint_y=None,height=dp(37),font_size='13sp',foreground_color=WHITE,cursor_color=CYAN,background_normal='',background_active='',background_color=(.018,.045,.061,1),padding=[dp(10),dp(9)])
+        self.add_widget(self.wake_input)
+        save=make_button('SAVE WAKE-WORD',self.save_wake,dp(31),CYAN,(.025,.08,.10,1),9); self.add_widget(save)
+        self.add_widget(make_label('Theme',11,WHITE,True))
+        row=BoxLayout(size_hint_y=None,height=dp(39),spacing=dp(5)); row.add_widget(make_label('AI Share / Glow',10,MUTED))
+        self.theme_btn=make_button('ON  ◉',self.toggle_theme,dp(36),CYAN,(.025,.08,.10,1),10); row.add_widget(self.theme_btn); self.add_widget(row)
+        self.theme_on=True
+    def select_voice(self,name,idx):
+        self.app.selected_voice=name
+        # Six genuine selectable TTS profiles using available Android TTS controls.
+        try:
+            tts=getattr(self.app,'tts',None)
+            if tts:
+                rates=[.86,.94,1.0,1.08,1.16,.98]; pitches=[.88,1.0,1.12,.94,1.06,.82]
+                tts.setSpeechRate(rates[idx]); tts.setPitch(pitches[idx])
+                tts.speak('Voice selected: '+name,0,None)
+        except Exception: pass
+        for i,b in enumerate(self.voice_buttons): b.color=CYAN if i==idx else WHITE
+        set_status(self.app,'VOICE SELECTED • '+name.upper())
+    def save_wake(self):
+        value=self.wake_input.text.strip()
+        if not value: value='Chene'; self.wake_input.text=value
+        self.app.wake_word=value
+        set_status(self.app,'WAKE-WORD SAVED • '+value.upper())
+    def toggle_theme(self):
+        self.theme_on=not self.theme_on
+        self.theme_btn.text='ON  ◉' if self.theme_on else 'OFF  ○'
+        self.theme_btn.color=CYAN if self.theme_on else GOLD
+        set_status(self.app,'AI SHARE / GLOW '+('ON' if self.theme_on else 'OFF'))
 
 def build_jarvis_ui(app):
-    root=BoxLayout(orientation='vertical', spacing=dp(7), padding=[dp(10),dp(8),dp(10),dp(8)])
+    root=FloatLayout()
     with root.canvas.before:
         Color(*BG); root._bg=RoundedRectangle(pos=root.pos,size=root.size,radius=[0])
-    root.bind(pos=lambda w,_: setattr(w._bg,'pos',w.pos), size=lambda w,_: setattr(w._bg,'size',w.size))
-
-    # Header inspired by the supplied reference, scales with the device width.
-    header=BoxLayout(size_hint_y=None,height=dp(53),spacing=dp(8),padding=[dp(10),dp(3),dp(5),dp(3)])
-    name=txt('JARVIS  ●',22,CYAN,True)
-    name.size_hint_x=1
-    header.add_widget(name)
-    gear=action_button('⚙',lambda: getattr(app,'open_settings',lambda: _safe_status(app,'Settings'))(),45)
-    gear.size_hint_x=None; gear.width=dp(50); gear.color=GOLD; gear.font_size='24sp'
-    header.add_widget(gear); root.add_widget(header)
-
-    # Compact status / conversation region.
-    conversation=BoxLayout(orientation='vertical',spacing=dp(4),padding=[dp(9),dp(7),dp(9),dp(7)],size_hint_y=None,height=dp(88))
-    panel(conversation,(0.018,0.052,0.075,0.92),dp(16),(0.12,0.48,0.62,0.55))
-    conversation.add_widget(txt('VOICE INTERFACE  /  PERSONAL AI',10,(0.32,0.76,0.86,1),True))
-    app.status_label=txt('JARVIS starting...',14,CYAN,True)
-    conversation.add_widget(app.status_label)
-    root.add_widget(conversation)
-
-    # Core is given flexible space so it scales to short and tall screens.
-    core_card=BoxLayout(orientation='vertical',spacing=dp(1),padding=[dp(4),dp(2),dp(4),dp(2)])
-    app.core_widget=JarvisCore(size_hint=(1,1))
-    core_card.add_widget(app.core_widget)
-    root.add_widget(core_card)
-
-    # Conversation bubbles, kept concise for portrait screens.
-    transcript=BoxLayout(orientation='vertical',spacing=dp(4),size_hint_y=None,height=dp(66),padding=[dp(5),dp(2),dp(5),dp(2)])
-    transcript.add_widget(txt('◉  JARVIS  ·  Ready to assist',12,(0.76,0.91,0.96,1)))
-    transcript.add_widget(txt('Speak naturally — your commands stay voice-first.',11,(0.43,0.72,0.80,1)))
-    root.add_widget(transcript)
-
-    # Voice selection/settings card: real options are surfaced as voice guidance rather than fake selectors.
-    settings_card=BoxLayout(orientation='vertical',spacing=dp(5),padding=[dp(9),dp(7),dp(9),dp(7)],size_hint_y=None,height=dp(102))
-    panel(settings_card,(0.022,0.052,0.071,0.98),dp(16),(0.35,0.65,0.72,0.55))
-    settings_card.add_widget(txt('VOICE SELECTION   ·   THEME',11,GOLD,True))
-    opts=GridLayout(cols=2,spacing=dp(6),size_hint_y=None,height=dp(36))
-    opts.add_widget(action_button('Voice options',lambda: _voice_action(app,'voice selection settings')))
-    opts.add_widget(action_button('Theme  →',lambda: _safe_status(app,'Theme: Dark cyan / gold')))
-    settings_card.add_widget(opts)
-    settings_card.add_widget(txt('Wake word: JARVIS     •     AI Share: Ready',10,MUTED))
-    root.add_widget(settings_card)
-
-    # Quick action rail matching the four reference shortcuts.
-    quick=BoxLayout(orientation='horizontal',spacing=dp(5),size_hint_y=None,height=dp(57),padding=[dp(4),dp(4),dp(4),dp(4)])
-    panel(quick,(0.025,0.09,0.12,0.96),dp(17),(0.32,0.83,0.93,0.78))
-    def quick_action(label, command, method=None):
-        def run():
-            if method and hasattr(app,method):
-                try: getattr(app,method)(); return
-                except Exception: pass
-            _voice_action(app,command)
-        b=action_button(label,run,43); b.size_hint_x=1; b.font_size='11sp'; quick.add_widget(b)
-    quick_action('Alarms','alarm lagao')
-    quick_action('Reminders','reminder banao')
-    quick_action('Weather','weather batao')
-    quick_action('Messages','messages kholo','open_messages')
-    root.add_widget(quick)
-
-    # Footer controls: a large central fingerprint/microphone control inspired by the supplied reference.
-    footer=BoxLayout(orientation='horizontal',spacing=dp(7),size_hint_y=None,height=dp(72),padding=[dp(2),dp(2),dp(2),dp(2)])
-    hist=action_button('History',lambda: _voice_action(app,'recent history batao'),40)
-    hist.size_hint_x=1
-    hist.font_size='12sp'
-    mic=FingerprintButton(size_hint_x=1.0, size_hint_y=1)
-    mic.bind(on_release=lambda *_: getattr(app,'listen',lambda: _safe_status(app,'Listening...'))())
-    sett=action_button('Settings',lambda: getattr(app,'open_settings',lambda: _safe_status(app,'Settings'))(),40)
-    sett.size_hint_x=1
-    sett.font_size='12sp'
-    footer.add_widget(hist); footer.add_widget(mic); footer.add_widget(sett)
-    root.add_widget(footer)
-
-    # Keep calculator references required by existing v0.26 voice-calculator logic.
-    # The panel is compact and voice-first; no keypad or manual input buttons are displayed.
-    app.calc_panel=BoxLayout(orientation='vertical',spacing=dp(1),size_hint_y=None,height=dp(42),padding=[dp(9),dp(2),dp(9),dp(2)])
-    panel(app.calc_panel,(0.018,0.045,0.065,0.92),dp(12),(0.10,0.42,0.53,0.5))
-    app.calc_question_label=txt('CALCULATOR  /  Ask a maths question by voice',10,MUTED)
-    app.calc_answer_label=txt('ANSWER  /  --',12,CYAN,True)
+        Color(.0,.28,.45,.09); root._halo=Ellipse(pos=(0,0),size=(dp(400),dp(400)))
+    def sync_bg(*_):
+        root._bg.pos=root.pos; root._bg.size=root.size; root._halo.pos=(root.center_x-dp(200),root.center_y-dp(160))
+    root.bind(pos=sync_bg,size=sync_bg)
+    # Content is vertical and proportionally sized for portrait phones.
+    body=BoxLayout(orientation='vertical',padding=[dp(10),dp(8),dp(10),dp(7)],spacing=dp(6),size_hint=(1,1),pos_hint={'x':0,'y':0})
+    root.add_widget(body)
+    header=BoxLayout(size_hint_y=None,height=dp(47),spacing=dp(7))
+    header.add_widget(make_label('Alex AI',25,CYAN,True))
+    online=make_label('●',16,GREEN,True); online.size_hint_x=None; online.width=dp(18); header.add_widget(online)
+    header.add_widget(make_label('ONLINE',9,GREEN,True))
+    gear=make_button('⚙',lambda:toggle_panel(),dp(42),GOLD,(.035,.065,.085,1),22); gear.size_hint_x=None; gear.width=dp(48); header.add_widget(gear)
+    body.add_widget(header)
+    # Main region: chat + reactor, while settings floats over right side like reference.
+    stage=FloatLayout(size_hint_y=1)
+    body.add_widget(stage)
+    main_col=BoxLayout(orientation='vertical',spacing=dp(5),size_hint=(1,1),pos_hint={'x':0,'y':0},padding=[dp(1),dp(2),dp(1),dp(1)])
+    stage.add_widget(main_col)
+    # Short chat bubbles above visualizer.
+    bubble1=BoxLayout(size_hint_y=None,height=dp(43),padding=[dp(9),dp(3),dp(9),dp(3)])
+    panel(bubble1,(.035,.065,.086,.96),(.62,.49,.28,.8),dp(18),.8)
+    bubble1.add_widget(make_label('◉  ALEX AI   /   READY TO ASSIST',10,GOLD,True)); main_col.add_widget(bubble1)
+    app.status_label=make_label('Hello! I am listening for your command.',12,WHITE,False)
+    status_card=BoxLayout(size_hint_y=None,height=dp(48),padding=[dp(9),dp(3),dp(9),dp(3)])
+    panel(status_card,(.025,.075,.098,.97),(.12,.62,.76,.9),dp(16),1)
+    status_card.add_widget(app.status_label); main_col.add_widget(status_card)
+    corebox=BoxLayout(size_hint_y=1,padding=[dp(1),dp(1),dp(1),dp(1)])
+    app.core_widget=Reactor(); corebox.add_widget(app.core_widget); main_col.add_widget(corebox)
+    # Chat response bubble under reactor.
+    response=BoxLayout(size_hint_y=None,height=dp(48),padding=[dp(9),dp(3),dp(9),dp(3)])
+    panel(response,(.03,.07,.09,.96),(.12,.55,.68,.8),dp(17),.8)
+    response.add_widget(make_label('◉  VOICE INTERFACE  •  TAP FINGERPRINT TO SPEAK',9,CYAN,True)); main_col.add_widget(response)
+    # Overlay panel at upper-right, toggled by header and bottom settings.
+    app.ui_settings_panel=SettingsPanel(app,lambda:toggle_panel(),size_hint=(.69,.70),pos_hint={'right':.99,'top':.985})
+    app.ui_settings_panel.opacity=1; app.ui_settings_panel.disabled=False
+    stage.add_widget(app.ui_settings_panel)
+    panel_state={'open':True}
+    def toggle_panel(*_):
+        panel_state['open']=not panel_state['open']
+        app.ui_settings_panel.opacity=1 if panel_state['open'] else 0
+        app.ui_settings_panel.disabled=not panel_state['open']
+        if panel_state['open']: set_status(app,'VOICE SELECTION PANEL OPEN')
+    # Header gear callback toggles the floating panel.
+    # Four compact action buttons in one glowing rounded bar.
+    quick=GridLayout(cols=4,spacing=dp(4),size_hint_y=None,height=dp(67),padding=[dp(5),dp(5),dp(5),dp(4)])
+    panel(quick,(.025,.075,.09,.98),(.22,.70,.81,.95),dp(20),1.2)
+    def run_command(text):
+        set_status(app,'COMMAND • '+text.upper())
+        try:
+            if getattr(app,'tts',None): app.tts.speak(text,0,None)
+        except Exception: pass
+    for title,icon,cmd,method in [('Alarms','◷','alarm lagao',None),('Reminders','⌂','reminder banao',None),('Weather','☼','weather batao',None),('Messages','▤','messages kholo','open_messages')]:
+        cell=BoxLayout(orientation='vertical',spacing=dp(1))
+        b=make_button(icon,lambda c=cmd,m=method: (getattr(app,m)() if m and hasattr(app,m) else run_command(c)),dp(35),GOLD if title=='Alarms' else CYAN,(.025,.08,.10,1),19)
+        cell.add_widget(b); cell.add_widget(make_label(title,9,WHITE,True,'center')); quick.add_widget(cell)
+    body.add_widget(quick)
+    footer=BoxLayout(size_hint_y=None,height=dp(69),spacing=dp(8),padding=[dp(4),dp(2),dp(4),dp(1)])
+    hist=make_button('History',lambda:run_command('recent history batao'),dp(54),GOLD,(.022,.045,.062,1),12); panel(hist,(.022,.045,.062,1),(.45,.36,.23,.9),dp(22),.8)
+    fp=FingerprintButton(size_hint_x=1.0,size_hint_y=1)
+    fp.bind(on_release=lambda *_:getattr(app,'listen',lambda:set_status(app,'Listening…'))())
+    settings=make_button('Settings',toggle_panel,dp(54),GOLD,(.022,.045,.062,1),12); panel(settings,(.022,.045,.062,1),(.45,.36,.23,.9),dp(22),.8)
+    footer.add_widget(hist); footer.add_widget(fp); footer.add_widget(settings); body.add_widget(footer)
+    # Keep calculator integration contract expected by main.py.
+    app.calc_panel=BoxLayout(orientation='vertical',size_hint_y=None,height=dp(34),padding=[dp(8),dp(1),dp(8),dp(1)],spacing=0)
+    panel(app.calc_panel,(.02,.038,.055,.97),(.15,.42,.53,.6),dp(9),.7)
+    app.calc_question_label=make_label('CALCULATOR / VOICE INPUT',8,MUTED,True)
+    app.calc_answer_label=make_label('ANSWER / —',10,CYAN,True)
     app.calc_panel.add_widget(app.calc_question_label); app.calc_panel.add_widget(app.calc_answer_label)
-    app.calc_display=type('VoiceOnlyDisplay',(),{'text':''})()
-    app.calc_angle_mode='DEG'; app.calc_history=[]; app.calc_buttons=[]
-    root.add_widget(app.calc_panel)
+    app.calc_display=type('VoiceOnlyDisplay',(),{'text':''})(); app.calc_angle_mode='DEG'; app.calc_history=[]; app.calc_buttons=[]
+    body.add_widget(app.calc_panel)
     app.root_layout=root
     return root
