@@ -1,4 +1,4 @@
-"""Responsive, separate JARVIS visual interface. UI is intentionally isolated from main.py."""
+"""JARVIS v0.29 visual module: responsive cyan/gold core and central fingerprint control. Keep UI isolated from main.py."""
 import math
 from kivy.metrics import dp
 from kivy.clock import Clock
@@ -73,6 +73,56 @@ class JarvisCore(Widget):
                 Color(0.35, 0.94, 1.0, 0.95)
                 Ellipse(pos=(x-dp(2.3), y-dp(2.3)), size=(dp(4.6), dp(4.6)))
 
+
+
+class FingerprintButton(Button):
+    """Custom central microphone/fingerprint-style control inspired by the reference."""
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.text = ''
+        self.background_normal = ''
+        self.background_down = ''
+        self.background_color = (0, 0, 0, 0)
+        self.bind(pos=self.redraw, size=self.redraw, state=self.redraw)
+        self.redraw()
+
+    def redraw(self, *args):
+        self.canvas.clear()
+        cx, cy = self.center_x, self.center_y
+        r = min(self.width, self.height) * 0.43
+        pressed = self.state == 'down'
+        with self.canvas:
+            # Outer metallic housing and cyan aura.
+            Color(0.02, 0.55, 0.82, 0.14 if not pressed else 0.24)
+            Ellipse(pos=(cx-r*1.22, cy-r*1.22), size=(r*2.44, r*2.44))
+            Color(0.48, 0.68, 0.75, 0.95)
+            Line(circle=(cx, cy, r*1.08), width=dp(1.5))
+            Color(0.06, 0.15, 0.20, 1)
+            Ellipse(pos=(cx-r, cy-r), size=(r*2, r*2))
+            Color(0.16, 0.84, 0.96, 0.95)
+            Line(circle=(cx, cy, r*0.88), width=dp(1.5))
+            Color(0.025, 0.055, 0.08, 1)
+            Ellipse(pos=(cx-r*0.76, cy-r*0.76), size=(r*1.52, r*1.52))
+            # Fingerprint ridges, drawn as smooth open curves.
+            Color(0.32, 0.91, 1.0, 1)
+            for idx in range(6):
+                half_w = r * (0.12 + idx * 0.095)
+                top = cy + r * (0.55 - idx * 0.035)
+                bottom = cy - r * (0.55 - idx * 0.045)
+                pts = []
+                steps = 44
+                for j in range(steps + 1):
+                    t = j / steps
+                    y = top - (top-bottom)*t
+                    # Rounded arch at top, then slightly narrowing lower ridges.
+                    xoff = half_w * math.sin(math.pi * t * 0.92)
+                    x = cx + xoff * math.sin(math.pi * (t*0.88 + 0.06))
+                    pts.extend((x, y))
+                if len(pts) >= 4:
+                    Line(points=pts, width=dp(1.35), cap='round')
+            # Center ridge / sensor glint.
+            Color(0.78, 0.95, 1.0, 0.95)
+            Line(points=[cx, cy-r*0.43, cx, cy+r*0.20], width=dp(1.15), cap='round')
 
 
 
@@ -184,12 +234,16 @@ def build_jarvis_ui(app):
     quick_action('Messages','messages kholo','open_messages')
     root.add_widget(quick)
 
-    # Footer controls. Mic starts the existing listener; history/settings use existing app methods if available.
-    footer=BoxLayout(orientation='horizontal',spacing=dp(8),size_hint_y=None,height=dp(54),padding=[dp(3),dp(2),dp(3),dp(2)])
-    hist=action_button('History',lambda: _voice_action(app,'recent history batao'),40); hist.size_hint_x=1
-    mic=action_button('◎  TAP TO SPEAK',lambda: getattr(app,'listen',lambda: _safe_status(app,'Listening...'))(),48)
-    mic.size_hint_x=1.5; mic.color=CYAN; mic.bold=True
-    sett=action_button('Settings',lambda: getattr(app,'open_settings',lambda: _safe_status(app,'Settings'))(),40); sett.size_hint_x=1
+    # Footer controls: a large central fingerprint/microphone control inspired by the supplied reference.
+    footer=BoxLayout(orientation='horizontal',spacing=dp(7),size_hint_y=None,height=dp(72),padding=[dp(2),dp(2),dp(2),dp(2)])
+    hist=action_button('History',lambda: _voice_action(app,'recent history batao'),40)
+    hist.size_hint_x=1
+    hist.font_size='12sp'
+    mic=FingerprintButton(size_hint_x=1.0, size_hint_y=1)
+    mic.bind(on_release=lambda *_: getattr(app,'listen',lambda: _safe_status(app,'Listening...'))())
+    sett=action_button('Settings',lambda: getattr(app,'open_settings',lambda: _safe_status(app,'Settings'))(),40)
+    sett.size_hint_x=1
+    sett.font_size='12sp'
     footer.add_widget(hist); footer.add_widget(mic); footer.add_widget(sett)
     root.add_widget(footer)
 
