@@ -17,11 +17,14 @@ class JarvisCore(Widget):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.phase = 0.0
+        self.listening = False
         self.bind(pos=self.redraw, size=self.redraw)
         self.redraw()
+        Clock.schedule_interval(self._tick, 1.0 / 24.0)
 
     def _tick(self, dt):
-        # Static reactor: no rotating rings, matching the requested voice-assistant core.
+        # Premium breathing/glow pulse; ring positions stay fixed and never rotate.
+        self.phase += dt * (2.0 if self.listening else 0.85)
         self.redraw()
 
     def redraw(self, *args):
@@ -29,7 +32,7 @@ class JarvisCore(Widget):
         cx = self.x + self.width / 2.0
         cy = self.y + self.height / 2.0
         radius = max(dp(35), min(self.width, self.height) * 0.34)
-        pulse = 1.0 + 0.035 * math.sin(self.phase * 2.0)
+        pulse = 1.0 + (0.055 if self.listening else 0.025) * math.sin(self.phase * 2.0)
         with self.canvas:
             # Soft cyan aura and deep central reactor.
             Color(0.02, 0.62, 1.0, 0.055)
@@ -45,18 +48,19 @@ class JarvisCore(Widget):
             Line(circle=(cx, cy, radius*0.86), width=dp(1.0))
             Color(0.20, 0.90, 1.0, 0.90)
             Line(circle=(cx, cy, radius*0.68), width=dp(1.2))
-            # Segmented rotating arcs.
-            for ring_r, count, offset, arc_len in ((radius*1.12, 4, self.phase, 0.48), (radius*0.94, 6, -self.phase*1.3, 0.25)):
+            # Fixed segmented arcs: premium static geometry with a breathing glow.
+            for ring_r, count, arc_len in ((radius*1.12, 5, 0.42), (radius*0.94, 7, 0.22)):
                 for i in range(count):
-                    start = offset + (2*math.pi*i/count)
+                    start = (2*math.pi*i/count) + 0.18
                     pts = []
                     for j in range(17):
                         a = start + arc_len*j/16.0
                         pts.extend((cx + ring_r*math.cos(a), cy + ring_r*math.sin(a)))
-                    Color(0.10, 0.78, 1.0, 0.92 if ring_r > radius else 0.68)
+                    alpha = 0.65 + 0.25 * (0.5 + 0.5 * math.sin(self.phase * 2.0 + i))
+                    Color(0.10, 0.78, 1.0, alpha)
                     Line(points=pts, width=dp(2.0 if ring_r > radius else 1.4))
             # Inner glowing core.
-            Color(0.05, 0.58, 1.0, 0.22)
+            Color(0.05, 0.58, 1.0, 0.18 + 0.10 * (0.5 + 0.5 * math.sin(self.phase * 2.0)))
             Ellipse(pos=(cx-radius*0.49, cy-radius*0.49), size=(radius*0.98, radius*0.98))
             Color(0.12, 0.85, 1.0, 0.92)
             Line(circle=(cx, cy, radius*0.43), width=dp(1.4))
@@ -66,7 +70,7 @@ class JarvisCore(Widget):
             Ellipse(pos=(cx-radius*0.16, cy-radius*0.16), size=(radius*0.32, radius*0.32))
             # Orbit nodes.
             for i in range(8):
-                a = self.phase * (1 if i % 2 else -1) + (2*math.pi*i/8)
+                a = (2*math.pi*i/8)
                 rr = radius * (1.12 if i % 2 == 0 else 0.86)
                 x, y = cx + rr*math.cos(a), cy + rr*math.sin(a)
                 Color(0.35, 0.94, 1.0, 0.95)
@@ -185,8 +189,8 @@ def build_jarvis_ui(app):
     title = txt('JARVIS', 22, CYAN, True); header.add_widget(title)
     dot = txt('●', 17, (0.12, 1.0, 0.58, 1), True); dot.size_hint_x = None; dot.width = dp(22); header.add_widget(dot)
     spacer = Widget(); header.add_widget(spacer)
-    gear = action_button('⚙', lambda: getattr(app, 'open_settings', lambda: _safe_status(app, 'Settings'))(), 42)
-    gear.size_hint_x = None; gear.width = dp(48); gear.color = GOLD; gear.font_size = '23sp'; header.add_widget(gear)
+    gear = action_button('SET', lambda: getattr(app, 'open_settings', lambda: _safe_status(app, 'Settings'))(), 42)
+    gear.size_hint_x = None; gear.width = dp(48); gear.color = GOLD; gear.font_size = '12sp'; header.add_widget(gear)
     root.add_widget(header)
 
     # Main area. The right voice drawer opens/closes; the reactor shifts left while open.
@@ -207,14 +211,13 @@ def build_jarvis_ui(app):
     wake.bind(text=lambda _w, val: setattr(app, 'wake_word', val.strip() or 'JARVIS'))
     prefs.add_widget(wake)
     theme_btn = action_button('Theme  →', lambda: _safe_status(app, 'Theme: Dark cyan / gold'), 30); prefs.add_widget(theme_btn)
-    left.add_widget(prefs)
     body.add_widget(left)
 
-    drawer = BoxLayout(orientation='vertical', spacing=dp(5), padding=[dp(7),dp(7),dp(7),dp(7)], size_hint_x=None, width=dp(0))
+    drawer = BoxLayout(orientation='vertical', spacing=dp(5), padding=[dp(7),dp(7),dp(7),dp(7)], size_hint_x=None, width=dp(178))
     panel(drawer, (0.018,0.04,0.055,0.98), dp(15), (0.32,0.75,0.84,0.75))
     dhead = BoxLayout(size_hint_y=None, height=dp(34), spacing=dp(3))
     dhead.add_widget(txt('Voice Selection', 13, GOLD, True))
-    dots = action_button('•••', lambda: _safe_status(app, 'Voice options'), 30); dots.size_hint_x=None; dots.width=dp(35); dhead.add_widget(dots); drawer.add_widget(dhead)
+    dots = action_button('•••', lambda: toggle_voice(), 30); dots.size_hint_x=None; dots.width=dp(35); dhead.add_widget(dots); drawer.add_widget(dhead)
     voice_scroll = ScrollView(do_scroll_x=False)
     voice_list = GridLayout(cols=1, spacing=dp(5), size_hint_y=None); voice_list.bind(minimum_height=voice_list.setter('height'))
     # These are Android TTS voice/language choices, not invented installed voice packs.
@@ -254,9 +257,9 @@ def build_jarvis_ui(app):
 
     # Bottom rail: History | fingerprint | Settings.
     footer = BoxLayout(orientation='horizontal', spacing=dp(8), size_hint_y=None, height=dp(66), padding=[dp(3),dp(2),dp(3),dp(2)])
-    hist=action_button('History', lambda: _voice_action(app,'recent history batao'), 42); hist.size_hint_x=1
+    hist=action_button('◷  History', lambda: _voice_action(app,'recent history batao'), 42); hist.size_hint_x=1
     fp=FingerprintButton(size_hint_x=1, size_hint_y=1); fp.bind(on_release=lambda *_: getattr(app,'listen',lambda: _safe_status(app,'Listening...'))())
-    sett=action_button('Settings', lambda: getattr(app,'open_settings',lambda: _safe_status(app,'Settings'))(),42); sett.size_hint_x=1
+    sett=action_button('SETTINGS', lambda: getattr(app,'open_settings',lambda: _safe_status(app,'Settings'))(),42); sett.size_hint_x=1
     footer.add_widget(hist); footer.add_widget(fp); footer.add_widget(sett); root.add_widget(footer)
 
     # WhatsApp-like text conversation entry, replacing the old calculator prompt.
