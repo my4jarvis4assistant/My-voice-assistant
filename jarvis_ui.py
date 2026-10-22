@@ -103,26 +103,28 @@ class FingerprintButton(Button):
             Line(circle=(cx, cy, r*0.88), width=dp(1.5))
             Color(0.025, 0.055, 0.08, 1)
             Ellipse(pos=(cx-r*0.76, cy-r*0.76), size=(r*1.52, r*1.52))
-            # Fingerprint ridges, drawn as smooth open curves.
+            # Symmetrical fingerprint ridges. The previous curve used only positive
+            # X offsets, which could make the icon look like a play/speaker symbol.
             Color(0.32, 0.91, 1.0, 1)
             for idx in range(6):
-                half_w = r * (0.12 + idx * 0.095)
-                top = cy + r * (0.55 - idx * 0.035)
-                bottom = cy - r * (0.55 - idx * 0.045)
+                half_w = r * (0.24 + idx * 0.105)
+                top_y = cy + r * (0.42 - idx * 0.035)
+                depth = r * (0.34 + idx * 0.018)
                 pts = []
-                steps = 44
+                steps = 48
                 for j in range(steps + 1):
                     t = j / steps
-                    y = top - (top-bottom)*t
-                    # Rounded arch at top, then slightly narrowing lower ridges.
-                    xoff = half_w * math.sin(math.pi * t * 0.92)
-                    x = cx + xoff * math.sin(math.pi * (t*0.88 + 0.06))
-                    pts.extend((x, y))
-                if len(pts) >= 4:
-                    Line(points=pts, width=dp(1.35), cap='round')
-            # Center ridge / sensor glint.
+                    xoff = half_w * (2.0 * t - 1.0)
+                    # Rounded arch with both left and right halves, centered on sensor.
+                    y = top_y - depth * ((xoff / half_w) ** 2)
+                    pts.extend((cx + xoff, y))
+                Line(points=pts, width=dp(1.25), cap='round')
+            # Short lower fingerprint tails and central sensor glint.
+            Color(0.32, 0.91, 1.0, 1)
+            Line(points=[cx-r*0.28, cy-r*0.18, cx-r*0.22, cy-r*0.43], width=dp(1.25), cap='round')
+            Line(points=[cx+r*0.28, cy-r*0.18, cx+r*0.22, cy-r*0.43], width=dp(1.25), cap='round')
             Color(0.78, 0.95, 1.0, 0.95)
-            Line(points=[cx, cy-r*0.43, cx, cy+r*0.20], width=dp(1.15), cap='round')
+            Line(points=[cx, cy-r*0.30, cx, cy+r*0.22], width=dp(1.15), cap='round')
 
 
 
@@ -235,11 +237,11 @@ def build_jarvis_ui(app):
     root.add_widget(quick)
 
     # Footer controls: a large central fingerprint/microphone control inspired by the supplied reference.
-    footer=BoxLayout(orientation='horizontal',spacing=dp(7),size_hint_y=None,height=dp(72),padding=[dp(2),dp(2),dp(2),dp(2)])
+    footer=BoxLayout(orientation='horizontal',spacing=dp(7),size_hint_y=None,height=dp(82),padding=[dp(2),dp(2),dp(2),dp(2)])
     hist=action_button('History',lambda: _voice_action(app,'recent history batao'),40)
     hist.size_hint_x=1
     hist.font_size='12sp'
-    mic=FingerprintButton(size_hint_x=1.0, size_hint_y=1)
+    mic=FingerprintButton(size_hint_x=0.92, size_hint_y=1)
     mic.bind(on_release=lambda *_: getattr(app,'listen',lambda: _safe_status(app,'Listening...'))())
     sett=action_button('Settings',lambda: getattr(app,'open_settings',lambda: _safe_status(app,'Settings'))(),40)
     sett.size_hint_x=1
