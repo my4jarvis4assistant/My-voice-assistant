@@ -18,11 +18,10 @@ class JarvisCore(Widget):
         super().__init__(**kwargs)
         self.phase = 0.0
         self.bind(pos=self.redraw, size=self.redraw)
-        Clock.schedule_interval(self._tick, 1.0 / 24.0)
         self.redraw()
 
     def _tick(self, dt):
-        self.phase = (self.phase + dt * 0.75) % (2 * math.pi)
+        # Static reactor: no rotating rings, matching the requested voice-assistant core.
         self.redraw()
 
     def redraw(self, *args):
@@ -173,89 +172,116 @@ def _voice_action(app, command):
 
 
 def build_jarvis_ui(app):
-    """v0.30 polished responsive portrait dashboard; preserves main.py integration."""
-    # Use a scroll container on short screens so controls never disappear off-screen.
-    page = BoxLayout(orientation='vertical', spacing=dp(7), padding=[dp(10),dp(7),dp(10),dp(7)])
-    with page.canvas.before:
-        Color(*BG)
-        page._bg = RoundedRectangle(pos=page.pos, size=page.size, radius=[0])
-    page.bind(pos=lambda w,_: setattr(w._bg,'pos',w.pos), size=lambda w,_: setattr(w._bg,'size',w.size))
+    from kivy.uix.textinput import TextInput
+    from kivy.uix.scrollview import ScrollView
 
-    # Header: strong wordmark, compact status light, and gold settings control.
-    header=BoxLayout(size_hint_y=None,height=dp(51),spacing=dp(8),padding=[dp(7),dp(2),dp(3),dp(2)])
-    name=txt('JARVIS',23,CYAN,True); name.size_hint_x=1
-    header.add_widget(name)
-    light=txt('●',13,(0.25,1.0,0.72,1),True); light.size_hint_x=None; light.width=dp(18)
-    header.add_widget(light)
-    gear=action_button('⚙',lambda: getattr(app,'open_settings',lambda: _safe_status(app,'Settings'))(),44)
-    gear.size_hint_x=None; gear.width=dp(48); gear.color=GOLD; gear.font_size='23sp'
-    header.add_widget(gear); page.add_widget(header)
+    root = BoxLayout(orientation='vertical', spacing=dp(6), padding=[dp(8), dp(7), dp(8), dp(7)])
+    with root.canvas.before:
+        Color(*BG); root._bg = RoundedRectangle(pos=root.pos, size=root.size, radius=[0])
+    root.bind(pos=lambda w, _: setattr(w._bg, 'pos', w.pos), size=lambda w, _: setattr(w._bg, 'size', w.size))
 
-    # Status panel uses consistent inset, border, and hierarchy.
-    conversation=BoxLayout(orientation='vertical',spacing=dp(3),padding=[dp(11),dp(6),dp(11),dp(6)],size_hint_y=None,height=dp(78))
-    panel(conversation,(0.018,0.045,0.066,0.98),dp(16),(0.12,0.58,0.72,0.72))
-    conversation.add_widget(txt('VOICE INTERFACE  /  PERSONAL AI',10,(0.38,0.82,0.91,1),True))
-    app.status_label=txt('JARVIS starting...',15,CYAN,True)
-    conversation.add_widget(app.status_label); page.add_widget(conversation)
+    # Header: JARVIS + green online dot on left, settings gear on right.
+    header = BoxLayout(size_hint_y=None, height=dp(48), spacing=dp(8), padding=[dp(7), dp(2), dp(3), dp(2)])
+    title = txt('JARVIS', 22, CYAN, True); header.add_widget(title)
+    dot = txt('●', 17, (0.12, 1.0, 0.58, 1), True); dot.size_hint_x = None; dot.width = dp(22); header.add_widget(dot)
+    spacer = Widget(); header.add_widget(spacer)
+    gear = action_button('⚙', lambda: getattr(app, 'open_settings', lambda: _safe_status(app, 'Settings'))(), 42)
+    gear.size_hint_x = None; gear.width = dp(48); gear.color = GOLD; gear.font_size = '23sp'; header.add_widget(gear)
+    root.add_widget(header)
 
-    # Reactor has a bounded height for predictable alignment across phone sizes.
-    core_card=BoxLayout(orientation='vertical',spacing=0,padding=[dp(2),dp(1),dp(2),dp(1)],size_hint_y=None,height=dp(160))
-    app.core_widget=JarvisCore(size_hint=(1,1)); core_card.add_widget(app.core_widget); page.add_widget(core_card)
+    # Main area. The right voice drawer opens/closes; the reactor shifts left while open.
+    body = BoxLayout(orientation='horizontal', spacing=dp(6))
+    left = BoxLayout(orientation='vertical', spacing=dp(5), size_hint_x=1)
+    app.status_label = txt('JARVIS ready hai.', 13, CYAN, True)
+    status_box = BoxLayout(size_hint_y=None, height=dp(38), padding=[dp(8), dp(3), dp(8), dp(3)])
+    panel(status_box, (0.018,0.052,0.075,0.92), dp(12), (0.12,0.48,0.62,0.55)); status_box.add_widget(app.status_label); left.add_widget(status_box)
 
-    transcript=BoxLayout(orientation='vertical',spacing=dp(2),size_hint_y=None,height=dp(47),padding=[dp(7),dp(1),dp(7),dp(1)])
-    transcript.add_widget(txt('◉  JARVIS  ·  Ready to assist',12,(0.78,0.92,0.97,1)))
-    transcript.add_widget(txt('Speak naturally — your commands stay voice-first.',10,(0.48,0.74,0.82,1)))
-    page.add_widget(transcript)
+    app.core_widget = JarvisCore(size_hint=(1, 1)); left.add_widget(app.core_widget)
+    # Animated waveform is intentionally omitted; the core glows/pulses without spinning.
 
-    # Settings strip: two evenly sized, aligned controls and a readable status line.
-    settings_card=BoxLayout(orientation='vertical',spacing=dp(4),padding=[dp(9),dp(6),dp(9),dp(6)],size_hint_y=None,height=dp(94))
-    panel(settings_card,(0.022,0.048,0.067,0.99),dp(16),(0.35,0.67,0.74,0.66))
-    settings_card.add_widget(txt('VOICE SELECTION   ·   THEME',11,GOLD,True))
-    opts=GridLayout(cols=2,spacing=dp(6),size_hint_y=None,height=dp(34))
-    opts.add_widget(action_button('Voice options',lambda: _voice_action(app,'voice selection settings'),36))
-    opts.add_widget(action_button('Theme  ◈',lambda: _safe_status(app,'Theme: Dark cyan / gold'),36))
-    settings_card.add_widget(opts)
-    settings_card.add_widget(txt('Wake word: JARVIS    •    AI Share: Ready',10,MUTED))
-    page.add_widget(settings_card)
+    # Wake word and theme below the core, as requested.
+    prefs = BoxLayout(orientation='vertical', spacing=dp(4), size_hint_y=None, height=dp(78), padding=[dp(6),dp(4),dp(6),dp(4)])
+    panel(prefs, (0.022,0.052,0.071,0.98), dp(13), (0.22,0.62,0.72,0.55))
+    prefs.add_widget(txt('Wake-word', 11, GOLD, True))
+    wake = TextInput(text='JARVIS', multiline=False, size_hint_y=None, height=dp(30), font_size='13sp', foreground_color=(0.9,0.95,0.98,1), background_normal='', background_active='', background_color=(0.025,0.07,0.09,1), cursor_color=CYAN)
+    wake.bind(text=lambda _w, val: setattr(app, 'wake_word', val.strip() or 'JARVIS'))
+    prefs.add_widget(wake)
+    theme_btn = action_button('Theme  →', lambda: _safe_status(app, 'Theme: Dark cyan / gold'), 30); prefs.add_widget(theme_btn)
+    left.add_widget(prefs)
+    body.add_widget(left)
 
-    # Four shortcuts in a single consistent rail, with the same working callbacks.
-    quick=BoxLayout(orientation='horizontal',spacing=dp(5),size_hint_y=None,height=dp(57),padding=[dp(4),dp(4),dp(4),dp(4)])
-    panel(quick,(0.025,0.075,0.105,0.99),dp(17),(0.30,0.82,0.94,0.9))
+    drawer = BoxLayout(orientation='vertical', spacing=dp(5), padding=[dp(7),dp(7),dp(7),dp(7)], size_hint_x=None, width=dp(0))
+    panel(drawer, (0.018,0.04,0.055,0.98), dp(15), (0.32,0.75,0.84,0.75))
+    dhead = BoxLayout(size_hint_y=None, height=dp(34), spacing=dp(3))
+    dhead.add_widget(txt('Voice Selection', 13, GOLD, True))
+    dots = action_button('•••', lambda: _safe_status(app, 'Voice options'), 30); dots.size_hint_x=None; dots.width=dp(35); dhead.add_widget(dots); drawer.add_widget(dhead)
+    voice_scroll = ScrollView(do_scroll_x=False)
+    voice_list = GridLayout(cols=1, spacing=dp(5), size_hint_y=None); voice_list.bind(minimum_height=voice_list.setter('height'))
+    # These are Android TTS voice/language choices, not invented installed voice packs.
+    for label in ('System default', 'English (India)', 'English (US)', 'Hindi (India)'):
+        voice_list.add_widget(action_button(label, lambda choice=label: _safe_status(app, 'Voice selected: '+choice), 38))
+    voice_scroll.add_widget(voice_list); drawer.add_widget(voice_scroll)
+    drawer.add_widget(txt('Tap a voice to select', 10, MUTED))
+    body.add_widget(drawer)
+
+    def toggle_voice(*_):
+        opened = drawer.width < dp(100)
+        drawer.width = dp(178) if opened else dp(0)
+        drawer.opacity = 1 if opened else 0
+        drawer.disabled = not opened
+        left.size_hint_x = 0.72 if opened else 1
+        # core stays still; only its layout position changes.
+        _safe_status(app, 'Voice Selection khula' if opened else 'Voice Selection band')
+    voice_toggle = action_button('Voice Selection  •••', toggle_voice, 34)
+    voice_toggle.size_hint_y = None; voice_toggle.height = dp(34); root.add_widget(body); root.add_widget(voice_toggle)
+
+    # Five shortcuts: Alarm, Reminder, Weather, Message and Call.
+    quick = BoxLayout(orientation='horizontal', spacing=dp(3), size_hint_y=None, height=dp(58), padding=[dp(3),dp(4),dp(3),dp(4)])
+    panel(quick, (0.025,0.09,0.12,0.96), dp(15), (0.32,0.83,0.93,0.78))
     def quick_action(label, command, method=None):
         def run():
-            if method and hasattr(app,method):
-                try: getattr(app,method)(); return
+            if method and hasattr(app, method):
+                try: getattr(app, method)(); return
                 except Exception: pass
-            _voice_action(app,command)
-        b=action_button(label,run,43); b.size_hint_x=1; b.font_size='11sp'; quick.add_widget(b)
-    quick_action('Alarms','alarm lagao')
-    quick_action('Reminders','reminder banao')
-    quick_action('Weather','weather batao')
-    quick_action('Messages','messages kholo','open_messages')
-    page.add_widget(quick)
+            _voice_action(app, command)
+        b=action_button(label, run, 44); b.size_hint_x=1; b.font_size='10sp'; quick.add_widget(b)
+    quick_action('Alarm', 'alarm lagao')
+    quick_action('Reminder', 'reminder banao')
+    quick_action('Weather', 'weather batao')
+    quick_action('Message', 'messages kholo', 'open_messages')
+    quick_action('Call', 'phone kholo', 'open_phone')
+    root.add_widget(quick)
 
-    # Footer: history | fingerprint control | settings, with balanced spacing.
-    footer=BoxLayout(orientation='horizontal',spacing=dp(8),size_hint_y=None,height=dp(76),padding=[dp(3),dp(2),dp(3),dp(2)])
-    hist=action_button('History',lambda: _voice_action(app,'recent history batao'),42)
-    hist.size_hint_x=1; hist.font_size='12sp'
-    mic=FingerprintButton(size_hint_x=0.86,size_hint_y=1)
-    mic.bind(on_release=lambda *_: getattr(app,'listen',lambda: _safe_status(app,'Listening...'))())
-    sett=action_button('Settings',lambda: getattr(app,'open_settings',lambda: _safe_status(app,'Settings'))(),42)
-    sett.size_hint_x=1; sett.font_size='12sp'
-    footer.add_widget(hist); footer.add_widget(mic); footer.add_widget(sett); page.add_widget(footer)
+    # Bottom rail: History | fingerprint | Settings.
+    footer = BoxLayout(orientation='horizontal', spacing=dp(8), size_hint_y=None, height=dp(66), padding=[dp(3),dp(2),dp(3),dp(2)])
+    hist=action_button('History', lambda: _voice_action(app,'recent history batao'), 42); hist.size_hint_x=1
+    fp=FingerprintButton(size_hint_x=1, size_hint_y=1); fp.bind(on_release=lambda *_: getattr(app,'listen',lambda: _safe_status(app,'Listening...'))())
+    sett=action_button('Settings', lambda: getattr(app,'open_settings',lambda: _safe_status(app,'Settings'))(),42); sett.size_hint_x=1
+    footer.add_widget(hist); footer.add_widget(fp); footer.add_widget(sett); root.add_widget(footer)
 
-    # Keep all v0.26+ calculator attributes expected by main.py.
-    app.calc_panel=BoxLayout(orientation='vertical',spacing=dp(1),size_hint_y=None,height=dp(43),padding=[dp(9),dp(2),dp(9),dp(2)])
-    panel(app.calc_panel,(0.018,0.045,0.065,0.98),dp(12),(0.10,0.48,0.59,0.68))
-    app.calc_question_label=txt('CALCULATOR  /  Ask a maths question by voice',10,MUTED)
-    app.calc_answer_label=txt('ANSWER  /  --',12,CYAN,True)
+    # WhatsApp-like text conversation entry, replacing the old calculator prompt.
+    chat = BoxLayout(orientation='horizontal', spacing=dp(5), size_hint_y=None, height=dp(44), padding=[dp(3),dp(2),dp(3),dp(2)])
+    panel(chat, (0.018,0.045,0.065,0.96), dp(14), (0.10,0.62,0.73,0.75))
+    app.chat_input = TextInput(hint_text='JARVIS ko message likhein...', multiline=False, font_size='13sp', foreground_color=(0.92,0.97,1,1), hint_text_color=(0.48,0.65,0.72,1), background_normal='', background_active='', background_color=(0.025,0.07,0.09,1), cursor_color=CYAN)
+    def send_chat(*_):
+        message = app.chat_input.text.strip()
+        if not message: return
+        app.chat_input.text = ''
+        _safe_status(app, 'Aap: ' + message)
+        try:
+            app.process_command(message)
+        except Exception as exc:
+            _safe_status(app, 'Message process nahi hua: ' + str(exc))
+    app.chat_input.bind(on_text_validate=send_chat)
+    chat.add_widget(app.chat_input)
+    send=action_button('Send', send_chat, 36); send.size_hint_x=None; send.width=dp(60); chat.add_widget(send)
+    root.add_widget(chat)
+
+    # Keep old calculator attributes so existing v0.26 logic does not crash, but do not show calculator text.
+    app.calc_panel=BoxLayout(orientation='vertical', size_hint_y=None, height=dp(0), opacity=0, disabled=True)
+    app.calc_question_label=txt('',10,MUTED); app.calc_answer_label=txt('',12,CYAN,True)
     app.calc_panel.add_widget(app.calc_question_label); app.calc_panel.add_widget(app.calc_answer_label)
-    app.calc_display=type('VoiceOnlyDisplay',(),{'text':''})()
-    app.calc_angle_mode='DEG'; app.calc_history=[]; app.calc_buttons=[]
-    page.add_widget(app.calc_panel)
-
-    # Scroll fallback preserves every control on short displays; normal phones show full page.
-    scroll=ScrollView(do_scroll_x=False,do_scroll_y=True,bar_width=dp(2),scroll_type=['bars','content'])
-    scroll.add_widget(page)
-    app.root_layout=page
-    return scroll
+    app.calc_display=type('VoiceOnlyDisplay',(),{'text':''})(); app.calc_angle_mode='DEG'; app.calc_history=[]; app.calc_buttons=[]
+    root.add_widget(app.calc_panel)
+    app.root_layout=root
+    return root
