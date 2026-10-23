@@ -86,7 +86,7 @@ class GearIcon(Widget):
         self.bind(pos=self.draw, size=self.draw)
         self.draw()
     def draw(self, *_):
-        self.canvas.clear(); x, y = self.center; r = min(self.width, self.height) * .22
+        self.canvas.clear(); x, y = self.center; r = min(self.width, self.height) * .28
         with self.canvas:
             Color(*GOLD)
             Line(circle=(x, y, r), width=dp(1.5))
@@ -102,7 +102,7 @@ class PaperPlane(Widget):
     def __init__(self, **kwargs):
         super().__init__(**kwargs); self.bind(pos=self.draw, size=self.draw); self.draw()
     def draw(self, *_):
-        self.canvas.clear(); x,y=self.center; w=min(self.width,self.height)*.34
+        self.canvas.clear(); x,y=self.center; w=min(self.width,self.height)*.38
         with self.canvas:
             Color(*CYAN)
             Line(points=[x-w,y-w*.15,x+w,y+w*.4,x+w*.12,y-w*.48,x-w,y-w*.15], close=True, width=dp(1.7))
@@ -201,12 +201,12 @@ def build_jarvis_ui(app):
         root._border.rounded_rectangle=(root.x,root.y,root.width,root.height,dp(14))
     root.bind(pos=sync_root,size=sync_root)
 
-    # Home and Settings are separate full-screen layers; no awkward settings drawer over the orb.
+    # Home and Settings are separate full-screen layers
     home = FloatLayout()
     settings_page = BoxLayout(orientation='vertical', padding=[dp(12),dp(7),dp(12),dp(10)], spacing=dp(8), opacity=0, disabled=True)
     root.add_widget(home); root.add_widget(settings_page)
 
-    # Header: exact composition from reference (JARVIS + green dot, gear in top-right circle container).
+    # Header: exact composition from reference (JARVIS + green dot, gear inside top-right circle container).
     header = BoxLayout(orientation='horizontal', size_hint=(1, None), height=dp(60),
                        padding=[dp(18), dp(4), dp(16), dp(4)], spacing=dp(8), pos_hint={'x': 0, 'top': 1})
     
@@ -218,9 +218,10 @@ def build_jarvis_ui(app):
     
     header.add_widget(Widget())
     
+    # Gear button properly wrapped in FloatLayout so icon stays centered inside top-right circle
     gear_btn = FloatLayout(size_hint=(None, None), size=(dp(48), dp(48)), pos_hint={'center_y': 0.5})
     plate(gear_btn, (.05, .08, .085, 1), EDGE, dp(24), .8)
-    gear_icon = GearIcon(size_hint=(1, 1), pos_hint={'center_x': .5, 'center_y': .5})
+    gear_icon = GearIcon(size_hint=(None, None), size=(dp(32), dp(32)), pos_hint={'center_x': .5, 'center_y': .5})
     gear_btn.add_widget(gear_icon)
     
     def on_gear_touch(instance, touch):
@@ -232,19 +233,18 @@ def build_jarvis_ui(app):
     header.add_widget(gear_btn)
     home.add_widget(header)
 
-    # Core and listening status. Use relative geometry so it scales on Redmi 8 portrait.
+    # Core and listening status
     orb = OrbCore(size_hint=(.78,.37), pos_hint={'center_x':.5,'center_y':.59})
     home.add_widget(orb); app.core_widget=orb
     status = make_label('Ready when you are',14,MUTED,False,'center')
     status.size_hint=(.9,None); status.height=dp(30); status.pos_hint={'center_x':.5,'center_y':.365}
     home.add_widget(status); app.status_label=status
 
-    # Optional tiny interaction history caption as in the reference phone footer.
     history_caption = make_label('JARVIS • PERSONAL ASSISTANT',9,(.36,.48,.49,1),False,'center')
     history_caption.size_hint=(.9,None); history_caption.height=dp(18); history_caption.pos_hint={'center_x':.5,'y':.125}
     home.add_widget(history_caption)
 
-    # Message composer fixed at the bottom with a compact input box and clean paper plane send button on the right.
+    # Message composer fixed at the bottom with compact input box and clean paper plane send button on the right inside container
     composer = BoxLayout(orientation='horizontal', size_hint=(.82, None), height=dp(46), spacing=dp(8),
                          padding=[dp(14), dp(4), dp(6), dp(4)], pos_hint={'center_x': .5, 'y': .055})
     plate(composer, (.10, .14, .15, 1), (.28, .39, .40, .85), dp(23), .8)
@@ -265,14 +265,22 @@ def build_jarvis_ui(app):
     chat.bind(on_text_validate=send_message)
     composer.add_widget(chat)
     
-    send = Button(text='', size_hint=(None, 1), width=dp(38), background_normal='', background_down='', background_color=(0, 0, 0, 0))
-    send.add_widget(PaperPlane(size_hint=(1, 1)))
-    send.bind(on_release=send_message)
+    # Send button wrapped securely in FloatLayout container so paper plane stays inside the box on the right
+    send = FloatLayout(size_hint=(None, 1), width=dp(38))
+    paper_plane = PaperPlane(size_hint=(None, None), size=(dp(24), dp(24)), pos_hint={'center_x': .5, 'center_y': .5})
+    send.add_widget(paper_plane)
+    
+    def on_send_touch(instance, touch):
+        if instance.collide_point(*touch.pos):
+            send_message()
+            return True
+        return False
+    send.bind(on_touch_down=on_send_touch)
     composer.add_widget(send)
     
     home.add_widget(composer)
 
-    # Settings screen matching the provided right-side configuration board, opened by gear.
+    # Settings screen
     settings_header=BoxLayout(size_hint_y=None,height=dp(42),spacing=dp(8))
     close_btn=ui_button('< Close',lambda:None,12,WHITE,(.12,.17,.18,1),dp(34))
     settings_title=make_label('JARVIS Settings',17,WHITE,True)
