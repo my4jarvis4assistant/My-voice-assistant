@@ -184,19 +184,21 @@ def build_jarvis_ui(app):
     settings_page = BoxLayout(orientation='vertical', padding=[dp(12),dp(7),dp(12),dp(10)], spacing=dp(8), opacity=0, disabled=True)
     root.add_widget(home); root.add_widget(settings_page)
 
-    # Header: Top-right gear icon perfectly locked inside header FloatLayout
-    header = FloatLayout(size_hint=(1, None), height=dp(65), pos_hint={'x': 0, 'top': 1})
+    # Header: Strict horizontal BoxLayout with a flexible Spacer so gear icon stays naturally on top-right
+    header = BoxLayout(orientation='horizontal', size_hint=(1, None), height=dp(60),
+                       padding=[dp(16), dp(8), dp(16), dp(8)], spacing=dp(8), pos_hint={'top': 1})
     
-    brand_box = BoxLayout(orientation='horizontal', size_hint=(None, None), size=(dp(140), dp(40)), spacing=dp(8), pos_hint={'x': 0.04, 'center_y': 0.5})
+    brand_box = BoxLayout(orientation='horizontal', size_hint=(None, None), size=(dp(140), dp(40)), spacing=dp(8), pos_hint={'center_y': 0.5})
     brand_box.add_widget(make_label('JARVIS', 24, WHITE, False))
     dot = StatusDot(size_hint=(None, None), size=(dp(28), dp(28)), pos_hint={'center_y': 0.5})
     brand_box.add_widget(dot)
     header.add_widget(brand_box)
     
-    # Gear button strictly locked to top-right corner circle container
-    gear_btn = FloatLayout(size_hint=(None, None), size=(dp(46), dp(46)), pos_hint={'right': 0.96, 'center_y': 0.5})
+    header.add_widget(Widget()) # Natural spacer pushing the gear to the right
+    
+    gear_btn = FloatLayout(size_hint=(None, None), size=(dp(46), dp(46)), pos_hint={'center_y': 0.5})
     plate(gear_btn, (.05, .08, .085, 1), EDGE, dp(23), 1.0)
-    gear_icon = GearIcon(size_hint=(None, None), size=(dp(28), dp(28)), pos_hint={'center_x': .5, 'center_y': .5})
+    gear_icon = GearIcon(size_hint=(None, None), size=(dp(26), dp(26)), pos_hint={'center_x': .5, 'center_y': .5})
     gear_btn.add_widget(gear_icon)
     
     def on_gear_touch(instance, touch):
@@ -219,15 +221,14 @@ def build_jarvis_ui(app):
     history_caption.size_hint=(.9,None); history_caption.height=dp(18); history_caption.pos_hint={'center_x':.5,'y':.125}
     home.add_widget(history_caption)
 
-    # Bottom Composer Container: Fixed cleanly at the bottom center
-    composer = FloatLayout(size_hint=(0.88, None), height=dp(50), pos_hint={'center_x': 0.5, 'y': 0.04})
-    plate(composer, (.10, .14, .15, 1), (.28, .39, .40, .85), dp(25), 1.0)
+    # Bottom Composer: Strict horizontal BoxLayout so text input and send button stay locked side-by-side natively
+    composer = BoxLayout(orientation='horizontal', size_hint=(0.88, None), height=dp(48),
+                         padding=[dp(12), dp(4), dp(8), dp(4)], spacing=dp(8), pos_hint={'center_x': 0.5, 'y': 0.04})
+    plate(composer, (.10, .14, .15, 1), (.28, .39, .40, .85), dp(24), 1.0)
     
-    # Text input placed cleanly on the left inside the composer box
     chat = TextInput(hint_text='Message...', multiline=False, font_size='13sp', foreground_color=WHITE,
                      hint_text_color=MUTED, cursor_color=CYAN, background_normal='', background_active='',
-                     background_color=(0, 0, 0, 0), size_hint=(None, None), size=(dp(230), dp(40)),
-                     pos_hint={'x': 0.03, 'center_y': 0.5}, padding=[dp(6), dp(10)])
+                     background_color=(0, 0, 0, 0), size_hint=(0.8, 1), padding=[dp(4), dp(10)])
     app.chat_input = chat
     
     def send_message(*_):
@@ -241,18 +242,18 @@ def build_jarvis_ui(app):
     chat.bind(on_text_validate=send_message)
     composer.add_widget(chat)
     
-    # Send button locked securely on the right side INSIDE the composer box
-    send = FloatLayout(size_hint=(None, None), size=(dp(42), dp(42)), pos_hint={'right': 0.98, 'center_y': 0.5})
+    # Send button container placed securely inside the horizontal composer box on the right
+    send_box = FloatLayout(size_hint=(0.2, 1))
     paper_plane = PaperPlane(size_hint=(None, None), size=(dp(26), dp(26)), pos_hint={'center_x': 0.5, 'center_y': 0.5})
-    send.add_widget(paper_plane)
+    send_box.add_widget(paper_plane)
     
     def on_send_touch(instance, touch):
         if instance.collide_point(*touch.pos):
             send_message()
             return True
         return False
-    send.bind(on_touch_down=on_send_touch)
-    composer.add_widget(send)
+    send_box.bind(on_touch_down=on_send_touch)
+    composer.add_widget(send_box)
     
     home.add_widget(composer)
 
