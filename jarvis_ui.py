@@ -184,7 +184,7 @@ def build_jarvis_ui(app):
     settings_page = BoxLayout(orientation='vertical', padding=[dp(12),dp(7),dp(12),dp(10)], spacing=dp(8), opacity=0, disabled=True)
     root.add_widget(home); root.add_widget(settings_page)
 
-    # Header: Absolute top positioning for brand and settings gear icon
+    # Header: Top-right gear icon perfectly locked inside header FloatLayout
     header = FloatLayout(size_hint=(1, None), height=dp(65), pos_hint={'x': 0, 'top': 1})
     
     brand_box = BoxLayout(orientation='horizontal', size_hint=(None, None), size=(dp(140), dp(40)), spacing=dp(8), pos_hint={'x': 0.04, 'center_y': 0.5})
@@ -219,14 +219,15 @@ def build_jarvis_ui(app):
     history_caption.size_hint=(.9,None); history_caption.height=dp(18); history_caption.pos_hint={'center_x':.5,'y':.125}
     home.add_widget(history_caption)
 
-    # Bottom Composer: Absolute FloatLayout to prevent any overlapping or corner bug
+    # Bottom Composer Container: Fixed cleanly at the bottom center
     composer = FloatLayout(size_hint=(0.88, None), height=dp(50), pos_hint={'center_x': 0.5, 'y': 0.04})
     plate(composer, (.10, .14, .15, 1), (.28, .39, .40, .85), dp(25), 1.0)
     
+    # Text input placed cleanly on the left inside the composer box
     chat = TextInput(hint_text='Message...', multiline=False, font_size='13sp', foreground_color=WHITE,
                      hint_text_color=MUTED, cursor_color=CYAN, background_normal='', background_active='',
-                     background_color=(0, 0, 0, 0), size_hint=(None, None), size=(dp(220), dp(40)),
-                     pos_hint={'x': 0.04, 'center_y': 0.5}, padding=[dp(6), dp(10)])
+                     background_color=(0, 0, 0, 0), size_hint=(None, None), size=(dp(230), dp(40)),
+                     pos_hint={'x': 0.03, 'center_y': 0.5}, padding=[dp(6), dp(10)])
     app.chat_input = chat
     
     def send_message(*_):
@@ -240,9 +241,9 @@ def build_jarvis_ui(app):
     chat.bind(on_text_validate=send_message)
     composer.add_widget(chat)
     
-    # Larger, perfectly positioned send button on the right inside composer box
-    send = FloatLayout(size_hint=(None, None), size=(dp(44), dp(44)), pos_hint={'right': 0.98, 'center_y': 0.5})
-    paper_plane = PaperPlane(size_hint=(None, None), size=(dp(28), dp(28)), pos_hint={'center_x': 0.5, 'center_y': 0.5})
+    # Send button locked securely on the right side INSIDE the composer box
+    send = FloatLayout(size_hint=(None, None), size=(dp(42), dp(42)), pos_hint={'right': 0.98, 'center_y': 0.5})
+    paper_plane = PaperPlane(size_hint=(None, None), size=(dp(26), dp(26)), pos_hint={'center_x': 0.5, 'center_y': 0.5})
     send.add_widget(paper_plane)
     
     def on_send_touch(instance, touch):
