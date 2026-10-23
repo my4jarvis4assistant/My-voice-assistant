@@ -136,20 +136,16 @@ class OrbCore(Widget):
         scale = 1 + (0.035 if active else 0.012)*math.sin(self.phase*2.1)
         r *= scale
         with self.canvas:
-            # broad teal halo
             for mul, alpha in [(1.62,.025),(1.48,.035),(1.34,.055),(1.20,.075)]:
                 Color(.20,.90,.88,alpha + (0.025*pulse if active else 0.008*pulse))
                 Ellipse(pos=(cx-r*mul, cy-r*mul), size=(2*r*mul,2*r*mul))
-            # spherical body and luminous lower/upper colour fields
             Color(.08,.27,.72,1); Ellipse(pos=(cx-r,cy-r),size=(2*r,2*r))
             Color(.14,.42,.92,.95); Ellipse(pos=(cx-r*.96,cy-r*.82),size=(1.92*r,1.66*r))
             Color(.25,.61,.98,.90); Ellipse(pos=(cx-r*.88,cy-r*.43),size=(1.76*r,1.15*r))
             Color(.65,.82,1,.92); Ellipse(pos=(cx-r*.77,cy-r*.08),size=(1.54*r,.87*r))
             Color(.77,.88,1,.88); Ellipse(pos=(cx-r*.66,cy-r*.02),size=(1.32*r,.64*r))
-            # subtle upper highlight, no rotating rings
             Color(.88,.97,1,.17)
             Ellipse(pos=(cx-r*.66,cy+r*.35),size=(r*.62,r*.15))
-            # live voice waveform across orb, amplitude follows listening/speaking state
             amp = r*(.10 if not active else .25)
             pts=[]; n=49
             for i in range(n):
@@ -161,28 +157,11 @@ class OrbCore(Widget):
             Color(.88,.98,1,.52 if not active else .86)
             Line(points=pts,width=dp(1.0 if not active else 1.6),smooth=True)
             if active:
-                # compact vertical equalizer peaks while JARVIS hears/speaks
                 for i in range(15):
                     xx=cx-r*.65+i*(r*1.30/14)
                     h=r*(.04+.13*abs(math.sin(i*1.3+self.phase*3))*math.sin(math.pi*i/14))
                     Color(.72,.96,1,.72)
                     Line(points=[xx,cy-h,xx,cy+h],width=dp(1.0),cap='round')
-
-
-class FingerprintIcon(Widget):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs); self.bind(pos=self.draw, size=self.draw); self.draw()
-    def draw(self, *_):
-        self.canvas.clear(); x,y=self.center; r=min(self.width,self.height)*.30
-        with self.canvas:
-            Color(.12,.58,.64,.20); Ellipse(pos=(x-r*1.6,y-r*1.6),size=(r*3.2,r*3.2))
-            Color(*CYAN); Line(circle=(x,y,r*1.18),width=dp(1.0))
-            for k in range(5):
-                pts=[]; half=r*(.25+k*.12)
-                for j in range(26):
-                    t=j/25
-                    pts.extend([x+half*math.sin(math.pi*t), y+r*(.57-t*1.13)])
-                Color(.55,.95,.94,.92-k*.08); Line(points=pts,width=dp(1.15),cap='round')
 
 
 class SectionCard(BoxLayout):
@@ -201,27 +180,23 @@ def build_jarvis_ui(app):
         root._border.rounded_rectangle=(root.x,root.y,root.width,root.height,dp(14))
     root.bind(pos=sync_root,size=sync_root)
 
-    # Home and Settings are separate full-screen layers
     home = FloatLayout()
     settings_page = BoxLayout(orientation='vertical', padding=[dp(12),dp(7),dp(12),dp(10)], spacing=dp(8), opacity=0, disabled=True)
     root.add_widget(home); root.add_widget(settings_page)
 
-    # Header: exact composition from reference (JARVIS + green dot, gear inside top-right circle container).
-    header = BoxLayout(orientation='horizontal', size_hint=(1, None), height=dp(60),
-                       padding=[dp(18), dp(4), dp(16), dp(4)], spacing=dp(8), pos_hint={'x': 0, 'top': 1})
+    # Header with absolute top-right positioning for settings container
+    header = FloatLayout(size_hint=(1, None), height=dp(65), pos_hint={'x': 0, 'top': 1})
     
-    brand_box = BoxLayout(orientation='horizontal', size_hint=(None, None), size=(dp(140), dp(40)), spacing=dp(8), pos_hint={'center_y': 0.5})
+    brand_box = BoxLayout(orientation='horizontal', size_hint=(None, None), size=(dp(140), dp(40)), spacing=dp(8), pos_hint={'x': 0.04, 'center_y': 0.5})
     brand_box.add_widget(make_label('JARVIS', 24, WHITE, False))
     dot = StatusDot(size_hint=(None, None), size=(dp(28), dp(28)), pos_hint={'center_y': 0.5})
     brand_box.add_widget(dot)
     header.add_widget(brand_box)
     
-    header.add_widget(Widget())
-    
-    # Gear button properly wrapped in FloatLayout so icon stays centered inside top-right circle
-    gear_btn = FloatLayout(size_hint=(None, None), size=(dp(48), dp(48)), pos_hint={'center_y': 0.5})
-    plate(gear_btn, (.05, .08, .085, 1), EDGE, dp(24), .8)
-    gear_icon = GearIcon(size_hint=(None, None), size=(dp(32), dp(32)), pos_hint={'center_x': .5, 'center_y': .5})
+    # Gear button precisely fixed to the top-right corner circle container
+    gear_btn = FloatLayout(size_hint=(None, None), size=(dp(46), dp(46)), pos_hint={'right': 0.96, 'center_y': 0.5})
+    plate(gear_btn, (.05, .08, .085, 1), EDGE, dp(23), .8)
+    gear_icon = GearIcon(size_hint=(None, None), size=(dp(28), dp(28)), pos_hint={'center_x': .5, 'center_y': .5})
     gear_btn.add_widget(gear_icon)
     
     def on_gear_touch(instance, touch):
@@ -244,14 +219,14 @@ def build_jarvis_ui(app):
     history_caption.size_hint=(.9,None); history_caption.height=dp(18); history_caption.pos_hint={'center_x':.5,'y':.125}
     home.add_widget(history_caption)
 
-    # Message composer fixed at the bottom with compact input box and clean paper plane send button on the right inside container
-    composer = BoxLayout(orientation='horizontal', size_hint=(.82, None), height=dp(46), spacing=dp(8),
-                         padding=[dp(14), dp(4), dp(6), dp(4)], pos_hint={'center_x': .5, 'y': .055})
-    plate(composer, (.10, .14, .15, 1), (.28, .39, .40, .85), dp(23), .8)
+    # Message composer fixed at bottom with input box shifted left and larger send button positioned nicely on right
+    composer = FloatLayout(size_hint=(.86, None), height=dp(48), pos_hint={'center_x': .5, 'y': .05})
+    plate(composer, (.10, .14, .15, 1), (.28, .39, .40, .85), dp(24), .8)
     
     chat = TextInput(hint_text='Message...', multiline=False, font_size='13sp', foreground_color=WHITE,
                      hint_text_color=MUTED, cursor_color=CYAN, background_normal='', background_active='',
-                     background_color=(0, 0, 0, 0), padding=[dp(3), dp(8)])
+                     background_color=(0, 0, 0, 0), size_hint=(.75, None), height=dp(40),
+                     pos_hint={'x': 0.03, 'center_y': 0.5}, padding=[dp(4), dp(10)])
     app.chat_input = chat
     
     def send_message(*_):
@@ -265,9 +240,9 @@ def build_jarvis_ui(app):
     chat.bind(on_text_validate=send_message)
     composer.add_widget(chat)
     
-    # Send button wrapped securely in FloatLayout container so paper plane stays inside the box on the right
-    send = FloatLayout(size_hint=(None, 1), width=dp(38))
-    paper_plane = PaperPlane(size_hint=(None, None), size=(dp(24), dp(24)), pos_hint={'center_x': .5, 'center_y': .5})
+    # Larger send button placed securely on the right inside composer box
+    send = FloatLayout(size_hint=(None, None), size=(dp(42), dp(42)), pos_hint={'right': 0.98, 'center_y': 0.5})
+    paper_plane = PaperPlane(size_hint=(None, None), size=(dp(26), dp(26)), pos_hint={'center_x': .5, 'center_y': .5})
     send.add_widget(paper_plane)
     
     def on_send_touch(instance, touch):
@@ -280,7 +255,7 @@ def build_jarvis_ui(app):
     
     home.add_widget(composer)
 
-    # Settings screen
+    # Settings screen layout
     settings_header=BoxLayout(size_hint_y=None,height=dp(42),spacing=dp(8))
     close_btn=ui_button('< Close',lambda:None,12,WHITE,(.12,.17,.18,1),dp(34))
     settings_title=make_label('JARVIS Settings',17,WHITE,True)
