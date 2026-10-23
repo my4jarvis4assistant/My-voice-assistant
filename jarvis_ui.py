@@ -207,15 +207,31 @@ def build_jarvis_ui(app):
     root.add_widget(home); root.add_widget(settings_page)
 
     # Header: exact composition from reference (JARVIS + green dot, gear on right).
-    header = BoxLayout(orientation='horizontal', size_hint=(1,None), height=dp(60),
-                       padding=[dp(18),dp(4),dp(16),dp(4)], spacing=dp(4), pos_hint={'x':0,'top':1})
-    header.add_widget(make_label('JARVIS',24,WHITE,False))
-    dot = StatusDot(size_hint=(None,None),size=(dp(28),dp(28))); header.add_widget(dot)
+    header = BoxLayout(orientation='horizontal', size_hint=(1, None), height=dp(60),
+                       padding=[dp(18), dp(4), dp(16), dp(4)], spacing=dp(8), pos_hint={'x': 0, 'top': 1})
+    
+    brand_box = BoxLayout(orientation='horizontal', size_hint=(None, None), size=(dp(140), dp(40)), spacing=dp(8), pos_hint={'center_y': 0.5})
+    brand_box.add_widget(make_label('JARVIS', 24, WHITE, False))
+    dot = StatusDot(size_hint=(None, None), size=(dp(28), dp(28)), pos_hint={'center_y': 0.5})
+    brand_box.add_widget(dot)
+    header.add_widget(brand_box)
+    
     header.add_widget(Widget())
-    gear_btn = Button(text='', size_hint=(None,None), size=(dp(48),dp(48)), background_normal='',background_down='',background_color=(.05,.08,.085,1))
-    plate(gear_btn,(.05,.08,.085,1),EDGE,dp(22),.8)
-    gear_icon=GearIcon(size_hint=(1,1)); gear_btn.add_widget(gear_icon)
-    header.add_widget(gear_btn); home.add_widget(header)
+    
+    gear_btn = FloatLayout(size_hint=(None, None), size=(dp(48), dp(48)), pos_hint={'center_y': 0.5})
+    plate(gear_btn, (.05, .08, .085, 1), EDGE, dp(22), .8)
+    gear_icon = GearIcon(size_hint=(1, 1), pos_hint={'center_x': .5, 'center_y': .5})
+    gear_btn.add_widget(gear_icon)
+    
+    def on_gear_touch(instance, touch):
+        if instance.collide_point(*touch.pos):
+            show_settings()
+            return True
+        return False
+    gear_btn.bind(on_touch_down=on_gear_touch)
+    
+    header.add_widget(gear_btn)
+    home.add_widget(header)
 
     # Core and listening status. Use relative geometry so it scales on Redmi 8 portrait.
     orb = OrbCore(size_hint=(.78,.37), pos_hint={'center_x':.5,'center_y':.59})
@@ -344,15 +360,13 @@ def build_jarvis_ui(app):
     def hide_settings(*_):
         settings_page.opacity=0; settings_page.disabled=True
         home.opacity=1; home.disabled=False
-    gear_btn.bind(on_release=show_settings)
     close_btn.bind(on_release=hide_settings)
     orb.on_tap = start_listening
-    # Make status output and central orb usable by existing main.py hooks.
+    
     app.toggle_voice_selection=show_settings
     app.open_jarvis_settings=show_settings
     app.start_jarvis_listening=start_listening
 
-    # Keep compatibility attributes expected by older main.py calculator handlers.
     app.calc_panel=BoxLayout(orientation='vertical',size_hint_y=None,height=0,opacity=0,disabled=True)
     app.calc_question_label=make_label('',10); app.calc_answer_label=make_label('',12,CYAN,True)
     app.calc_panel.add_widget(app.calc_question_label); app.calc_panel.add_widget(app.calc_answer_label)
