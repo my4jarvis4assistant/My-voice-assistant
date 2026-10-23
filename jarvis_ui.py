@@ -206,7 +206,7 @@ def build_jarvis_ui(app):
     settings_page = BoxLayout(orientation='vertical', padding=[dp(12),dp(7),dp(12),dp(10)], spacing=dp(8), opacity=0, disabled=True)
     root.add_widget(home); root.add_widget(settings_page)
 
-    # Header: exact composition from reference (JARVIS + green dot, gear on right).
+    # Header: exact composition from reference (JARVIS + green dot, gear in top-right circle container).
     header = BoxLayout(orientation='horizontal', size_hint=(1, None), height=dp(60),
                        padding=[dp(18), dp(4), dp(16), dp(4)], spacing=dp(8), pos_hint={'x': 0, 'top': 1})
     
@@ -219,7 +219,7 @@ def build_jarvis_ui(app):
     header.add_widget(Widget())
     
     gear_btn = FloatLayout(size_hint=(None, None), size=(dp(48), dp(48)), pos_hint={'center_y': 0.5})
-    plate(gear_btn, (.05, .08, .085, 1), EDGE, dp(22), .8)
+    plate(gear_btn, (.05, .08, .085, 1), EDGE, dp(24), .8)
     gear_icon = GearIcon(size_hint=(1, 1), pos_hint={'center_x': .5, 'center_y': .5})
     gear_btn.add_widget(gear_icon)
     
@@ -229,7 +229,6 @@ def build_jarvis_ui(app):
             return True
         return False
     gear_btn.bind(on_touch_down=on_gear_touch)
-    
     header.add_widget(gear_btn)
     home.add_widget(header)
 
@@ -245,25 +244,32 @@ def build_jarvis_ui(app):
     history_caption.size_hint=(.9,None); history_caption.height=dp(18); history_caption.pos_hint={'center_x':.5,'y':.125}
     home.add_widget(history_caption)
 
-    # Message composer remains fixed at the bottom of the home screen.
-    composer = BoxLayout(orientation='horizontal', size_hint=(.88,None), height=dp(48), spacing=dp(6),
-                         padding=[dp(12),dp(4),dp(6),dp(4)], pos_hint={'center_x':.48,'y':.055})
-    plate(composer,(.10,.14,.15,1),(.28,.39,.40,.85),dp(25),.8)
-    chat = TextInput(hint_text='Message...', multiline=False, font_size='14sp', foreground_color=WHITE,
-                     hint_text_color=MUTED, cursor_color=CYAN, background_normal='',background_active='',
-                     background_color=(0,0,0,0), padding=[dp(3),dp(8)])
-    app.chat_input=chat
+    # Message composer fixed at the bottom with a compact input box and clean paper plane send button on the right.
+    composer = BoxLayout(orientation='horizontal', size_hint=(.82, None), height=dp(46), spacing=dp(8),
+                         padding=[dp(14), dp(4), dp(6), dp(4)], pos_hint={'center_x': .5, 'y': .055})
+    plate(composer, (.10, .14, .15, 1), (.28, .39, .40, .85), dp(23), .8)
+    
+    chat = TextInput(hint_text='Message...', multiline=False, font_size='13sp', foreground_color=WHITE,
+                     hint_text_color=MUTED, cursor_color=CYAN, background_normal='', background_active='',
+                     background_color=(0, 0, 0, 0), padding=[dp(3), dp(8)])
+    app.chat_input = chat
+    
     def send_message(*_):
-        message=chat.text.strip()
+        message = chat.text.strip()
         if not message: return
-        chat.text=''
-        set_status('You: '+message)
+        chat.text = ''
+        set_status('You: ' + message)
         try: app.process_command(message)
         except Exception as exc: set_status('Message could not be processed')
+    
     chat.bind(on_text_validate=send_message)
     composer.add_widget(chat)
-    send = Button(text='',size_hint=(None,1),width=dp(42),background_normal='',background_down='',background_color=(0,0,0,0))
-    send.add_widget(PaperPlane(size_hint=(1,1))); send.bind(on_release=send_message); composer.add_widget(send)
+    
+    send = Button(text='', size_hint=(None, 1), width=dp(38), background_normal='', background_down='', background_color=(0, 0, 0, 0))
+    send.add_widget(PaperPlane(size_hint=(1, 1)))
+    send.bind(on_release=send_message)
+    composer.add_widget(send)
+    
     home.add_widget(composer)
 
     # Settings screen matching the provided right-side configuration board, opened by gear.
