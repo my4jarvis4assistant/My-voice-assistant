@@ -221,40 +221,71 @@ def build_jarvis_ui(app):
     history_caption.size_hint=(.9,None); history_caption.height=dp(18); history_caption.pos_hint={'center_x':.5,'y':.125}
     home.add_widget(history_caption)
 
-    # Bottom Composer: Strict horizontal BoxLayout so text input and send button stay locked side-by-side natively
-    composer = BoxLayout(orientation='horizontal', size_hint=(0.88, None), height=dp(48),
-                         padding=[dp(12), dp(4), dp(8), dp(4)], spacing=dp(8), pos_hint={'center_x': 0.5, 'y': 0.04})
-    plate(composer, (.10, .14, .15, 1), (.28, .39, .40, .85), dp(24), 1.0)
-    
-    chat = TextInput(hint_text='Message...', multiline=False, font_size='13sp', foreground_color=WHITE,
-                     hint_text_color=MUTED, cursor_color=CYAN, background_normal='', background_active='',
-                     background_color=(0, 0, 0, 0), size_hint=(0.8, 1), padding=[dp(4), dp(10)])
+    # Bottom Composer — fixed send-button width, no overflow
+    composer = BoxLayout(
+        orientation='horizontal',
+        size_hint=(0.88, None),
+        height=dp(52),
+        padding=[dp(14), dp(4), dp(5), dp(4)],
+        spacing=dp(4),
+        pos_hint={'center_x': 0.47, 'y': 0.04}
+    )
+
+    plate(
+        composer,
+        (.10, .14, .15, 1),
+        (.28, .39, .40, .85),
+        dp(26),
+        1.0
+    )
+
+    chat = TextInput(
+        hint_text='Message...',
+        multiline=False,
+        font_size='15sp',
+        foreground_color=WHITE,
+        hint_text_color=MUTED,
+        cursor_color=CYAN,
+        background_normal='',
+        background_active='',
+        background_color=(0, 0, 0, 0),
+        size_hint=(1, 1),
+        padding=[dp(5), dp(10), dp(3), dp(5)]
+    )
+
     app.chat_input = chat
-    
+
     def send_message(*_):
         message = chat.text.strip()
-        if not message: return
+
+        if not message:
+            return
+
         chat.text = ''
         set_status('You: ' + message)
-        try: app.process_command(message)
-        except Exception as exc: set_status('Message could not be processed')
-    
+
+        try:
+            app.process_command(message)
+        except Exception:
+            set_status('Message could not be processed')
+
     chat.bind(on_text_validate=send_message)
     composer.add_widget(chat)
-    
-    # Send button container placed securely inside the horizontal composer box on the right
-    send_box = FloatLayout(size_hint=(0.2, 1))
-    paper_plane = PaperPlane(size_hint=(None, None), size=(dp(26), dp(26)), pos_hint={'center_x': 0.5, 'center_y': 0.5})
-    send_box.add_widget(paper_plane)
-    
-    def on_send_touch(instance, touch):
-        if instance.collide_point(*touch.pos):
-            send_message()
-            return True
-        return False
-    send_box.bind(on_touch_down=on_send_touch)
-    composer.add_widget(send_box)
-    
+
+    # Fixed-width Send button stays INSIDE the message box
+    send_btn = Button(
+        text='➤',
+        size_hint=(None, 1),
+        width=dp(42),
+        font_size='24sp',
+        color=CYAN,
+        background_normal='',
+        background_down='',
+        background_color=(0, 0, 0, 0)
+    )
+    send_btn.bind(on_release=send_message)
+    composer.add_widget(send_btn)
+
     home.add_widget(composer)
 
     # Settings screen layout
