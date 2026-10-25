@@ -816,7 +816,7 @@ class VoiceAssistant(App):
     # OPEN INTENT
     # ========================================================
 
-        def open_intent(self, intent):
+    def open_intent(self, intent):
         """Launch an Android intent and show failures in the app status."""
         def open_main():
             try:
@@ -2035,7 +2035,7 @@ class VoiceAssistant(App):
     # SETTINGS / ANDROID ACTIONS
     # ========================================================
 
-        def open_settings(self, setting_type):
+    def open_settings(self, setting_type):
         """Open Android Settings safely without hiding launch errors."""
         def launch_settings():
             try:
