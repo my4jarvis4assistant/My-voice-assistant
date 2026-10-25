@@ -816,26 +816,21 @@ class VoiceAssistant(App):
     # OPEN INTENT
     # ========================================================
 
-    def open_intent(self, intent):
-
+        def open_intent(self, intent):
+        """Launch an Android intent and show failures in the app status."""
         def open_main():
-
             try:
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                self.activity.startActivity(intent)
+                print("JARVIS INTENT OPENED")
 
-                self.activity.startActivity(
-                    intent
+            except Exception as exc:
+                print("JARVIS INTENT ERROR:", repr(exc))
+                self.set_status(
+                    "Ye screen nahi khul saki. App permission ya Android support check karein."
                 )
 
-            except Exception as e:
-
-                print(
-                    "Intent error:",
-                    e
-                )
-
-        self.run_on_android_thread(
-            open_main
-        )
+        self.run_on_android_thread(open_main)
 
     # ========================================================
     # GENERIC URL
