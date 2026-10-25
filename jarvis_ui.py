@@ -225,14 +225,33 @@ def build_jarvis_ui(app):
     # Header: the only settings gear in the home UI; anchored at top-right.
     header = BoxLayout(orientation='horizontal', size_hint=(1,None), height=dp(60),
                        padding=[dp(16),dp(7),dp(16),dp(7)], spacing=dp(8), pos_hint={'top':1})
-    brand = BoxLayout(orientation='horizontal', size_hint=(None,1), width=dp(142), spacing=dp(8))
-    brand.add_widget(make_label('JARVIS',24,WHITE))
-    brand.add_widget(StatusDot(size_hint=(None,None),size=(dp(28),dp(28))))
+    
+    brand = BoxLayout(
+        orientation='horizontal',
+        size_hint=(None, 1),
+        width=dp(142),
+        spacing=dp(4)
+    )
+
+    brand.add_widget(make_label('JARVIS', 24, WHITE))
+
+    dot = StatusDot(
+        size_hint=(None, None),
+        size=(dp(25), dp(25)),
+        pos_hint={'center_y': 0.58}
+    )
+    brand.add_widget(dot)
+
     header.add_widget(brand)
     header.add_widget(Widget())
-    gear_btn = GearButton(size_hint=(None,None), size=(dp(46),dp(46)))
-    plate(gear_btn,(.05,.08,.085,1),EDGE,dp(23),1.0)
+
+    gear_btn = GearButton(
+        size_hint=(None, None),
+        size=(dp(46), dp(46))
+    )
+    plate(gear_btn, (.05, .08, .085, 1), EDGE, dp(23), 1.0)
     header.add_widget(gear_btn)
+
     home.add_widget(header)
 
     orb = OrbCore(size_hint=(.78,.37), pos_hint={'center_x':.5,'center_y':.59})
