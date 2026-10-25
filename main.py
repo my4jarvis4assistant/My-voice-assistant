@@ -2040,88 +2040,88 @@ class VoiceAssistant(App):
     # SETTINGS / ANDROID ACTIONS
     # ========================================================
 
-    def open_settings(
-        self,
-        setting_type
-    ):
+        def open_settings(self, setting_type):
+        """Open Android Settings safely without hiding launch errors."""
+        def launch_settings():
+            try:
+                actions = {
+                    "main": (
+                        Settings.ACTION_SETTINGS,
+                        "Android Settings"
+                    ),
+                    "wifi": (
+                        Settings.ACTION_WIFI_SETTINGS,
+                        "Wi-Fi Settings"
+                    ),
+                    "bluetooth": (
+                        Settings.ACTION_BLUETOOTH_SETTINGS,
+                        "Bluetooth Settings"
+                    ),
+                    "display": (
+                        Settings.ACTION_DISPLAY_SETTINGS,
+                        "Display Settings"
+                    ),
+                    "battery": (
+                        Settings.ACTION_BATTERY_SAVER_SETTINGS,
+                        "Battery Settings"
+                    ),
+                    "location": (
+                        Settings.ACTION_LOCATION_SOURCE_SETTINGS,
+                        "Location Settings"
+                    ),
+                    "security": (
+                        Settings.ACTION_SECURITY_SETTINGS,
+                        "Security Settings"
+                    ),
+                    "mobile": (
+                        Settings.ACTION_NETWORK_OPERATOR_SETTINGS,
+                        "Mobile Network Settings"
+                    )
+                }
 
-        try:
-
-            actions = {
-
-                "main": (
-                    Settings.ACTION_SETTINGS,
-                    "Settings"
-                ),
-
-                "wifi": (
-                    Settings.ACTION_WIFI_SETTINGS,
-                    "Wi-Fi Settings"
-                ),
-
-                "bluetooth": (
-                    Settings.ACTION_BLUETOOTH_SETTINGS,
-                    "Bluetooth Settings"
-                ),
-
-                "display": (
-                    Settings.ACTION_DISPLAY_SETTINGS,
-                    "Display Settings"
-                ),
-
-                "battery": (
-                    Settings.ACTION_BATTERY_SAVER_SETTINGS,
-                    "Battery Settings"
-                ),
-
-                "location": (
-                    Settings.ACTION_LOCATION_SOURCE_SETTINGS,
-                    "Location Settings"
-                ),
-
-                "security": (
-                    Settings.ACTION_SECURITY_SETTINGS,
-                    "Security Settings"
-                ),
-
-                "mobile": (
-                    Settings.ACTION_NETWORK_OPERATOR_SETTINGS,
-                    "Mobile Network Settings"
+                action, title = actions.get(
+                    str(setting_type).lower().strip(),
+                    (Settings.ACTION_SETTINGS, "Android Settings")
                 )
-            }
 
-            action, title = actions.get(
-                setting_type,
-                (
-                    Settings.ACTION_SETTINGS,
-                    "Settings"
-                )
-            )
+                intent = Intent(action)
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
-            self.set_status(
-                title +
-                " khol raha hoon..."
-            )
+                try:
+                    self.activity.startActivity(intent)
+                    self.set_status(title + " khol raha hoon...")
+                    print("JARVIS SETTINGS OPEN:", title)
 
-            self.speak(
-                title +
-                " khol raha hoon."
-            )
+                except Exception as first_error:
+                    print("JARVIS SETTINGS LAUNCH ERROR:", repr(first_error))
 
-            self.open_intent(
-                Intent(action)
-            )
+                    # If a specific Settings page cannot open, try the
+                    # general Android Settings page as a safe fallback.
+                    if setting_type != "main":
+                        try:
+                            fallback = Intent(Settings.ACTION_SETTINGS)
+                            fallback.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            self.activity.startActivity(fallback)
+                            self.set_status(
+                                title + " nahi khula; main Settings khol di."
+                            )
+                            return
+                        except Exception as fallback_error:
+                            print(
+                                "JARVIS SETTINGS FALLBACK ERROR:",
+                                repr(fallback_error)
+                            )
 
-        except Exception as e:
+                    self.set_status(
+                        title + " nahi khul saka. Dobara koshish karein."
+                    )
 
-            print(
-                "Settings error:",
-                e
-            )
+            except Exception as exc:
+                print("JARVIS SETTINGS ERROR:", repr(exc))
+                self.set_status("Settings kholne mein error aaya.")
 
-            self.set_status(
-                "Settings open nahi ho saka."
-            )
+        self.run_on_android_thread(launch_settings)
+
 
     # ========================================================
     # CAMERA
