@@ -146,9 +146,13 @@ class RecognitionListener(PythonJavaClass):
         pass
 
 
-# UI and animated logo live in separate jarvis_ui.py.
-from jarvis_ui import build_jarvis_ui
-
+import traceback
+UI_IMPORT_ERROR = None
+try:
+    from jarvis_ui import build_jarvis_ui
+except Exception:
+    UI_IMPORT_ERROR = traceback.format_exc()
+    build_jarvis_ui = None
 
 class VoiceAssistant(App):
 
