@@ -1,4 +1,4 @@
-"""JARVIS v0.30 - professional UI module (main.py ke saath kaam karta hai).
+"""JARVIS v0.30.1 - professional UI module (main.py ke saath kaam karta hai).
 
 main.py ko sirf yahi chahiye:
     from jarvis_ui import build_jarvis_ui
@@ -562,6 +562,11 @@ def _save_state(app):
 
 # ================================================================ BUILD UI ===
 def build_jarvis_ui(app):
+    # main.py ke asli functions sabse pehle yaad rakho (neeche wrap honge).
+    original_set_status = getattr(app, "set_status", None)
+    original_speak = getattr(app, "speak", None)
+    original_process = getattr(app, "process_command", None)
+
     try:
         Window.softinput_mode = "below_target"   # keyboard aane par message bar upar uthe
     except Exception:
@@ -829,6 +834,82 @@ def build_jarvis_ui(app):
     for label in ("Connect Smart Home", "Sync Calendar", "Link Accounts"):
         row = ActionRow(label)
         row.bind(on_release=lambda w, t=label: toast(t + " - jaldi aa raha hai"))
+        integ_card.add_widget(row)
+    content.add_widget(integ_card)
+
+    # ---------------------------------------------------------- NAVIGATION --
+    view = {"settings": False}
+
+    def show_settings(*_):
+        if view["settings"]:
+            return
+        view["settings"] = True
+        chat.focus = False
+        orb.paused = True
+        refresh_history()
+        root.remove_widget(home)
+        settings_page.opacity = 0
+        root.add_widget(settings_page, index=len(root.children))
+        Animation(opacity=1, d=0.18).start(settings_page)
+
+    def hide_settings(*_):
+        if not view["settings"]:
+            return
+        view["settings"] = False
+        _save_state(app)
+        wake_input.focus = False
+        root.remove_widget(settings_page)
+        root.add_widget(home, index=len(root.children))
+        orb.paused = False
+
+    def on_key(window, key, *args):
+        if key == 27 and view["settings"]:      # Android back button
+            hide_settings()
+            return True
+        return False
+
+    Window.bind(on_keyboard=on_key)
+    gear_btn.bind(on_release=show_settings)
+    close_btn.bind(on_release=hide_settings)
+
+    # ------------------------------------------------- CONNECT TO main.py ----
+    speak_timer = {"ev": None}
+
+    def sync_orb(text):
+        orb.mode = "listening" if str(text).lower().startswith("listening") else "idle"
+
+    def set_status(message):
+        message = str(message)
+        if original_set_status is not None:
+            original_set_status(message)          # main.py ka thread-safe version
+        else:
+            Clock.schedule_once(lambda dt: setattr(status, "text", message), 0)
+        Clock.schedule_once(lambda dt: sync_orb(message), 0)
+
+    def speak(text):
+        # TTS ready hote hi chuni hui voice lagao
+        try:
+            tts = getattr(app, "tts", None)
+            if tts is not None and getattr(app, "_ui_voice_tts", None) is not tts:
+                apply_voice()
+        except Exception:
+            pass
+        if original_speak is not None:
+            original_speak(text)
+        length = len(str(text))
+
+        def start(dt):
+            orb.speaking = True
+            if speak_timer["ev"] is not None:
+                speak_timer["ev"].cancel()
+            speak_timer["ev"] = Clock.schedule_once(
+                lambda dt2: setattr(orb, "speaking", False),
+                min(12.0, max(1.2, 0.6 + length * 0.065)))
+
+        Clock.schedule_once(start, 0)
+
+    def process_command(command):
+        Clock.schedule_once(lambda dt: add_history(command), 0)
         if original_process is not None:
             return original_process(command)
 
@@ -855,6 +936,16 @@ def build_jarvis_ui(app):
     def start_listening(*_):
         orb.mode = "listening"
         set_status("Listening...")
+        try:
+            if hasattr(app, "listen_again"):
+                app.listen_again()       # pehle purani session cancel, phir naya
+            else:
+                app.listen()
+        except Exception as exc:
+            print("Orb tap error:", exc)
+
+    orb.bind(on_release=start_listening)
+
     # Purane code ke saath compatibility (main.py in naamon ko use karta hai)
     app.status_label = status
     app.core_widget = orb
