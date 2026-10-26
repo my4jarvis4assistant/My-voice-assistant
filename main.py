@@ -171,7 +171,22 @@ class VoiceAssistant(App):
         self.setup_done = False
 
         # UI is maintained in jarvis_ui.py so design changes do not clutter main.py.
-        self.root_layout = build_jarvis_ui(self)
+        try:
+            if build_jarvis_ui is None:
+                raise RuntimeError(UI_IMPORT_ERROR)
+            self.root_layout = build_jarvis_ui(self)
+        except Exception:
+            err = traceback.format_exc()
+            print("JARVIS UI ERROR:\n", err)
+            from kivy.uix.scrollview import ScrollView
+            from kivy.uix.label import Label
+            sv = ScrollView()
+            lbl = Label(text=err, font_size="11sp", size_hint_y=None,
+                        halign="left", valign="top", color=(1, 0.5, 0.5, 1))
+            lbl.bind(width=lambda o, w: setattr(o, "text_size", (w, None)))
+            lbl.bind(texture_size=lambda o, s: setattr(o, "height", s[1]))
+            sv.add_widget(lbl)
+            return sv
 
         Clock.schedule_once(
             self.start_setup,
