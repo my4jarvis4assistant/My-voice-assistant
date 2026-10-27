@@ -34,6 +34,8 @@ MESSAGES = {   # Hinglish error messages (bolne ke liye bhi theek)
     "forbidden": "Gemini ne is key ko allow nahi kiya. Key ya uski permission check kijiye.",
     "quota": "Abhi Gemini ki free limit poori ho gayi hai. Thodi der baad dobara poochiye.",
     "nomodel": "Gemini ka koi model abhi available nahi mila. Thodi der baad try kijiye.",
+    "perm": ("App ko internet ki permission nahi mili. buildozer.spec me "
+             "android.permission.INTERNET jodkar APK dobara build kijiye."),
     "network": "Internet nahi chal raha lagta hai. Connection check karke dobara boliye.",
     "server": "Gemini server abhi busy hai. Thodi der baad dobara try kijiye.",
     "blocked": "Is sawal ka jawab main nahi de sakta. Kuch aur poochiye.",
@@ -105,6 +107,7 @@ def _http_urllib(method, url, headers, body, timeout):
         return exc.code, exc.read().decode("utf-8", "replace")
 
 
+_PERM_WORDS = ("Permission denied", "INTERNET", "SecurityException")
 _NET_WORDS = ("UnknownHost", "ConnectException", "SocketTimeout", "SSLHandshake",
               "NoRouteToHost", "UnknownService", "Network is unreachable", "timed out")
 
@@ -116,20 +119,26 @@ def http_request(method, url, headers, body=None, timeout=(CONNECT_TIMEOUT, READ
         have_java = True
     except Exception:
         have_java = False
+    java_err = ""
     if have_java:
         try:
             return _http_java(method, url, headers, body, timeout)
         except Exception as exc:                       # JavaException ya python error
-            text = repr(exc) + str(exc)
-            if any(w in text for w in _NET_WORDS):
-                raise AIError("network", text)
-            print("JARVIS AI: Java HTTP fail, urllib try kar raha hoon:", text[:200])
+            java_err = (repr(exc) + " " + str(exc)).strip()
+            print("JARVIS AI: Java HTTP fail:", java_err[:300])
+            if any(w in java_err for w in _PERM_WORDS):
+                raise AIError("perm", java_err)
+            if any(w in java_err for w in _NET_WORDS):
+                raise AIError("network", java_err)
     try:
         return _http_urllib(method, url, headers, body, timeout)
-    except urllib.error.URLError as exc:
-        raise AIError("network", str(exc))
-    except OSError as exc:                              # timeout, connection refused
-        raise AIError("network", str(exc))
+    except Exception as exc:
+        py_err = repr(exc)
+        detail = ("java: " + java_err[:160] + " | ") if java_err else ""
+        detail += "py: " + py_err[:160]
+        if any(w in detail for w in _PERM_WORDS):
+            raise AIError("perm", detail)
+        raise AIError("network", detail)
 
 
 # ---------------------------------------------------------------- MODELS ----
@@ -220,6 +229,7 @@ class GeminiClient:
         self.base_url = (base_url or BASE_URL).rstrip("/")
         self.model = get_model() if get_model else None
         self._set_model = set_model
+        self.last_detail = ""
         self.history = []                  # [{"role": "user"/"model", "text": ...}]
 
     # ---- memory ----
@@ -335,6 +345,7 @@ class GeminiClient:
             raise last
         except AIError as err:
             print("JARVIS AI error:", err.kind, err.detail[:200])
+            self.last_detail = err.detail
             return False, err.message
         except Exception as exc:                 # JSON/parse waghera
             print("JARVIS AI unexpected:", repr(exc)[:200])
