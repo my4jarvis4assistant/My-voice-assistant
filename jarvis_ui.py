@@ -1,4 +1,4 @@
-"""JARVIS v0.31 - professional UI module (main.py ke saath kaam karta hai).
+"""JARVIS v0.32 - professional UI module (main.py ke saath kaam karta hai).
 
 main.py ko sirf yahi chahiye:
     from jarvis_ui import build_jarvis_ui
@@ -182,7 +182,7 @@ def get_texture(name):
         if name == "sky":
             _TEX[name] = _make_texture(2, 128, sky_pixel)
         elif name == "cloud":
-            _TEX[name] = _make_texture(96, 96, make_cloud_pixel_fn(), periodic=True)
+            _TEX[name] = _make_texture(128, 128, make_cloud_pixel_fn(), periodic=True)
         elif name == "glow":
             _TEX[name] = _make_texture(64, 64, glow_pixel)
         else:
@@ -395,6 +395,7 @@ class TextureOrb(ButtonBehavior, Widget):
         self.mode = "idle"
         self.speaking = False
         self.paused = False
+        self._ticks = 0
         self._t = 0.0
         self._lvl = 0.0          # 0 = shaant, 1 = poori halchal
         self._flow = 0.012       # baadal ki raftaar
@@ -425,6 +426,8 @@ class TextureOrb(ButtonBehavior, Widget):
         elif self.paused:
             return                      # settings khuli hai: animation roko
         self._t += dt
+        if dt > 0:
+            self._ticks += 1
         t = self._t
 
         # --- halchal ka star (voice jaisa utaar-chadhaav jab bol raha ho) ---
@@ -482,18 +485,18 @@ uniform float energy;
 uniform float squash;
 uniform float glow;
 
-float hash(vec2 p) {
+float hash21(vec2 p) {
     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
 }
 
-float noise(vec2 p) {
+float vnoise(vec2 p) {
     vec2 i = floor(p);
     vec2 f = fract(p);
     f = f * f * (3.0 - 2.0 * f);
-    float a = hash(i);
-    float b = hash(i + vec2(1.0, 0.0));
-    float c = hash(i + vec2(0.0, 1.0));
-    float d = hash(i + vec2(1.0, 1.0));
+    float a = hash21(i);
+    float b = hash21(i + vec2(1.0, 0.0));
+    float c = hash21(i + vec2(0.0, 1.0));
+    float d = hash21(i + vec2(1.0, 1.0));
     return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
 }
 
@@ -501,7 +504,7 @@ float fbm(vec2 p) {
     float v = 0.0;
     float a = 0.5;
     for (int i = 0; i < 4; i++) {
-        v += a * noise(p);
+        v += a * vnoise(p);
         p = p * 2.03 + vec2(1.7, 9.2);
         a *= 0.5;
     }
@@ -585,6 +588,7 @@ class ShaderOrb(ButtonBehavior, Widget):
         self.mode = "idle"
         self.speaking = False
         self.paused = False
+        self._ticks = 0
         self._t = 0.0
         self._time = 0.0         # baadal ka samay (halchal ke saath tez hota hai)
         self._e = 0.0            # 0 = shaant, 1 = poori halchal
@@ -604,6 +608,8 @@ class ShaderOrb(ButtonBehavior, Widget):
         elif self.paused:
             return                      # settings khuli hai: animation roko
         self._t += dt
+        if dt > 0:
+            self._ticks += 1
         t = self._t
         if self.speaking:
             target = 0.65 + 0.35 * (0.6 * abs(math.sin(t * 5.1))
@@ -629,14 +635,76 @@ class ShaderOrb(ButtonBehavior, Widget):
         self.canvas["squash"] = float(squash)
 
 
-def make_orb(**kwargs):
-    """Shader orb agar chal sakta hai, warna texture wala orb."""
-    if _shader_supported():
+class SimpleOrb(ButtonBehavior, Widget):
+    """Sabse safe orb: sirf Ellipse + gradient texture (koi shader/stencil nahi)."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.mode = "idle"
+        self.speaking = False
+        self.paused = False
+        self._ticks = 0
+        self._t = 0.0
+        self._lvl = 0.0
+        with self.canvas:
+            self._glow_c = Color(1, 1, 1, ORB_GLOW)
+            self._glow = Rectangle(texture=get_texture("glow"))
+            Color(1, 1, 1, 1)
+            self._disc = Ellipse(texture=get_texture("sky"), segments=64)
+            self._w1_c = Color(0.97, 0.985, 1.0, 0.30)
+            self._w1 = Ellipse(segments=48)
+            self._w2_c = Color(0.97, 0.985, 1.0, 0.22)
+            self._w2 = Ellipse(segments=48)
+        self.bind(pos=self._tick, size=self._tick)
+        self._ev = Clock.schedule_interval(self._tick, 1 / 30.0)
+
+    def _tick(self, dt=0, *_):
+        if not isinstance(dt, (int, float)):
+            dt = 0
+        elif self.paused:
+            return
+        self._t += dt
+        if dt > 0:
+            self._ticks += 1
+        t = self._t
+        if self.speaking:
+            target = 0.6 + 0.4 * abs(math.sin(t * 4.3))
+        elif self.mode == "listening":
+            target = 0.45 + 0.15 * math.sin(t * 2.2)
+        else:
+            target = 0.0
+        self._lvl += (target - self._lvl) * min(1.0, dt * 6.0)
+        cx, cy = self.center
+        base = min(self.width * 0.60, self.height * 0.80)
+        d = base * (1 + 0.020 * math.sin(t * 1.4) + 0.07 * self._lvl)
+        g = d * (1.45 + 0.2 * self._lvl)
+        self._glow.size = (g, g)
+        self._glow.pos = (cx - g / 2, cy - g / 2)
+        self._glow_c.a = ORB_GLOW * (0.75 + 0.25 * self._lvl)
+        self._disc.size = (d, d)
+        self._disc.pos = (cx - d / 2, cy - d / 2)
+        w1 = (d * 0.70, d * 0.10)
+        self._w1.size = w1
+        self._w1.pos = (cx - w1[0] / 2 + math.sin(t * 0.6) * d * 0.07, cy - d * 0.05 - w1[1] / 2)
+        w2 = (d * 0.55, d * 0.08)
+        self._w2.size = w2
+        self._w2.pos = (cx - w2[0] / 2 + math.sin(t * 0.45 + 2.0) * d * 0.08, cy + d * 0.03 - w2[1] / 2)
+
+
+def make_orb(level=0, **kwargs):
+    """level 0: GPU shader orb, 1: texture orb, 2: simple orb (sabse safe).
+    Jo level fail ho jaye, uske neeche wala apne aap chalta hai."""
+    if level <= 0 and _shader_supported():
         try:
             return ShaderOrb(**kwargs)
         except Exception as exc:
-            print("JARVIS ShaderOrb failed, using TextureOrb:", exc)
-    return TextureOrb(**kwargs)
+            print("JARVIS ShaderOrb failed:", exc)
+    if level <= 1:
+        try:
+            return TextureOrb(**kwargs)
+        except Exception as exc:
+            print("JARVIS TextureOrb failed:", exc)
+    return SimpleOrb(**kwargs)
 
 
 class VoiceChip(ButtonBehavior, BoxLayout):
@@ -770,6 +838,87 @@ def make_card(title):
     return card
 
 
+# -------------------------------------------------- BOOT GUARD + SAFETY NET --
+_SAFE = {"installed": False}
+
+
+def _data_file(app, name):
+    try:
+        return os.path.join(app.user_data_dir, name)
+    except Exception:
+        return None
+
+
+def _write_json(path, data):
+    try:
+        if path:
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(data, fh)
+    except Exception as exc:
+        print("JARVIS write error:", exc)
+
+
+def boot_level(app):
+    """Orb ka level chuno. Agar pichhli baar app shuru hote hi band ho gaya tha
+    (pending bacha hua hai) to ek level safe wala chalao."""
+    path = _data_file(app, "jarvis_ui_boot.json")
+    level, pending = 0, False
+    try:
+        if path and os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as fh:
+                st = json.load(fh)
+            level = int(st.get("level", 0))
+            pending = bool(st.get("pending", False))
+    except Exception:
+        pass
+    level = max(0, min(2, level))
+    if pending:
+        level = min(2, level + 1)
+    _write_json(path, {"level": level, "pending": True})
+    return level
+
+
+def boot_ok(app, level):
+    """App theek se chal gaya: pending hata do."""
+    _write_json(_data_file(app, "jarvis_ui_boot.json"), {"level": level, "pending": False})
+
+
+def set_orb_level(app, level):
+    _write_json(_data_file(app, "jarvis_ui_boot.json"), {"level": level, "pending": False})
+
+
+def install_safety_net(app, on_error):
+    """Python ki koi bhi galti (animation, button...) app ko band na kare:
+    error file me likho aur screen par dikhao."""
+    if _SAFE["installed"]:
+        return
+    _SAFE["installed"] = True
+    try:
+        from kivy.base import ExceptionHandler, ExceptionManager
+    except Exception:
+        return
+
+    class JarvisHandler(ExceptionHandler):
+        def handle_exception(self, inst):
+            if isinstance(inst, (SystemExit, KeyboardInterrupt)):
+                return ExceptionManager.RAISE
+            try:
+                import traceback
+                text = "".join(traceback.format_exception(type(inst), inst,
+                                                          inst.__traceback__))
+                print("JARVIS UI EXCEPTION:\n" + text)
+                path = _data_file(app, "jarvis_ui_error.log")
+                if path:
+                    with open(path, "a", encoding="utf-8") as fh:
+                        fh.write(text[-1500:] + "\n----\n")
+                on_error(text)
+            except Exception:
+                pass
+            return ExceptionManager.PASS
+
+    ExceptionManager.add_handler(JarvisHandler())
+
+
 # --------------------------------------------------------------- STATE FILE --
 def _state_path(app):
     try:
@@ -828,6 +977,7 @@ def build_jarvis_ui(app):
     app.verbosity = state.get("verbosity", "Balanced")
     app.theme = "Dark"
     app.history = list(state.get("history", []))
+    orb_level = boot_level(app)       # 0 = GPU, 1 = texture, 2 = simple
 
     # ---- root with gradient background ----
     root = FloatLayout()
@@ -864,8 +1014,32 @@ def build_jarvis_ui(app):
     header.add_widget(gear_btn)
     home.add_widget(header)
 
-    orb = make_orb(size_hint=(1, 0.44), pos_hint={"center_x": 0.5, "center_y": 0.60})
+    orb = make_orb(orb_level, size_hint=(1, 0.44),
+                   pos_hint={"center_x": 0.5, "center_y": 0.60})
     home.add_widget(orb)
+
+    # Agar UI me koi galti aaye to app band nahi hoga, yahan chhoti laal line dikhegi.
+    err_label = Label(text="", font_size=sp(10), color=(1.0, 0.55, 0.55, 1),
+                      halign="center", valign="top", max_lines=3,
+                      size_hint=(0.94, None), height=dp(44),
+                      pos_hint={"center_x": 0.5, "top": 0.925})
+    err_label.bind(size=lambda obj, val: setattr(obj, "text_size", (val[0], val[1])))
+    home.add_widget(err_label)
+
+    def on_ui_error(text):
+        lines = [ln for ln in str(text).strip().splitlines() if ln.strip()]
+        shown = "UI error: " + (lines[-1] if lines else "unknown")
+        Clock.schedule_once(lambda dt: setattr(err_label, "text", shown[:220]), 0)
+
+    install_safety_net(app, on_ui_error)
+
+    def boot_check(dt):
+        if getattr(orb, "_ticks", 0) >= 12:     # ~0.4 sec animation chali = shuru ho gaya
+            boot_ok(app, orb_level)
+            return False
+        return True
+
+    Clock.schedule_interval(boot_check, 0.25)
 
     status = Label(text="Ready when you are", font_size=sp(17), color=MUTED,
                    halign="center", valign="top", max_lines=2,
@@ -1075,6 +1249,19 @@ def build_jarvis_ui(app):
     look_card_seg = Segmented(["Light", "Dark", "System"], "Dark", on_theme)
     look_card.add_widget(look_card_seg)
     content.add_widget(look_card)
+
+    # 6b) Orb animation
+    orb_card = make_card("Orb Animation")
+
+    def on_orb_style(value):
+        set_orb_level(app, 0 if value == "Advanced" else 1)
+        toast("App band karke dobara kholiye")
+
+    orb_card.add_widget(Segmented(["Advanced", "Safe"],
+                                  "Advanced" if orb_level == 0 else "Safe", on_orb_style))
+    orb_card.add_widget(make_label("Advanced = behte baadal (GPU). Agar app atke ya band ho "
+                                   "to Safe chuniye.", 11, MUTED, height=dp(34), lines=2))
+    content.add_widget(orb_card)
 
     # 7) Integrations
     integ_card = make_card("Integration Settings")
