@@ -71,11 +71,12 @@ def _read_java_stream(stream, BufferedReader, InputStreamReader):
 
 
 def _http_java(method, url, headers, body, timeout):
-    from jnius import autoclass
+    from jnius import autoclass, cast
     URL = autoclass("java.net.URL")
     BufferedReader = autoclass("java.io.BufferedReader")
     InputStreamReader = autoclass("java.io.InputStreamReader")
-    conn = URL(url).openConnection()
+    # openConnection() URLConnection deta hai; HTTP ke methods ke liye HttpURLConnection banana zaroori
+    conn = cast("java.net.HttpURLConnection", URL(url).openConnection())
     try:
         conn.setRequestMethod(method)
         conn.setConnectTimeout(int(timeout[0] * 1000))
