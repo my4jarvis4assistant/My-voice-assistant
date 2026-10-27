@@ -1,4 +1,4 @@
-"""JARVIS v0.32 - professional UI module (main.py ke saath kaam karta hai).
+"""JARVIS v0.40 - professional UI module (main.py ke saath kaam karta hai).
 
 main.py ko sirf yahi chahiye:
     from jarvis_ui import build_jarvis_ui
@@ -19,6 +19,8 @@ import json
 import math
 import os
 import random
+import re
+import threading
 
 from kivy.animation import Animation
 from kivy.clock import Clock
@@ -435,8 +437,8 @@ class TextureOrb(ButtonBehavior, Widget):
             target = 0.55 + 0.45 * (0.6 * abs(math.sin(t * 5.1))
                                     + 0.4 * abs(math.sin(t * 2.3 + 1.0)))
             flow_t = 0.075
-        elif self.mode == "listening":
-            target = 0.30 + 0.20 * math.sin(t * 2.2)
+        elif self.mode in ("listening", "thinking"):
+            target = 0.30 + 0.20 * math.sin(t * (4.2 if self.mode == "thinking" else 2.2))
             flow_t = 0.035
         else:
             target, flow_t = 0.0, 0.012
@@ -614,8 +616,8 @@ class ShaderOrb(ButtonBehavior, Widget):
         if self.speaking:
             target = 0.65 + 0.35 * (0.6 * abs(math.sin(t * 5.1))
                                     + 0.4 * abs(math.sin(t * 2.3 + 1.0)))
-        elif self.mode == "listening":
-            target = 0.55 + 0.10 * math.sin(t * 2.2)
+        elif self.mode in ("listening", "thinking"):
+            target = 0.55 + 0.10 * math.sin(t * (4.2 if self.mode == "thinking" else 2.2))
         else:
             target = 0.0
         e = self._e = self._e + (target - self._e) * min(1.0, dt * 3.0)
@@ -669,8 +671,8 @@ class SimpleOrb(ButtonBehavior, Widget):
         t = self._t
         if self.speaking:
             target = 0.6 + 0.4 * abs(math.sin(t * 4.3))
-        elif self.mode == "listening":
-            target = 0.45 + 0.15 * math.sin(t * 2.2)
+        elif self.mode in ("listening", "thinking"):
+            target = 0.45 + 0.15 * math.sin(t * (4.2 if self.mode == "thinking" else 2.2))
         else:
             target = 0.0
         self._lvl += (target - self._lvl) * min(1.0, dt * 6.0)
@@ -951,6 +953,9 @@ def _save_state(app):
                 "wake_word": app.wake_word,
                 "verbosity": app.verbosity,
                 "history": app.history[:30],
+                "gemini_key": getattr(app, "gemini_key", ""),
+                "ai_enabled": getattr(app, "ai_enabled", True),
+                "ai_model": getattr(app, "ai_model", ""),
             }, fh, ensure_ascii=False)
     except Exception as exc:
         print("JARVIS UI state save error:", exc)
@@ -977,6 +982,25 @@ def build_jarvis_ui(app):
     app.verbosity = state.get("verbosity", "Balanced")
     app.theme = "Dark"
     app.history = list(state.get("history", []))
+    app.gemini_key = str(state.get("gemini_key", "") or "").strip()
+    app.ai_enabled = bool(state.get("ai_enabled", True))
+    app.ai_model = str(state.get("ai_model", "") or "")
+    try:
+        import ai_brain
+    except Exception as exc:                    # AI file na mile to baaki app chalta rahe
+        print("ai_brain import error:", exc)
+        ai_brain = None
+    ai = {"busy": False, "last": "", "gen": 0, "typed": False, "from_typed": False,
+          "relisten": None}
+    client = None
+    if ai_brain is not None:
+        def _remember_model(name):
+            app.ai_model = name
+            _save_state(app)
+
+        client = ai_brain.GeminiClient(
+            get_key=lambda: app.gemini_key, get_verbosity=lambda: app.verbosity,
+            get_model=lambda: app.ai_model or None, set_model=_remember_model)
     orb_level = boot_level(app)       # 0 = GPU, 1 = texture, 2 = simple
 
     # ---- root with gradient background ----
@@ -1041,12 +1065,24 @@ def build_jarvis_ui(app):
 
     Clock.schedule_interval(boot_check, 0.25)
 
+    status_scroll = ScrollView(do_scroll_x=False, bar_width=dp(2), size_hint=(0.88, None),
+                               height=dp(80), pos_hint={"center_x": 0.5, "top": 0.385})
     status = Label(text="Ready when you are", font_size=sp(17), color=MUTED,
-                   halign="center", valign="top", max_lines=2,
-                   size_hint=(0.88, None), height=dp(56),
-                   pos_hint={"center_x": 0.5, "top": 0.385})
-    status.bind(size=lambda obj, val: setattr(obj, "text_size", (val[0], val[1])))
-    home.add_widget(status)
+                   halign="center", valign="top", size_hint_y=None, height=dp(80))
+
+    def fit_status(*_):
+        status.text_size = (status_scroll.width, None)
+        status.height = max(status.texture_size[1] + dp(8), status_scroll.height)
+
+    def fit_status_scroll(*_):
+        status_scroll.height = max(dp(60), home.height * 0.385 - dp(100))
+
+    status.bind(texture_size=fit_status)
+    status_scroll.bind(size=fit_status)
+    status.bind(text=lambda *_: setattr(status_scroll, "scroll_y", 1))
+    home.bind(size=fit_status_scroll)
+    status_scroll.add_widget(status)
+    home.add_widget(status_scroll)
 
     caption = make_label("JARVIS  •  PERSONAL ASSISTANT", 9.5, FAINT, False,
                          "center", height=dp(18))
@@ -1107,6 +1143,15 @@ def build_jarvis_ui(app):
         pitch, rate = VOICES.get(app.selected_voice, (1.0, 1.0))
 
         def work():
+            try:
+                if not getattr(app, "_ui_locale_set", False):
+                    app._ui_locale_set = True
+                    from jnius import autoclass
+                    Locale = autoclass("java.util.Locale")
+                    if int(tts.setLanguage(Locale("en", "IN"))) < 0:
+                        tts.setLanguage(Locale.US)
+            except Exception as exc:
+                print("Locale error:", exc)
             try:
                 tts.setPitch(float(pitch))
                 tts.setSpeechRate(float(rate))
@@ -1210,6 +1255,97 @@ def build_jarvis_ui(app):
                                    on_verbosity))
     content.add_widget(verb_card)
 
+    # 4b) Gemini AI
+    ai_card = make_card("Gemini AI (baat-cheet)")
+    ai_info = make_label("", 12, MUTED, height=dp(34), lines=2)
+    ai_card.add_widget(ai_info)
+
+    def refresh_ai_info():
+        if ai_brain is None:
+            ai_info.text = "ai_brain.py file nahi mili - GitHub par upload kijiye."
+        elif not app.gemini_key:
+            ai_info.text = "Key set nahi hai. Neeche paste karke Save dabaiye."
+        elif app.ai_enabled:
+            ai_info.text = "AI chalu hai. Jo command samajh na aaye, Gemini jawab dega."
+        else:
+            ai_info.text = "AI band hai (key saved)."
+
+    key_row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(44),
+                        spacing=dp(10))
+    key_wrap = PlateBox(fill=INPUT, edge=EDGE, radius=dp(12), orientation="horizontal",
+                        padding=[dp(10), 0, dp(10), 0])
+    key_input = style_input(TextInput(text="", hint_text="Gemini API key paste kijiye",
+                                      font_size=sp(14), password=True))
+    key_wrap.add_widget(key_input)
+    key_row.add_widget(key_wrap)
+    key_btn = PillButton(text="Save", size_hint=(None, None), width=dp(72), height=dp(36),
+                         pos_hint={"center_y": 0.5})
+    key_row.add_widget(key_btn)
+    ai_card.add_widget(key_row)
+
+    def save_key(*_):
+        app.gemini_key = key_input.text.strip() or ""
+        if key_input.text.strip():
+            key_input.text = ""
+            key_input.focus = False
+        if client is not None:
+            client.model = None
+        app.ai_model = ""
+        _save_state(app)
+        refresh_ai_info()
+        toast("Key save ho gayi" if app.gemini_key else "Key hata di gayi")
+
+    key_btn.bind(on_release=save_key)
+
+    def on_ai_toggle(value):
+        app.ai_enabled = (value == "On")
+        _save_state(app)
+        refresh_ai_info()
+        toast("AI " + ("chalu" if app.ai_enabled else "band"))
+
+    ai_card.add_widget(Segmented(["On", "Off"], "On" if app.ai_enabled else "Off",
+                                 on_ai_toggle))
+
+    def open_key_page(*_):
+        try:
+            from jnius import autoclass
+            Intent = autoclass("android.content.Intent")
+            Uri = autoclass("android.net.Uri")
+            intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://aistudio.google.com/apikey"))
+            app.open_intent(intent)
+        except Exception as exc:
+            print("Key page error:", exc)
+            toast("Browser me aistudio.google.com/apikey kholiye")
+
+    def clear_ai_memory(*_):
+        if client is not None:
+            client.clear()
+        toast("AI ki yaaddasht saaf")
+
+    def test_ai(*_):
+        if client is None or not app.gemini_key:
+            toast("Pehle key save kijiye")
+            return
+        toast("Test ho raha hai...")
+
+        def work():
+            ok, reply = client.ask("Ek chhota sa namaste bolo.")
+            client.clear()
+            Clock.schedule_once(
+                lambda dt: toast("AI theek chal raha hai" if ok else reply[:70]), 0)
+
+        threading.Thread(target=work, daemon=True).start()
+
+    for label, fn in [("Free key banaiye (Google AI Studio)", open_key_page),
+                      ("Connection test", test_ai),
+                      ("AI memory clear", clear_ai_memory)]:
+        row = ActionRow(label)
+        row.bind(on_release=lambda w, f=fn: f())
+        ai_card.add_widget(row)
+    ai_card.add_widget(make_label("Key sirf is phone me save hoti hai. Kabhi GitHub par mat "
+                                  "daaliye.", 11, MUTED, height=dp(34), lines=2))
+    content.add_widget(ai_card)
+
     # 5) Privacy
     privacy_card = make_card("Data Privacy & Security")
 
@@ -1310,10 +1446,60 @@ def build_jarvis_ui(app):
     speak_timer = {"ev": None}
 
     def sync_orb(text):
-        orb.mode = "listening" if str(text).lower().startswith("listening") else "idle"
+        if str(text).lower().startswith("listening"):
+            orb.mode = "listening"
+        else:
+            orb.mode = "thinking" if ai["busy"] else "idle"
+
+    def ai_ready():
+        return bool(client is not None and app.ai_enabled and app.gemini_key.strip())
+
+    def cancel_relisten():
+        ev = ai.get("relisten")
+        if ev is not None:
+            ev.cancel()
+            ai["relisten"] = None
+
+    def deliver(gen, ok, reply):
+        if gen != ai["gen"]:                      # beech me user ne orb dabaya: purana jawab chhodo
+            return
+        ai["busy"] = False
+        set_status(reply)
+        spoken = ai_brain.speech_text(reply) if ok else reply
+        speak(spoken)
+        if not ai["from_typed"]:
+            delay = min(25.0, max(2.5, 1.2 + len(spoken) * 0.075))
+            ai["relisten"] = Clock.schedule_once(lambda dt: app.listen(), delay)
+
+    def ask_ai(text):
+        """Sawaal Gemini ko bhejo (background me); jawab aane par bolo."""
+        ai["busy"] = True
+        ai["gen"] += 1
+        gen = ai["gen"]
+        cancel_relisten()
+        orb.mode = "thinking"
+        status.text = "Soch raha hoon..."
+        status.color = MUTED
+
+        def work():
+            ok, reply = client.ask(text)
+            Clock.schedule_once(lambda dt: deliver(gen, ok, reply), 0)
+
+        threading.Thread(target=work, daemon=True).start()
+
+    app.ask_ai = ask_ai
 
     def set_status(message):
         message = str(message)
+        if message.lower().startswith("command clear nahi hui"):
+            m = re.search(r"Heard:\s*(.*)", message)
+            question = (m.group(1).strip() if m else "") or ai["last"]
+            if ai_ready() and question:
+                ai["busy"] = True            # main.py ka peeche aane wala listen() ruk jayega
+                Clock.schedule_once(lambda dt: ask_ai(question), 0)
+                return
+            if ai_brain is not None and not app.gemini_key:
+                message += "\n(AI ke liye Settings me Gemini key daaliye)"
         if original_set_status is not None:
             original_set_status(message)          # main.py ka thread-safe version
         else:
@@ -1321,6 +1507,8 @@ def build_jarvis_ui(app):
         Clock.schedule_once(lambda dt: sync_orb(message), 0)
 
     def speak(text):
+        if ai["busy"] and "command clear nahi hui" in str(text).lower():
+            return                                 # purana "samajh nahi aaya" jawab band
         # TTS ready hote hi chuni hui voice lagao
         try:
             tts = getattr(app, "tts", None)
@@ -1342,12 +1530,43 @@ def build_jarvis_ui(app):
 
         Clock.schedule_once(start, 0)
 
+    AI_FIRST = ("what is ", "what's ", "whats ", "solve ", "calculate ", "compute ")
+    DEVICE_WORDS = ("time", "date", "day", "battery", "name", "weather", "temperature",
+                    "alarm", "timer", "volume", "brightness", "wifi", "wi-fi", "bluetooth",
+                    "flashlight", "torch", "calculator")
+
+    def should_route_ai(cmd):
+        """'what is inflation' jaise sawal calculator me na jaayein, seedhe AI ke paas."""
+        low = " ".join(cmd.lower().split())
+        low = re.sub(r"^(hey |hello |hi )?jarvis[ ,]+", "", low)
+        if not low.startswith(AI_FIRST):
+            return False
+        if any(w in low.split() or w in low for w in DEVICE_WORDS):
+            return False
+        return not ai_brain.is_simple_math(low)
+
     def process_command(command):
-        Clock.schedule_once(lambda dt: add_history(command), 0)
+        cmd = " ".join(str(command).split())
+        ai["last"] = cmd
+        ai["from_typed"] = ai["typed"]
+        ai["typed"] = False
+        Clock.schedule_once(lambda dt: add_history(cmd), 0)
+        if ai_ready() and should_route_ai(cmd):
+            ai["busy"] = True
+            Clock.schedule_once(lambda dt: ask_ai(cmd), 0)
+            return
         if original_process is not None:
             return original_process(command)
 
     app.set_status = set_status
+    original_listen = getattr(app, "listen", None)
+    if original_listen is not None:
+        def listen(*args):
+            if ai["busy"]:
+                return None                       # AI jawab de raha hai: abhi mic mat kholo
+            return original_listen(*args)
+
+        app.listen = listen
     app.speak = speak
     if original_process is not None:
         app.process_command = process_command
@@ -1358,6 +1577,7 @@ def build_jarvis_ui(app):
             return
         chat.text = ""
         set_status("You: " + message)
+        ai["typed"] = True
         try:
             app.process_command(message)
         except Exception as exc:
@@ -1368,6 +1588,9 @@ def build_jarvis_ui(app):
     send_btn.bind(on_release=send_message)
 
     def start_listening(*_):
+        ai["gen"] += 1                      # chal raha AI jawab radd
+        ai["busy"] = False
+        cancel_relisten()
         orb.mode = "listening"
         set_status("Listening...")
         try:
@@ -1402,4 +1625,5 @@ def build_jarvis_ui(app):
     app.root_layout = root
 
     apply_voice()
+    refresh_ai_info()
     return root
