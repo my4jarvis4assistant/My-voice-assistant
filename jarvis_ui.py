@@ -1,4 +1,4 @@
-"""JARVIS v0.30.1 - professional UI module (main.py ke saath kaam karta hai).
+"""JARVIS v0.31 - professional UI module (main.py ke saath kaam karta hai).
 
 main.py ko sirf yahi chahiye:
     from jarvis_ui import build_jarvis_ui
@@ -18,11 +18,14 @@ Professional look ke rules jo yahan follow hue hain:
 import json
 import math
 import os
+import random
 
 from kivy.animation import Animation
 from kivy.clock import Clock
 from kivy.core.window import Window
-from kivy.graphics import Color, Ellipse, Line, Rectangle, RoundedRectangle
+from kivy.graphics import (Color, Ellipse, Line, Rectangle, RenderContext,
+                           RoundedRectangle, StencilPop, StencilPush,
+                           StencilUnUse, StencilUse)
 from kivy.graphics.texture import Texture
 from kivy.metrics import dp, sp
 from kivy.properties import NumericProperty
@@ -52,6 +55,8 @@ CLEAR = (0, 0, 0, 0)
 DARK_TEXT = (0.02, 0.09, 0.09, 1)
 
 # Voice name -> (TTS pitch, TTS speech rate). Sirf awaaz ka andaaz badalta hai.
+ORB_GLOW = 0.30      # orb ke peeche halki teal chamak (0 = bilkul band)
+
 VOICES = {
     "Male Alpha": (0.85, 1.00),
     "Female Beta": (1.25, 1.00),
@@ -61,14 +66,15 @@ VOICES = {
 
 
 # ---------------------------------------------------------------- TEXTURES --
-def _make_texture(w, h, pixel_fn):
-    """pixel_fn(u, v) -> (r, g, b, a); u, v 0..1 (v neeche se upar)."""
+def _make_texture(w, h, pixel_fn, periodic=False):
+    """pixel_fn(u, v) -> (r, g, b, a); u, v 0..1 (v neeche se upar).
+    periodic=True: texture dono taraf se seamless repeat hota hai."""
     buf = bytearray(w * h * 4)
     i = 0
     for y in range(h):
-        v = y / (h - 1)
+        v = y / (h if periodic else h - 1)
         for x in range(w):
-            r, g, b, a = pixel_fn(x / (w - 1), v)
+            r, g, b, a = pixel_fn(x / (w if periodic else w - 1), v)
             buf[i] = int(255 * min(1.0, max(0.0, r)))
             buf[i + 1] = int(255 * min(1.0, max(0.0, g)))
             buf[i + 2] = int(255 * min(1.0, max(0.0, b)))
@@ -78,33 +84,77 @@ def _make_texture(w, h, pixel_fn):
     tex.blit_buffer(bytes(buf), colorfmt="rgba", bufferfmt="ubyte")
     tex.mag_filter = "linear"
     tex.min_filter = "linear"
+    if periodic:
+        tex.wrap = "repeat"
     return tex
 
 
-def orb_pixel(u, v):
-    """3D glass sphere: roshni upar-left se, neeche gehra neela, teal kinaara."""
-    lx, ly, lz = -0.45, 0.55, 0.70
-    ln = math.sqrt(lx * lx + ly * ly + lz * lz)
-    lx, ly, lz = lx / ln, ly / ln, lz / ln
-    dx, dy = (u - 0.5) * 2, (v - 0.5) * 2
-    d = math.hypot(dx, dy)
-    if d >= 1:
-        return 0.10, 0.35, 0.90, 0.0
-    nz = math.sqrt(1 - d * d)
-    lam = max(0.0, dx * lx + dy * ly + nz * lz)
-    t = lam ** 0.9
-    r = 0.05 + 0.45 * t
-    g = 0.20 + 0.58 * t
-    b = 0.68 + 0.32 * t
-    cloud = 0.5 + 0.5 * math.sin(dx * 5 + dy * 3) * math.sin(dy * 4 - dx * 2)
-    k = 0.10 * cloud * lam
-    spec = lam ** 28 * 0.55
-    rim = d ** 5 * 0.35
-    r = r + k + spec
-    g = g + k + spec + rim * 0.5
-    b = b + k + spec + rim * 0.3
-    alpha = min(1.0, (1 - d) * 40)          # smooth kinaara
-    return r, g, b, alpha
+SKY_STOPS = [   # (upar se kitna neeche 0..1, rang) - ChatGPT ke orb se naape gaye
+    (0.00, (0.275, 0.467, 0.910)),
+    (0.10, (0.302, 0.498, 0.922)),
+    (0.19, (0.357, 0.541, 0.933)),
+    (0.28, (0.471, 0.631, 0.945)),
+    (0.375, (0.616, 0.729, 0.961)),
+    (0.466, (0.741, 0.824, 0.969)),
+    (0.557, (0.850, 0.890, 0.975)),
+    (0.648, (0.830, 0.885, 0.972)),
+    (0.739, (0.760, 0.824, 0.973)),
+    (0.83, (0.710, 0.784, 0.968)),
+    (1.00, (0.698, 0.769, 0.965)),
+]
+
+
+def sky_pixel(u, v):
+    """ChatGPT jaisa aasmaan: upar gehra neela, beech safed, neeche halka lavender."""
+    t = 1.0 - v
+    for i in range(len(SKY_STOPS) - 1):
+        t0, c0 = SKY_STOPS[i]
+        t1, c1 = SKY_STOPS[i + 1]
+        if t <= t1:
+            f = (t - t0) / (t1 - t0) if t1 > t0 else 0.0
+            f = max(0.0, min(1.0, f))
+            return (c0[0] + (c1[0] - c0[0]) * f, c0[1] + (c1[1] - c0[1]) * f,
+                    c0[2] + (c1[2] - c0[2]) * f, 1.0)
+    return SKY_STOPS[-1][1] + (1.0,)
+
+
+def _smooth(x):
+    return x * x * (3 - 2 * x)
+
+
+def _sstep(lo, hi, x):
+    f = max(0.0, min(1.0, (x - lo) / (hi - lo)))
+    return f * f * (3 - 2 * f)
+
+
+def make_cloud_pixel_fn():
+    """Seamless (tile hone wala) baadal. Alpha = baadal ki ghani-ta, beech ki patti me zyada."""
+    rnd = random.Random(11)
+    octaves = [(4, 4, 1.0), (8, 8, 0.55), (16, 16, 0.30)]
+    grids = [[rnd.random() for _ in range(gx * gy)] for gx, gy, _ in octaves]
+    total = sum(o[2] for o in octaves)
+
+    def noise(u, v):
+        acc = 0.0
+        for (gx, gy, amp), g in zip(octaves, grids):
+            x, y = u * gx, v * gy
+            xi, yi = int(x), int(y)
+            fx, fy = _smooth(x - xi), _smooth(y - yi)
+            x0, x1 = xi % gx, (xi + 1) % gx
+            y0, y1 = yi % gy, (yi + 1) % gy
+            a, b = g[y0 * gx + x0], g[y0 * gx + x1]
+            c, d = g[y1 * gx + x0], g[y1 * gx + x1]
+            top = a + (b - a) * fx
+            bot = c + (d - c) * fx
+            acc += amp * (top + (bot - top) * fy)
+        return acc / total
+
+    def px(u, v):
+        density = _sstep(0.42, 0.72, noise(u, v))
+        band = math.exp(-((v - 0.46) / 0.17) ** 2)
+        return 0.97, 0.985, 1.0, density * band
+
+    return px
 
 
 def glow_pixel(u, v):
@@ -129,8 +179,10 @@ _TEX = {}
 
 def get_texture(name):
     if name not in _TEX:
-        if name == "orb":
-            _TEX[name] = _make_texture(128, 128, orb_pixel)
+        if name == "sky":
+            _TEX[name] = _make_texture(2, 128, sky_pixel)
+        elif name == "cloud":
+            _TEX[name] = _make_texture(96, 96, make_cloud_pixel_fn(), periodic=True)
         elif name == "glow":
             _TEX[name] = _make_texture(64, 64, glow_pixel)
         else:
@@ -260,13 +312,26 @@ class Segmented(PlateBox):
             self._on_change(name)
 
 
-class IconButton(ButtonBehavior, Widget):
-    """Canvas se bana icon button (font/image ki zaroorat nahi)."""
+def gear_points(cx, cy, r_out, r_in, teeth=8):
+    """Gear ka bahari kinaara (daant wala) - ek band line ke roop me."""
+    pts = []
+    step = 2 * math.pi / teeth
+    for i in range(teeth):
+        a = i * step
+        for ang, rad in ((a - 0.30 * step, r_in), (a - 0.17 * step, r_out),
+                         (a + 0.17 * step, r_out), (a + 0.30 * step, r_in),
+                         (a + 0.50 * step, r_in)):
+            pts += [cx + math.cos(ang) * rad, cy + math.sin(ang) * rad]
+    return pts
 
-    def __init__(self, kind, circle=False, **kwargs):
+
+class IconButton(ButtonBehavior, Widget):
+    """Canvas se bana icon button (font/image ki zaroorat nahi).
+    kind='gear': gol dark button par gear.  kind='send': teal gol button par upar ka teer."""
+
+    def __init__(self, kind, **kwargs):
         super().__init__(**kwargs)
         self.kind = kind
-        self.circle = circle
         self.bind(pos=self._draw, size=self._draw, state=self._draw)
         self._draw()
 
@@ -274,34 +339,27 @@ class IconButton(ButtonBehavior, Widget):
         self.canvas.clear()
         x, y = self.center
         side = min(self.width, self.height)
-        a = 0.55 if self.state == "down" else 1.0
+        down = self.state == "down"
         with self.canvas:
-            if self.circle:
+            if self.kind == "gear":
                 Color(*PILL)
                 Ellipse(pos=(x - side / 2, y - side / 2), size=(side, side))
-                Color(*EDGE)
-                Line(circle=(x, y, side / 2), width=1)
-            if self.kind == "send":
-                Color(CYAN[0], CYAN[1], CYAN[2], a)
+                Color(1, 1, 1, 0.14 if not down else 0.30)
+                Line(circle=(x, y, side / 2 - 0.5), width=1)
+                Color(0.82, 0.92, 0.92, 0.65 if down else 1)
+                big = side * 0.265
+                Line(points=gear_points(x, y, big, big * 0.78), close=True,
+                     width=dp(1.5), joint="round")
+                Line(circle=(x, y, big * 0.36), width=dp(1.5))
             else:
-                Color(0.80, 0.86, 0.85, a)
-            if self.kind == "gear":
-                r = side * 0.20
-                Line(circle=(x, y, r), width=dp(1.5))
-                Line(circle=(x, y, r * 0.42), width=dp(1.4))
-                for i in range(8):
-                    ang = math.pi * 2 * i / 8
-                    Line(points=[x + math.cos(ang) * r * 1.15, y + math.sin(ang) * r * 1.15,
-                                 x + math.cos(ang) * r * 1.65, y + math.sin(ang) * r * 1.65],
-                         width=dp(2.2), cap="round")
-            else:
-                s = side * 0.30
-                Line(points=[x - s, y - s * .25, x + s, y + s * .45, x + s * .12,
-                             y - s * .48, x - s, y - s * .25],
-                     close=True, width=dp(1.7), joint="round")
-                Line(points=[x - s * .10, y - s * .03, x + s, y + s * .45], width=dp(1.4))
-                Line(points=[x - s * .10, y - s * .03, x - s * .32, y - s * .38],
-                     width=dp(1.4))
+                Color(CYAN[0], CYAN[1], CYAN[2], 0.75 if down else 1)
+                Ellipse(pos=(x - side / 2, y - side / 2), size=(side, side))
+                a = side * 0.205                   # upar ka teer (arrow)
+                Color(*DARK_TEXT)
+                Line(points=[x, y - a, x, y + a * 0.95], width=dp(2.2), cap="round")
+                Line(points=[x - a * 0.85, y + a * 0.10, x, y + a * 1.00,
+                             x + a * 0.85, y + a * 0.10],
+                     width=dp(2.2), cap="round", joint="round")
 
 
 class StatusDot(Widget):
@@ -319,7 +377,7 @@ class StatusDot(Widget):
     def _draw(self, *_):
         self.canvas.clear()
         x, y = self.center
-        r = min(self.width, self.height) * 0.18
+        r = min(self.width, self.height) * 0.24
         rr = r * (1 + 2.2 * self.pulse)
         with self.canvas:
             Color(GREEN[0], GREEN[1], GREEN[2], 0.35 * (1 - self.pulse))
@@ -328,26 +386,36 @@ class StatusDot(Widget):
             Ellipse(pos=(x - r, y - r), size=(r * 2, r * 2))
 
 
-class Orb(ButtonBehavior, Widget):
-    """Glass orb + glow + andar chalti wave. mode: idle / listening, speaking: bool."""
+class TextureOrb(ButtonBehavior, Widget):
+    """FALLBACK orb (shader na chale to): aasmaan ka disc, andar behte baadal.
+    mode: idle / listening, speaking: bool (jab Jarvis bol raha ho)."""
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.mode = "idle"
         self.speaking = False
         self.paused = False
-        self._phase = 0.0
         self._t = 0.0
-        self._amp = 0.10
-        self._d = 1.0
+        self._lvl = 0.0          # 0 = shaant, 1 = poori halchal
+        self._flow = 0.012       # baadal ki raftaar
+        self._u1 = 0.0
+        self._u2 = 0.0
+        sky, cloud = get_texture("sky"), get_texture("cloud")
         with self.canvas:
-            self._glow_c = Color(1, 1, 1, 0.8)
+            self._glow_c = Color(1, 1, 1, ORB_GLOW)
             self._glow = Rectangle(texture=get_texture("glow"))
+            StencilPush()
+            self._mask1 = Ellipse(segments=96)
+            StencilUse()
             Color(1, 1, 1, 1)
-            self._orb = Rectangle(texture=get_texture("orb"))
-            Color(0.92, 0.98, 1, 0.9)
-            self._wave = Line(points=[0, 0, 0, 0], width=dp(1.6), cap="round",
-                              joint="round")
+            self._sky = Rectangle(texture=sky)
+            self._c1_col = Color(1, 1, 1, 0.45)
+            self._c1 = Rectangle(texture=cloud)
+            self._c2_col = Color(1, 1, 1, 0.30)
+            self._c2 = Rectangle(texture=cloud)
+            StencilUnUse()
+            self._mask2 = Ellipse(segments=96)
+            StencilPop()
         self.bind(pos=self._tick, size=self._tick)
         self._ev = Clock.schedule_interval(self._tick, 1 / 30.0)
 
@@ -357,39 +425,218 @@ class Orb(ButtonBehavior, Widget):
         elif self.paused:
             return                      # settings khuli hai: animation roko
         self._t += dt
-        if self.speaking:
-            target, speed = 0.85, 8.0
-        elif self.mode == "listening":
-            target, speed = 1.0, 5.5
-        else:
-            target, speed = 0.10, 1.6
-        self._amp += (target - self._amp) * min(1.0, dt * 6.0)
-        self._phase += dt * speed
+        t = self._t
 
+        # --- halchal ka star (voice jaisa utaar-chadhaav jab bol raha ho) ---
+        if self.speaking:
+            target = 0.55 + 0.45 * (0.6 * abs(math.sin(t * 5.1))
+                                    + 0.4 * abs(math.sin(t * 2.3 + 1.0)))
+            flow_t = 0.075
+        elif self.mode == "listening":
+            target = 0.30 + 0.20 * math.sin(t * 2.2)
+            flow_t = 0.035
+        else:
+            target, flow_t = 0.0, 0.012
+        self._lvl += (target - self._lvl) * min(1.0, dt * 8.0)
+        self._flow += (flow_t - self._flow) * min(1.0, dt * 3.0)
+        self._u1 = (self._u1 + dt * self._flow) % 1.0
+        self._u2 = (self._u2 - dt * self._flow * 0.65) % 1.0
+
+        # --- size / position ---
         cx, cy = self.center
-        side = min(self.width, self.height)
-        d = side * 0.56
-        self._d = d
-        pulse = 0.5 + 0.5 * math.sin(self._t * 2.2)
-        g = side * (0.86 + 0.08 * pulse * (0.4 + self._amp))
+        base = min(self.width * 0.60, self.height * 0.80)
+        d = base * (1 + 0.018 * math.sin(t * 1.5) + 0.075 * self._lvl)
+        cy += math.sin(t * 1.1) * base * 0.010 - self._lvl * base * 0.02
+        x0, y0 = cx - d / 2, cy - d / 2
+
+        g = d * (1.45 + 0.20 * self._lvl)
         self._glow.size = (g, g)
         self._glow.pos = (cx - g / 2, cy - g / 2)
-        self._glow_c.a = 0.70 + 0.30 * pulse
-        self._orb.size = (d, d)
-        self._orb.pos = (cx - d / 2, cy - d / 2)
+        self._glow_c.a = ORB_GLOW * (0.75 + 0.25 * self._lvl)
+        for m in (self._mask1, self._mask2):
+            m.pos = (x0, y0)
+            m.size = (d, d)
+        self._sky.pos = (x0, y0)
+        self._sky.size = (d, d)
+        for r in (self._c1, self._c2):
+            r.pos = (x0, y0)
+            r.size = (d, d)
 
-        n = 40
-        span = d * 0.80
-        x0 = cx - span / 2
-        y0 = cy - d * 0.04
-        pts = []
-        for i in range(n):
-            f = i / (n - 1)
-            env = math.sin(math.pi * f) ** 1.2
-            val = (math.sin(f * 9 + self._phase) * 0.65
-                   + math.sin(f * 15 - self._phase * 0.8) * 0.35)
-            pts += [x0 + span * f, y0 + self._amp * d * 0.075 * env * val]
-        self._wave.points = pts
+        # --- baadal: texture coordinates khiskao ---
+        ov1 = -0.02 + 0.03 * math.sin(t * 0.7)
+        self._c1.tex_coords = (self._u1, ov1, self._u1 + 1.0, ov1,
+                               self._u1 + 1.0, ov1 + 1.0, self._u1, ov1 + 1.0)
+        ov2 = 0.08 + 0.03 * math.sin(t * 0.5 + 1.0)
+        self._c2.tex_coords = (self._u2 + 0.3, ov2, self._u2 + 1.0, ov2,
+                               self._u2 + 1.0, ov2 + 0.8, self._u2 + 0.3, ov2 + 0.8)
+        self._c1_col.a = 0.42 + 0.10 * self._lvl
+        self._c2_col.a = 0.28 + 0.10 * self._lvl
+
+
+# ------------------------------------------------------------ SHADER ORB ----
+# ChatGPT jaisa orb GPU shader se banta hai: behte hue baadal, saans jaisa phoolna.
+# Agar kisi phone ka GPU ye shader na chala sake to apne aap TextureOrb (upar) chalta hai.
+ORB_FRAG = """$HEADER$
+uniform float time;
+uniform float energy;
+uniform float squash;
+uniform float glow;
+
+float hash(vec2 p) {
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+
+float noise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float a = hash(i);
+    float b = hash(i + vec2(1.0, 0.0));
+    float c = hash(i + vec2(0.0, 1.0));
+    float d = hash(i + vec2(1.0, 1.0));
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
+float fbm(vec2 p) {
+    float v = 0.0;
+    float a = 0.5;
+    for (int i = 0; i < 4; i++) {
+        v += a * noise(p);
+        p = p * 2.03 + vec2(1.7, 9.2);
+        a *= 0.5;
+    }
+    return v;
+}
+
+void main(void) {
+    vec2 uv = tex_coord0 * 2.0 - 1.0;
+    float R = 0.62;
+    vec2 s = vec2(uv.x * (1.0 + squash), uv.y * (1.0 - squash));
+    float rr = length(s) / R;
+
+    float disc = 1.0 - smoothstep(0.988, 1.0, rr);
+    float over = max(rr - 1.0, 0.0);
+    float glowA = exp(-over * 3.4) * (0.10 + 0.30 * energy) * glow;
+
+    vec2 p = s / R;                       // -1..1 inside the disc
+    float t = time;
+
+    // slow domain warp -> cloud shapes that morph
+    vec2 q = vec2(fbm(p * 1.3 + vec2(t * 0.11, -t * 0.07)),
+                  fbm(p * 1.3 + vec2(5.2 - t * 0.09, 1.3 + t * 0.12)));
+    vec2 w = p + (q - 0.5) * (0.55 + 0.35 * energy);
+
+    float n  = fbm(w * 1.9 + vec2(t * 0.10, t * 0.04));
+    float n2 = fbm(w * 4.2 - vec2(t * 0.07, t * 0.09));
+
+    // wavy white band, drifting up / down
+    float band = -0.13 + 0.10 * sin(t * 0.55 + p.x * 1.4)
+               + 0.05 * sin(t * 0.83 - p.x * 2.6)
+               + (n - 0.5) * 0.42;
+    float k = smoothstep(band + 0.70, band - 0.08, p.y);        // 0 = blue, 1 = white
+    float low = smoothstep(band - 0.05, band - 0.62, p.y);      // 1 = periwinkle
+
+    vec3 blue = vec3(0.275, 0.465, 0.910);
+    vec3 white = vec3(0.890, 0.925, 0.985);
+    vec3 peri = vec3(0.710, 0.785, 0.968);
+
+    vec3 col = mix(blue, white, k);
+    col = mix(col, peri, low);
+
+    // soft wisps near the band
+    float near = clamp(1.0 - abs(p.y - band) * 1.7, 0.0, 1.0);
+    float wisp = smoothstep(0.42, 0.88, n2) * near;
+    col = mix(col, vec3(0.97, 0.985, 1.0), wisp * 0.55);
+    // faint darker streaks inside the blue part
+    float streak = smoothstep(0.50, 0.85, fbm(w * 3.0 + vec2(-t * 0.05, t * 0.06)));
+    col = mix(col, blue * 0.95, streak * (1.0 - k) * 0.30);
+
+    vec3 glowCol = vec3(0.30, 0.50, 1.00);
+    vec3 outc = mix(glowCol, col, disc);
+    float a = disc + (1.0 - disc) * glowA;
+    gl_FragColor = vec4(outc, a);
+}
+"""
+
+
+def _shader_supported():
+    try:
+        rc = RenderContext()
+        rc.shader.fs = ORB_FRAG
+        return bool(rc.shader.success)
+    except Exception as exc:
+        print("JARVIS orb shader unavailable:", exc)
+        return False
+
+
+class ShaderOrb(ButtonBehavior, Widget):
+    """mode: idle / listening, speaking: bool (jab Jarvis bol raha ho)."""
+
+    def __init__(self, **kwargs):
+        try:
+            self.canvas = RenderContext(use_parent_projection=True,
+                                        use_parent_modelview=True,
+                                        use_parent_frag_modelview=True)
+        except TypeError:
+            self.canvas = RenderContext(use_parent_projection=True,
+                                        use_parent_modelview=True)
+        self.canvas.shader.fs = ORB_FRAG
+        super().__init__(**kwargs)
+        self.mode = "idle"
+        self.speaking = False
+        self.paused = False
+        self._t = 0.0
+        self._time = 0.0         # baadal ka samay (halchal ke saath tez hota hai)
+        self._e = 0.0            # 0 = shaant, 1 = poori halchal
+        with self.canvas:
+            Color(1, 1, 1, 1)
+            self._quad = Rectangle(pos=self.pos, size=self.size)
+        self.canvas["time"] = 0.0
+        self.canvas["energy"] = 0.0
+        self.canvas["squash"] = 0.0
+        self.canvas["glow"] = float(ORB_GLOW / 0.30)
+        self.bind(pos=self._tick, size=self._tick)
+        self._ev = Clock.schedule_interval(self._tick, 1 / 30.0)
+
+    def _tick(self, dt=0, *_):
+        if not isinstance(dt, (int, float)):
+            dt = 0                      # pos/size change se bula: sirf layout update
+        elif self.paused:
+            return                      # settings khuli hai: animation roko
+        self._t += dt
+        t = self._t
+        if self.speaking:
+            target = 0.65 + 0.35 * (0.6 * abs(math.sin(t * 5.1))
+                                    + 0.4 * abs(math.sin(t * 2.3 + 1.0)))
+        elif self.mode == "listening":
+            target = 0.55 + 0.10 * math.sin(t * 2.2)
+        else:
+            target = 0.0
+        e = self._e = self._e + (target - self._e) * min(1.0, dt * 3.0)
+        self._time += dt * (0.55 + 0.9 * e)
+
+        breath = (math.sin(t * (1.2 + 1.4 * e)) * (0.010 + 0.030 * e)
+                  + math.sin(t * 2.7 + 1.0) * 0.008 * e)
+        squash = math.sin(t * 1.7) * 0.020 * e + math.sin(t * 3.1) * 0.006 * e
+        cx, cy = self.center
+        base = min(self.width * 0.60, self.height * 0.80)
+        d = base * (1 + breath)
+        q = d / 0.62                    # shader ka disc quad ka 62% hai, baaki glow
+        self._quad.size = (q, q)
+        self._quad.pos = (cx - q / 2, cy - q / 2)
+        self.canvas["time"] = float(self._time)
+        self.canvas["energy"] = float(e)
+        self.canvas["squash"] = float(squash)
+
+
+def make_orb(**kwargs):
+    """Shader orb agar chal sakta hai, warna texture wala orb."""
+    if _shader_supported():
+        try:
+            return ShaderOrb(**kwargs)
+        except Exception as exc:
+            print("JARVIS ShaderOrb failed, using TextureOrb:", exc)
+    return TextureOrb(**kwargs)
 
 
 class VoiceChip(ButtonBehavior, BoxLayout):
@@ -603,21 +850,21 @@ def build_jarvis_ui(app):
 
     # ------------------------------------------------------------- HOME ----
     header = BoxLayout(orientation="horizontal", size_hint=(1, None), height=dp(64),
-                       padding=[dp(22), dp(8), dp(18), dp(8)], spacing=dp(10),
+                       padding=[dp(22), dp(8), dp(18), dp(8)], spacing=dp(4),
                        pos_hint={"top": 1})
-    title = make_label("JARVIS", 26, WHITE)
-    title.size_hint_x = None
-    title.width = dp(124)
+    title = Label(text="JARVIS", font_size=sp(26), color=WHITE, size_hint_x=None,
+                  width=dp(100), halign="left")
+    title.bind(texture_size=lambda obj, ts: setattr(obj, "width", ts[0]))
     header.add_widget(title)
-    header.add_widget(StatusDot(size_hint=(None, None), size=(dp(26), dp(26)),
+    header.add_widget(StatusDot(size_hint=(None, None), size=(dp(20), dp(20)),
                                 pos_hint={"center_y": 0.52}))
     header.add_widget(Widget())
-    gear_btn = IconButton("gear", circle=True, size_hint=(None, None),
+    gear_btn = IconButton("gear", size_hint=(None, None),
                           size=(dp(46), dp(46)), pos_hint={"center_y": 0.5})
     header.add_widget(gear_btn)
     home.add_widget(header)
 
-    orb = Orb(size_hint=(1, 0.44), pos_hint={"center_x": 0.5, "center_y": 0.60})
+    orb = make_orb(size_hint=(1, 0.44), pos_hint={"center_x": 0.5, "center_y": 0.60})
     home.add_widget(orb)
 
     status = Label(text="Ready when you are", font_size=sp(17), color=MUTED,
