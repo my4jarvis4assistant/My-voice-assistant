@@ -1257,7 +1257,7 @@ def build_jarvis_ui(app):
 
     # 4b) Gemini AI
     ai_card = make_card("Gemini AI (baat-cheet)")
-    ai_info = make_label("", 12, MUTED, height=dp(34), lines=2)
+    ai_info = make_label("", 12, MUTED, height=dp(64), lines=4)
     ai_card.add_widget(ai_info)
 
     def refresh_ai_info():
@@ -1331,8 +1331,17 @@ def build_jarvis_ui(app):
         def work():
             ok, reply = client.ask("Ek chhota sa namaste bolo.")
             client.clear()
-            Clock.schedule_once(
-                lambda dt: toast("AI theek chal raha hai" if ok else reply[:70]), 0)
+            detail = getattr(client, "last_detail", "")
+
+            def show(dt):
+                if ok:
+                    toast("AI theek chal raha hai")
+                    refresh_ai_info()
+                else:
+                    toast("Test fail")
+                    ai_info.text = reply + ("\nDetail: " + detail[:150] if detail else "")
+
+            Clock.schedule_once(show, 0)
 
         threading.Thread(target=work, daemon=True).start()
 
@@ -1439,6 +1448,7 @@ def build_jarvis_ui(app):
         return False
 
     Window.bind(on_keyboard=on_key)
+    Window.bind(on_pause=lambda *a: unmute_beep())
     gear_btn.bind(on_release=show_settings)
     close_btn.bind(on_release=hide_settings)
 
@@ -1450,6 +1460,41 @@ def build_jarvis_ui(app):
             orb.mode = "listening"
         else:
             orb.mode = "thinking" if ai["busy"] else "idle"
+
+    # ---- Google ki "ting" awaaz band: listen shuru hote hi streams mute, jawab/bolne par unmute ----
+    beep = {"muted": False, "ev": None}
+
+    def _set_beep_mute(on):
+        try:
+            from jnius import autoclass
+            Context = autoclass("android.content.Context")
+            AudioManager = autoclass("android.media.AudioManager")
+            am = app.activity.getSystemService(Context.AUDIO_SERVICE)
+            flag = AudioManager.ADJUST_MUTE if on else AudioManager.ADJUST_UNMUTE
+            for stream in (AudioManager.STREAM_MUSIC, AudioManager.STREAM_NOTIFICATION,
+                           AudioManager.STREAM_SYSTEM):
+                try:
+                    am.adjustStreamVolume(stream, flag, 0)
+                except Exception:               # DND policy waghera: ek stream fail ho to baaki chalein
+                    pass
+        except Exception as exc:
+            print("Beep mute error:", exc)
+
+    def unmute_beep(*_):
+        if beep["ev"] is not None:
+            beep["ev"].cancel()
+            beep["ev"] = None
+        if beep["muted"]:
+            beep["muted"] = False
+            _set_beep_mute(False)
+
+    def mute_beep():
+        if not beep["muted"]:
+            beep["muted"] = True
+            _set_beep_mute(True)
+        if beep["ev"] is not None:
+            beep["ev"].cancel()
+        beep["ev"] = Clock.schedule_once(unmute_beep, 12)    # safety: kabhi mute atka na rahe
 
     def ai_ready():
         return bool(client is not None and app.ai_enabled and app.gemini_key.strip())
@@ -1509,6 +1554,7 @@ def build_jarvis_ui(app):
     def speak(text):
         if ai["busy"] and "command clear nahi hui" in str(text).lower():
             return                                 # purana "samajh nahi aaya" jawab band
+        unmute_beep()                              # bolne se pehle awaaz wapas
         # TTS ready hote hi chuni hui voice lagao
         try:
             tts = getattr(app, "tts", None)
@@ -1549,6 +1595,7 @@ def build_jarvis_ui(app):
         cmd = " ".join(str(command).split())
         ai["last"] = cmd
         ai["from_typed"] = ai["typed"]
+        Clock.schedule_once(lambda dt: unmute_beep(), 0)
         ai["typed"] = False
         Clock.schedule_once(lambda dt: add_history(cmd), 0)
         if ai_ready() and should_route_ai(cmd):
@@ -1564,9 +1611,18 @@ def build_jarvis_ui(app):
         def listen(*args):
             if ai["busy"]:
                 return None                       # AI jawab de raha hai: abhi mic mat kholo
+            mute_beep()
             return original_listen(*args)
 
         app.listen = listen
+
+    original_listen_again = getattr(app, "listen_again", None)
+    if original_listen_again is not None:
+        def listen_again(*args):
+            mute_beep()
+            return original_listen_again(*args)
+
+        app.listen_again = listen_again
     app.speak = speak
     if original_process is not None:
         app.process_command = process_command
