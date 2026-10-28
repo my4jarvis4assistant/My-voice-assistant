@@ -1,4 +1,4 @@
-"""JARVIS v0.53 - professional UI module (main.py ke saath kaam karta hai).
+"""JARVIS v0.54 - professional UI module (main.py ke saath kaam karta hai).
 
 main.py ko sirf yahi chahiye:
     from jarvis_ui import build_jarvis_ui
@@ -1012,6 +1012,11 @@ def build_jarvis_ui(app):
     except Exception as exc:                    # AI file na mile to baaki app chalta rahe
         print("ai_brain import error:", exc)
         ai_brain = None
+    try:
+        import jarvis_actions as actions_mod
+    except Exception as exc:
+        print("jarvis_actions import error:", exc)
+        actions_mod = None
     ai = {"busy": False, "last": "", "gen": 0, "typed": False, "from_typed": False,
           "relisten": None}
     client = None
@@ -1581,6 +1586,18 @@ def build_jarvis_ui(app):
 
     Window.bind(on_keyboard=on_key)
     Window.bind(on_pause=lambda *a: unmute_beep())
+    _show_settings_ui = show_settings
+    _hide_settings_ui = hide_settings
+
+    def _on_main(fn):
+        def wrapper(*args):
+            if threading.current_thread() is threading.main_thread():
+                return fn()
+            Clock.schedule_once(lambda dt: fn(), 0)
+        return wrapper
+
+    show_settings = _on_main(_show_settings_ui)
+    hide_settings = _on_main(_hide_settings_ui)
     gear_btn.bind(on_release=show_settings)
     close_btn.bind(on_release=hide_settings)
 
@@ -1752,6 +1769,10 @@ def build_jarvis_ui(app):
 
     def process_command(command):
         cmd = " ".join(str(command).split())
+        if actions_mod is not None:
+            normalized = actions_mod.normalize_alarm_command(cmd)
+            if normalized != cmd:
+                command = normalized
         ai["last"] = cmd
         ai["from_typed"] = ai["typed"]
         Clock.schedule_once(lambda dt: unmute_beep(), 0)
@@ -1867,7 +1888,8 @@ def build_jarvis_ui(app):
     app.chat_input = chat
     app.toggle_voice_selection = show_settings
     app.open_jarvis_settings = show_settings
-    app.open_settings = show_settings
+    # NOTE: app.open_settings main.py ka apna method hai (wifi/display/... Android settings kholta hai);
+    # use yahan override mat karo, warna 'wifi settings kholo' par UI kharab ho jata hai.
     app.start_jarvis_listening = start_listening
 
     app.calc_panel = BoxLayout(orientation="vertical", size_hint_y=None, height=0,
@@ -1885,4 +1907,9 @@ def build_jarvis_ui(app):
     apply_voice()
     refresh_ai_info()
     _sync_prefs(app)
+    if actions_mod is not None:
+        try:
+            actions_mod.install_actions(app)       # alarm / timer / reminder fix
+        except Exception as exc:
+            print("install_actions failed:", exc)
     return root
