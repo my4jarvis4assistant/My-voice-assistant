@@ -18,10 +18,12 @@ import urllib.request
 BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 
 # Model naam badalte rehte hain, isliye list me se apne aap chunte hain (is order me).
-PREFERRED = ("gemini-3-flash", "gemini-2.5-flash", "gemini-2.0-flash")
+PREFERRED = ("gemini-2.5-flash", "gemini-3-flash", "gemini-2.0-flash")
 BAD_TOKENS = ("lite", "image", "tts", "live", "audio", "embedding", "vision", "robotics",
               "computer", "learnlm", "gemma", "thinking", "exp", "native", "dialog",
               "aqa", "imagen", "veo")
+
+CREATOR_NAME = "Shakshm Jha"      # yahan apna naam badal sakte hain
 
 CONNECT_TIMEOUT = 15
 READ_TIMEOUT = 45
@@ -175,6 +177,9 @@ def system_prompt(verbosity="Balanced", now=None):
     rule = LENGTH_RULES.get(verbosity, LENGTH_RULES["Balanced"])
     return (
         "Tum JARVIS ho, user ke phone par chalne wala personal voice assistant. "
+        "Tumhe " + CREATOR_NAME + " ne banaya hai. Koi poochhe ki tumhe kisne banaya ya tumhara "
+        "creator kaun hai to bolo ki tumhe " + CREATOR_NAME + " ne banaya hai. Khud ko Gemini, "
+        "Google ya kisi aur company ka product mat batao; tum JARVIS ho. "
         "User se ek samajhdar dost ki tarah, natural Hinglish me baat karo: Hindi shabd "
         "Roman (English) letters me likho aur beech beech me English words use kar sakte ho. "
         "Tumhara jawab bolkar sunaya jayega, isliye markdown, bullet points, emoji, symbols, "
@@ -285,13 +290,36 @@ class GeminiClient:
         order = self.discover()
         return (order[:3] or list(PREFERRED[:2]))
 
-    def _payload(self, user_text):
+    @staticmethod
+    def needs_thinking(text):
+        """Aasan baat-cheet jaldi (bina soche), hisaab/commerce/lambe sawal me thoda sochne do."""
+        low = text.lower()
+        words = ("solve", "calculate", "eps", "ratio", "journal", "ledger", "balance sheet",
+                 "depreciation", "profit", "loss", "interest", "gdp", "inflation", "elasticity",
+                 "equation", "derivative", "integral", "probability", "numerical", "problem",
+                 "why", "kyun", "kyu", "explain", "samjhao", "difference", "compare",
+                 "formula", "prove", "accounts", "economics", "commerce", "cost", "dividend")
+        return len(low) > 90 or bool(re.search(r"\d", low)) or any(w in low for w in words)
+
+    @staticmethod
+    def _thinking_cfg(model, think):
+        if "gemini-3" in model:
+            return {"thinkingLevel": "low" if think else "minimal"}
+        if "2.5" in model:
+            return {"thinkingBudget": 1024 if think else 0}
+        return None
+
+    def _payload(self, user_text, model="", think=False, use_thinking=True):
         contents = [{"role": h["role"], "parts": [{"text": h["text"]}]} for h in self.history]
         contents.append({"role": "user", "parts": [{"text": user_text}]})
+        gen = {"temperature": 0.7, "maxOutputTokens": 2048}
+        cfg = self._thinking_cfg(model, think) if use_thinking else None
+        if cfg:
+            gen["thinkingConfig"] = cfg
         return {
             "systemInstruction": {"parts": [{"text": system_prompt(self.get_verbosity())}]},
             "contents": contents,
-            "generationConfig": {"temperature": 0.7, "maxOutputTokens": 2048},
+            "generationConfig": gen,
         }
 
     @staticmethod
@@ -317,12 +345,17 @@ class GeminiClient:
         try:
             headers = self._headers()
             tries = self._models_to_try()
-            payload = json.dumps(self._payload(user_text)).encode("utf-8")
+            think = self.needs_thinking(user_text)
             last = AIError("other")
             for attempt in range(2):
                 for model in tries:
                     url = "%s/models/%s:generateContent" % (self.base_url, model)
+                    payload = json.dumps(self._payload(user_text, model, think)).encode("utf-8")
                     status, body = http_request("POST", url, headers, payload)
+                    if status == 400 and "thinking" in body.lower():
+                        payload = json.dumps(self._payload(user_text, model, think,
+                                                           use_thinking=False)).encode("utf-8")
+                        status, body = http_request("POST", url, headers, payload)
                     if status == 200:
                         reply = clean_reply(self._parse(body))
                         if not reply:
@@ -383,3 +416,22 @@ def is_simple_math(text):
                                        "calculate", "compute", "solve", "hisab", "calculation")
         for t in tokens)
     return not other and has_number
+
+
+# ------------------------------------------------- INSTANT LOCAL ANSWERS ----
+_CREATOR_RE = re.compile(
+    r"((?:tumhe|aapko|tujhe|jarvis\s+ko|tumko)\s+kisne|kisne\s+(?:tumhe|aapko|tujhe|jarvis\s+ko|tumko)"
+    r"|who\s+(?:made|created|built|developed|designed|programmed)\s+(?:you|jarvis)"
+    r"|(?:your|tumhara|aapka|tera)\s+(?:creator|developer|maker|owner)"
+    r"|(?:tumhara|aapka|tera)\s+(?:banane\s*wala|nirmata))", re.I)
+_CREATOR_WORDS = re.compile(r"(bana|banaya|banayi|made|created|built|developed|creator|developer|maker|owner|nirmata)", re.I)
+
+
+def creator_reply(text):
+    """'Tumhe kisne banaya?' jaise sawal ka turant jawab (internet ya key ki zaroorat nahi)."""
+    t = " ".join(str(text).lower().split())
+    if len(t) > 70:
+        return None
+    if _CREATOR_RE.search(t) and _CREATOR_WORDS.search(t):
+        return "Mujhe %s ne banaya hai. Main JARVIS hoon, unka personal voice assistant." % CREATOR_NAME
+    return None
