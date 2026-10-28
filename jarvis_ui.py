@@ -1,4 +1,4 @@
-"""JARVIS v0.50 - professional UI module (main.py ke saath kaam karta hai).
+"""JARVIS v0.51 - professional UI module (main.py ke saath kaam karta hai).
 
 main.py ko sirf yahi chahiye:
     from jarvis_ui import build_jarvis_ui
@@ -1385,40 +1385,70 @@ def build_jarvis_ui(app):
         12, MUTED, height=dp(66), lines=4))
     PKG_CLASS = "org.myassistant.myvoiceassistant.JarvisTriggerActivity"
 
+    def get_activity():
+        act = getattr(app, "activity", None)
+        if act is None:
+            from jnius import autoclass
+            act = autoclass("org.kivy.android.PythonActivity").mActivity
+        return act
+
     def trigger_intent():
         from jnius import autoclass
         Intent = autoclass("android.content.Intent")
         intent = Intent()
-        intent.setClassName(app.activity.getPackageName(), PKG_CLASS)
+        intent.setClassName(get_activity().getPackageName(), PKG_CLASS)
         intent.setAction(TALK_ACTION)
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         return intent
 
     def add_home_shortcut(*_):
+        step = "start"
         try:
             from jnius import autoclass, cast
+            ctx = get_activity()
             Build = autoclass("android.os.Build$VERSION")
-            if int(Build.SDK_INT) < 26:
-                toast("Is phone me ye button nahi ban sakta (Android 8 chahiye)")
+            if int(Build.SDK_INT) >= 26:
+                step = "pin-api"
+                Context = autoclass("android.content.Context")
+                ShortcutInfo = autoclass("android.content.pm.ShortcutInfo")
+                ShortcutBuilder = autoclass("android.content.pm.ShortcutInfo$Builder")
+                Icon = autoclass("android.graphics.drawable.Icon")
+                sm = cast("android.content.pm.ShortcutManager",
+                          ctx.getSystemService(Context.SHORTCUT_SERVICE))
+                if not sm.isRequestPinShortcutSupported():
+                    raise RuntimeError("launcher pin support nahi")
+                step = "icon"
+                icon = Icon.createWithResource(ctx, int(ctx.getApplicationInfo().icon))
+                step = "builder"
+                b = ShortcutBuilder(ctx, "jarvis_talk")
+                b.setShortLabel("Jarvis")
+                b.setLongLabel("Talk to Jarvis")
+                b.setIcon(icon)
+                b.setIntent(trigger_intent())
+                info = b.build()
+                step = "request"
+                sm.requestPinShortcut(info, None)
+                toast("Allow dabaiye. Na dikhe to phone ki app settings me 'Home screen shortcut' allow kijiye")
                 return
-            Context = autoclass("android.content.Context")
-            ShortcutBuilder = autoclass("android.content.pm.ShortcutInfo$Builder")
-            Icon = autoclass("android.graphics.drawable.Icon")
-            ctx = app.activity
-            sm = cast("android.content.pm.ShortcutManager",
-                      ctx.getSystemService(Context.SHORTCUT_SERVICE))
-            if not sm.isRequestPinShortcutSupported():
-                toast("Is launcher me button lagana allowed nahi hai")
-                return
-            icon = Icon.createWithResource(ctx, ctx.getApplicationInfo().icon)
-            info = (ShortcutBuilder(ctx, "jarvis_talk").setShortLabel("Jarvis")
-                    .setLongLabel("Talk to Jarvis").setIcon(icon)
-                    .setIntent(trigger_intent()).build())
-            sm.requestPinShortcut(info, None)
-            toast("Allow dabaiye. Na dikhe to phone ki app settings me 'Home screen shortcut' allow kijiye")
+            raise RuntimeError("old android")
         except Exception as exc:
-            print("Home shortcut error:", exc)
-            toast("Button nahi ban paya")
+            print("Home shortcut error at", step, ":", exc)
+            # purana tareeka (kuch launchers, jaise MIUI, ye hi maante hain)
+            try:
+                from jnius import autoclass
+                Intent = autoclass("android.content.Intent")
+                ctx = get_activity()
+                ShortcutIconResource = autoclass("android.content.Intent$ShortcutIconResource")
+                legacy = Intent("com.android.launcher.action.INSTALL_SHORTCUT")
+                legacy.putExtra(Intent.EXTRA_SHORTCUT_NAME, "Jarvis")
+                legacy.putExtra(Intent.EXTRA_SHORTCUT_INTENT, trigger_intent())
+                legacy.putExtra(Intent.EXTRA_SHORTCUT_ICON_RESOURCE,
+                                ShortcutIconResource.fromContext(ctx, int(ctx.getApplicationInfo().icon)))
+                ctx.sendBroadcast(legacy)
+                toast("Button bhej diya. Na dikhe to app settings me 'Home screen shortcut' allow kijiye")
+            except Exception as exc2:
+                print("Legacy shortcut error:", exc2)
+                toast("Button fail [" + step + "]: " + str(exc)[:70])
 
     def allow_overlay(*_):
         try:
@@ -1427,7 +1457,7 @@ def build_jarvis_ui(app):
             Settings = autoclass("android.provider.Settings")
             Uri = autoclass("android.net.Uri")
             intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                            Uri.parse("package:" + app.activity.getPackageName()))
+                            Uri.parse("package:" + get_activity().getPackageName()))
             app.open_intent(intent)
             toast("Jarvis ke aage 'Allow display over other apps' chalu kijiye")
         except Exception as exc:
@@ -1436,7 +1466,7 @@ def build_jarvis_ui(app):
 
     def test_panel(*_):
         try:
-            app.activity.startActivity(trigger_intent())
+            get_activity().startActivity(trigger_intent())
         except Exception as exc:
             print("Panel test error:", exc)
             toast("Panel nahi khul paya: " + str(exc)[:60])
@@ -1461,7 +1491,7 @@ def build_jarvis_ui(app):
             Intent = autoclass("android.content.Intent")
             Settings = autoclass("android.provider.Settings")
             Uri = autoclass("android.net.Uri")
-            package = app.activity.getPackageName()
+            package = get_activity().getPackageName()
             intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
             intent.setData(Uri.fromParts("package", package, None))
             app.open_intent(intent)
