@@ -2,3 +2,17 @@
     android:name="org.myassistant.myvoiceassistant.JarvisAlarmReceiver"
     android:enabled="true"
     android:exported="false" />
+<!-- Ye 2 tukde apni src/extra_manifest_application.xml me, purane <receiver ...> ke
+     neeche (usi file ke andar) jod dijiye. Pura file replace mat kijiye. -->
+<service
+    android:name="org.myassistant.myvoiceassistant.JarvisOverlayService"
+    android:exported="false"
+    android:foregroundServiceType="microphone" />
+
+<activity
+    android:name="org.myassistant.myvoiceassistant.JarvisTriggerActivity"
+    android:theme="@android:style/Theme.Translucent.NoTitleBar"
+    android:excludeFromRecents="true"
+    android:noHistory="true"
+    android:taskAffinity=""
+    android:exported="true" />
