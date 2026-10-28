@@ -1,4 +1,4 @@
-"""JARVIS v0.54 - professional UI module (main.py ke saath kaam karta hai).
+"""JARVIS v0.60 - professional UI module (main.py ke saath kaam karta hai).
 
 main.py ko sirf yahi chahiye:
     from jarvis_ui import build_jarvis_ui
@@ -952,6 +952,8 @@ def _sync_prefs(app):
         ed.putString("ai_model", str(getattr(app, "ai_model", "") or ""))
         ed.putString("verbosity", str(getattr(app, "verbosity", "Balanced")))
         ed.putBoolean("ai_enabled", bool(getattr(app, "ai_enabled", True)))
+        ed.putString("picovoice_key", str(getattr(app, "picovoice_key", "") or ""))
+        ed.putBoolean("wake_enabled", bool(getattr(app, "wake_enabled", False)))
         pitch, rate = VOICES.get(getattr(app, "selected_voice", "Male Alpha"), (1.0, 1.0))
         ed.putFloat("pitch", float(pitch))
         ed.putFloat("rate", float(rate))
@@ -975,6 +977,8 @@ def _save_state(app):
                 "gemini_key": getattr(app, "gemini_key", ""),
                 "ai_enabled": getattr(app, "ai_enabled", True),
                 "ai_model": getattr(app, "ai_model", ""),
+                "picovoice_key": getattr(app, "picovoice_key", ""),
+                "wake_enabled": getattr(app, "wake_enabled", False),
             }, fh, ensure_ascii=False)
     except Exception as exc:
         print("JARVIS UI state save error:", exc)
@@ -1007,6 +1011,8 @@ def build_jarvis_ui(app):
     app.gemini_key = str(state.get("gemini_key", "") or "").strip()
     app.ai_enabled = bool(state.get("ai_enabled", True))
     app.ai_model = str(state.get("ai_model", "") or "")
+    app.picovoice_key = str(state.get("picovoice_key", "") or "").strip()
+    app.wake_enabled = bool(state.get("wake_enabled", False))
     try:
         import ai_brain
     except Exception as exc:                    # AI file na mile to baaki app chalta rahe
@@ -1492,6 +1498,129 @@ def build_jarvis_ui(app):
         home_card.add_widget(row)
     content.add_widget(home_card)
 
+    # 4d) "Jarvis" bolkar kahin se bhi jagana
+    wake_ai_card = make_card("Hey Jarvis (kahin se bhi)")
+    wake_info = make_label("", 12, MUTED, height=dp(64), lines=4)
+    wake_ai_card.add_widget(wake_info)
+
+    def read_wake_status():
+        try:
+            return str(get_activity().getSharedPreferences("jarvis_prefs", 0)
+                       .getString("wake_status", ""))
+        except Exception:
+            return ""
+
+    def refresh_wake_info(*_):
+        st = read_wake_status()
+        if not app.picovoice_key:
+            wake_info.text = "Pehle Picovoice ki free key paste karke Save dabaiye."
+        elif app.wake_enabled:
+            wake_info.text = "Chalu: " + (st or "shuru ho raha hai...") + \
+                "\nBolo: 'Jarvis' ya 'Hey Jarvis'"
+        else:
+            wake_info.text = "Band hai. On karne par Jarvis 'Jarvis' bolne ka intezaar karega."
+
+    wake_key_row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(44),
+                             spacing=dp(10))
+    wake_key_wrap = PlateBox(fill=INPUT, edge=EDGE, radius=dp(12), orientation="horizontal",
+                             padding=[dp(10), 0, dp(10), 0])
+    wake_key_input = style_input(TextInput(text="", hint_text="Picovoice AccessKey paste kijiye",
+                                           font_size=sp(14), password=True))
+    wake_key_wrap.add_widget(wake_key_input)
+    wake_key_row.add_widget(wake_key_wrap)
+    wake_key_btn = PillButton(text="Save", size_hint=(None, None), width=dp(72), height=dp(36),
+                              pos_hint={"center_y": 0.5})
+    wake_key_row.add_widget(wake_key_btn)
+    wake_ai_card.add_widget(wake_key_row)
+
+    def wake_service(action):
+        from jnius import autoclass
+        Intent = autoclass("android.content.Intent")
+        Build = autoclass("android.os.Build$VERSION")
+        ctx = get_context()
+        intent = Intent()
+        intent.setClassName(get_activity().getPackageName(),
+                            "org.myassistant.myvoiceassistant.JarvisOverlayService")
+        intent.setAction(action)
+        if int(Build.SDK_INT) >= 26:
+            ctx.startForegroundService(intent)
+        else:
+            ctx.startService(intent)
+
+    def apply_wake(announce=True):
+        try:
+            if app.wake_enabled:
+                if not app.picovoice_key:
+                    toast("Pehle Picovoice key save kijiye")
+                    return
+                from jnius import autoclass
+                Settings = autoclass("android.provider.Settings")
+                if not Settings.canDrawOverlays(get_context()):
+                    toast("Pehle 'Display over other apps' allow kijiye")
+                    allow_overlay()
+                    return
+                wake_service("org.myassistant.WAKE_ON")
+                if announce:
+                    toast("Hey Jarvis chalu ho raha hai")
+            else:
+                wake_service("org.myassistant.WAKE_OFF")
+                if announce:
+                    toast("Hey Jarvis band")
+        except Exception as exc:
+            print("Wake service error:", exc)
+            toast("Wake word shuru nahi hua: " + str(exc)[:60])
+        Clock.schedule_once(refresh_wake_info, 2.0)
+        refresh_wake_info()
+
+    def save_wake_key(*_):
+        app.picovoice_key = wake_key_input.text.strip() or app.picovoice_key
+        if wake_key_input.text.strip():
+            wake_key_input.text = ""
+            wake_key_input.focus = False
+        _save_state(app)
+        refresh_wake_info()
+        toast("Picovoice key save ho gayi")
+
+    wake_key_btn.bind(on_release=save_wake_key)
+
+    def on_wake_toggle(value):
+        app.wake_enabled = (value == "On")
+        _save_state(app)
+        apply_wake()
+
+    wake_ai_card.add_widget(Segmented(["On", "Off"], "On" if app.wake_enabled else "Off",
+                                      on_wake_toggle))
+
+    def open_picovoice(*_):
+        try:
+            from jnius import autoclass
+            Intent = autoclass("android.content.Intent")
+            Uri = autoclass("android.net.Uri")
+            app.open_intent(Intent(Intent.ACTION_VIEW, Uri.parse("https://console.picovoice.ai/")))
+        except Exception as exc:
+            print("Picovoice page error:", exc)
+            toast("Browser me console.picovoice.ai kholiye")
+
+    def open_battery(*_):
+        try:
+            from jnius import autoclass
+            Intent = autoclass("android.content.Intent")
+            Settings = autoclass("android.provider.Settings")
+            Uri = autoclass("android.net.Uri")
+            intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+            intent.setData(Uri.fromParts("package", get_activity().getPackageName(), None))
+            app.open_intent(intent)
+            toast("Battery > No restrictions aur Autostart chalu kijiye")
+        except Exception as exc:
+            print("Battery settings error:", exc)
+
+    for label, fn in [("Free Picovoice key banaiye", open_picovoice),
+                      ("Battery / Autostart settings", open_battery)]:
+        row = ActionRow(label)
+        row.bind(on_release=lambda w, f=fn: f())
+        wake_ai_card.add_widget(row)
+    content.add_widget(wake_ai_card)
+
     # 5) Privacy
     privacy_card = make_card("Data Privacy & Security")
 
@@ -1563,6 +1692,7 @@ def build_jarvis_ui(app):
         chat.focus = False
         orb.paused = True
         refresh_history()
+        refresh_wake_info()
         root.remove_widget(home)
         settings_page.opacity = 0
         root.add_widget(settings_page, index=len(root.children))
@@ -1907,6 +2037,9 @@ def build_jarvis_ui(app):
     apply_voice()
     refresh_ai_info()
     _sync_prefs(app)
+    if app.wake_enabled and app.picovoice_key:
+        Clock.schedule_once(lambda dt: apply_wake(False), 3.0)    # app khulte hi wake word wapas chalu
+    refresh_wake_info()
     if actions_mod is not None:
         try:
             actions_mod.install_actions(app)       # alarm / timer / reminder fix
