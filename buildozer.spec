@@ -14,7 +14,7 @@ requirements = python3,kivy,pyjnius
 orientation = portrait
 fullscreen = 0
 
-android.permissions = android.permission.RECORD_AUDIO,com.android.alarm.permission.SET_ALARM,android.permission.POST_NOTIFICATIONS,android.permission.VIBRATE,android.permission.SCHEDULE_EXACT_ALARM,android.permission.INTERNET
+android.permissions = android.permission.RECORD_AUDIO,com.android.alarm.permission.SET_ALARM,android.permission.POST_NOTIFICATIONS,android.permission.VIBRATE,android.permission.SCHEDULE_EXACT_ALARM,android.permission.INTERNET,android.permission.SYSTEM_ALERT_WINDOW,android.permission.FOREGROUND_SERVICE,android.permission.FOREGROUND_SERVICE_MICROPHONE,android.permission.QUERY_ALL_PACKAGES
 
 android.api = 33
 android.minapi = 21
