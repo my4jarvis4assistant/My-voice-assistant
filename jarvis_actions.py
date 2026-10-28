@@ -137,6 +137,20 @@ def install_actions(app):
         except Exception:
             pass
 
+    Bundle = autoclass("android.os.Bundle")
+
+    def typed_extras(ints=None, strings=None, bools=None):
+        """putExtra ke overloads me pyjnius galat type chun leta hai (Clock app ko 0/current time
+        milta tha). Bundle.putInt/putString/putBoolean ke naam alag hain, isliye type pakka rehta hai."""
+        b = Bundle()
+        for k, v in (ints or {}).items():
+            b.putInt(k, int(v))
+        for k, v in (strings or {}).items():
+            b.putString(k, str(v))
+        for k, v in (bools or {}).items():
+            b.putBoolean(k, bool(v))
+        return b
+
     def start(intent):
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         app.activity.startActivity(intent)
@@ -148,10 +162,10 @@ def install_actions(app):
                 if not (0 <= hour_i <= 23 and 0 <= minute_i <= 59):
                     raise ValueError("Invalid alarm time")
                 intent = Intent(AlarmClock.ACTION_SET_ALARM)
-                intent.putExtra(AlarmClock.EXTRA_HOUR, hour_i)
-                intent.putExtra(AlarmClock.EXTRA_MINUTES, minute_i)
-                intent.putExtra(AlarmClock.EXTRA_MESSAGE, JString("JARVIS"))
-                intent.putExtra(AlarmClock.EXTRA_SKIP_UI, True)
+                intent.putExtras(typed_extras(
+                    ints={AlarmClock.EXTRA_HOUR: hour_i, AlarmClock.EXTRA_MINUTES: minute_i},
+                    strings={AlarmClock.EXTRA_MESSAGE: "JARVIS"},
+                    bools={AlarmClock.EXTRA_SKIP_UI: True}))
                 start(intent)
                 when = pretty_clock(hour_i, minute_i)
                 say("Alarm " + when + " ke liye set ho gaya.")
@@ -172,9 +186,10 @@ def install_actions(app):
                 if secs <= 0 or secs > 86400:
                     raise ValueError("Timer must be between 1 and 86400 seconds")
                 intent = Intent(AlarmClock.ACTION_SET_TIMER)
-                intent.putExtra(AlarmClock.EXTRA_LENGTH, secs)
-                intent.putExtra(AlarmClock.EXTRA_MESSAGE, JString("JARVIS"))
-                intent.putExtra(AlarmClock.EXTRA_SKIP_UI, True)
+                intent.putExtras(typed_extras(
+                    ints={AlarmClock.EXTRA_LENGTH: secs},
+                    strings={AlarmClock.EXTRA_MESSAGE: "JARVIS"},
+                    bools={AlarmClock.EXTRA_SKIP_UI: True}))
                 start(intent)
                 say("Timer " + pretty_duration(secs) + " ke liye start ho gaya.")
                 print("JARVIS CLOCK TIMER:", secs)
