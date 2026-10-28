@@ -25,6 +25,10 @@ android.accept_sdk_license = True
 android.add_src = src
 android.extra_manifest_application_xml = src/extra_manifest_application.xml
 
+# "Hey Jarvis" wake word (Picovoice Porcupine)
+android.gradle_dependencies = ai.picovoice:porcupine-android:3.0.2
+android.enable_androidx = True
+
 p4a.branch = master
 
 [buildozer]
