@@ -1,4 +1,4 @@
-"""JARVIS v0.42 - professional UI module (main.py ke saath kaam karta hai).
+"""JARVIS v0.50 - professional UI module (main.py ke saath kaam karta hai).
 
 main.py ko sirf yahi chahiye:
     from jarvis_ui import build_jarvis_ui
@@ -942,7 +942,26 @@ def _load_state(app):
     return {}
 
 
+def _sync_prefs(app):
+    """Key/voice waghera Android SharedPreferences me bhi likho taaki floating panel
+    (JarvisOverlayService, Java) bina app khole use kar sake."""
+    try:
+        prefs = app.activity.getSharedPreferences("jarvis_prefs", 0)
+        ed = prefs.edit()
+        ed.putString("gemini_key", str(getattr(app, "gemini_key", "") or ""))
+        ed.putString("ai_model", str(getattr(app, "ai_model", "") or ""))
+        ed.putString("verbosity", str(getattr(app, "verbosity", "Balanced")))
+        ed.putBoolean("ai_enabled", bool(getattr(app, "ai_enabled", True)))
+        pitch, rate = VOICES.get(getattr(app, "selected_voice", "Male Alpha"), (1.0, 1.0))
+        ed.putFloat("pitch", float(pitch))
+        ed.putFloat("rate", float(rate))
+        ed.apply()
+    except Exception as exc:
+        print("Prefs sync skipped:", exc)
+
+
 def _save_state(app):
+    _sync_prefs(app)
     path = _state_path(app)
     if not path:
         return
@@ -962,6 +981,9 @@ def _save_state(app):
 
 
 # ================================================================ BUILD UI ===
+TALK_ACTION = "org.myassistant.TALK"
+
+
 def build_jarvis_ui(app):
     # main.py ke asli functions sabse pehle yaad rakho (neeche wrap honge).
     original_set_status = getattr(app, "set_status", None)
@@ -1355,6 +1377,78 @@ def build_jarvis_ui(app):
                                   "daaliye.", 11, MUTED, height=dp(34), lines=2))
     content.add_widget(ai_card)
 
+    # 4c) Home screen button + floating panel
+    home_card = make_card("Home Screen Jarvis")
+    home_card.add_widget(make_label(
+        "Home screen par Jarvis ka button lagaiye. Dabate hi Jarvis home screen ke upar hi "
+        "chhota panel kholkar sunta hai, jawab deta hai aur kaam karta hai (app nahi khulta).",
+        12, MUTED, height=dp(66), lines=4))
+    PKG_CLASS = "org.myassistant.myvoiceassistant.JarvisTriggerActivity"
+
+    def trigger_intent():
+        from jnius import autoclass
+        Intent = autoclass("android.content.Intent")
+        intent = Intent()
+        intent.setClassName(app.activity.getPackageName(), PKG_CLASS)
+        intent.setAction(TALK_ACTION)
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        return intent
+
+    def add_home_shortcut(*_):
+        try:
+            from jnius import autoclass, cast
+            Build = autoclass("android.os.Build$VERSION")
+            if int(Build.SDK_INT) < 26:
+                toast("Is phone me ye button nahi ban sakta (Android 8 chahiye)")
+                return
+            Context = autoclass("android.content.Context")
+            ShortcutBuilder = autoclass("android.content.pm.ShortcutInfo$Builder")
+            Icon = autoclass("android.graphics.drawable.Icon")
+            ctx = app.activity
+            sm = cast("android.content.pm.ShortcutManager",
+                      ctx.getSystemService(Context.SHORTCUT_SERVICE))
+            if not sm.isRequestPinShortcutSupported():
+                toast("Is launcher me button lagana allowed nahi hai")
+                return
+            icon = Icon.createWithResource(ctx, ctx.getApplicationInfo().icon)
+            info = (ShortcutBuilder(ctx, "jarvis_talk").setShortLabel("Jarvis")
+                    .setLongLabel("Talk to Jarvis").setIcon(icon)
+                    .setIntent(trigger_intent()).build())
+            sm.requestPinShortcut(info, None)
+            toast("Allow dabaiye. Na dikhe to phone ki app settings me 'Home screen shortcut' allow kijiye")
+        except Exception as exc:
+            print("Home shortcut error:", exc)
+            toast("Button nahi ban paya")
+
+    def allow_overlay(*_):
+        try:
+            from jnius import autoclass
+            Intent = autoclass("android.content.Intent")
+            Settings = autoclass("android.provider.Settings")
+            Uri = autoclass("android.net.Uri")
+            intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                            Uri.parse("package:" + app.activity.getPackageName()))
+            app.open_intent(intent)
+            toast("Jarvis ke aage 'Allow display over other apps' chalu kijiye")
+        except Exception as exc:
+            print("Overlay permission error:", exc)
+            toast("Settings > Apps > Jarvis > Display over other apps chalu kijiye")
+
+    def test_panel(*_):
+        try:
+            app.activity.startActivity(trigger_intent())
+        except Exception as exc:
+            print("Panel test error:", exc)
+            toast("Panel nahi khul paya: " + str(exc)[:60])
+
+    for label, fn in [("1. Display over other apps allow karo", allow_overlay),
+                      ("2. Home screen par button lagao", add_home_shortcut),
+                      ("Panel abhi test karo", test_panel)]:
+        row = ActionRow(label)
+        row.bind(on_release=lambda w, f=fn: f())
+        home_card.add_widget(row)
+    content.add_widget(home_card)
+
     # 5) Privacy
     privacy_card = make_card("Data Privacy & Security")
 
@@ -1667,6 +1761,25 @@ def build_jarvis_ui(app):
 
     orb.bind(on_release=start_listening)
 
+    # Home screen button / shortcut se app khule to turant sunna shuru
+    def talk_from_shortcut(*_):
+        if view["settings"]:
+            hide_settings()
+        start_listening()
+
+    def on_new_intent(intent):
+        try:
+            if str(intent.getAction()) == TALK_ACTION:
+                Clock.schedule_once(talk_from_shortcut, 0.4)
+        except Exception as exc:
+            print("New intent error:", exc)
+
+    try:
+        from android import activity as android_activity
+        android_activity.bind(on_new_intent=on_new_intent)
+    except Exception as exc:
+        print("on_new_intent bind skipped:", exc)
+
     # Purane code ke saath compatibility (main.py in naamon ko use karta hai)
     app.status_label = status
     app.core_widget = orb
@@ -1690,4 +1803,5 @@ def build_jarvis_ui(app):
 
     apply_voice()
     refresh_ai_info()
+    _sync_prefs(app)
     return root
