@@ -1,4 +1,4 @@
-"""JARVIS v0.51 - professional UI module (main.py ke saath kaam karta hai).
+"""JARVIS v0.52 - professional UI module (main.py ke saath kaam karta hai).
 
 main.py ko sirf yahi chahiye:
     from jarvis_ui import build_jarvis_ui
@@ -1392,6 +1392,10 @@ def build_jarvis_ui(app):
             act = autoclass("org.kivy.android.PythonActivity").mActivity
         return act
 
+    def get_context():
+        """pyjnius kabhi PythonActivity ko 'Context' nahi maanta; Application context hamesha chalta hai."""
+        return get_activity().getApplicationContext()
+
     def trigger_intent():
         from jnius import autoclass
         Intent = autoclass("android.content.Intent")
@@ -1413,14 +1417,15 @@ def build_jarvis_ui(app):
                 ShortcutInfo = autoclass("android.content.pm.ShortcutInfo")
                 ShortcutBuilder = autoclass("android.content.pm.ShortcutInfo$Builder")
                 Icon = autoclass("android.graphics.drawable.Icon")
+                actx = get_context()
                 sm = cast("android.content.pm.ShortcutManager",
-                          ctx.getSystemService(Context.SHORTCUT_SERVICE))
+                          actx.getSystemService(Context.SHORTCUT_SERVICE))
                 if not sm.isRequestPinShortcutSupported():
                     raise RuntimeError("launcher pin support nahi")
                 step = "icon"
-                icon = Icon.createWithResource(ctx, int(ctx.getApplicationInfo().icon))
+                icon = Icon.createWithResource(actx, int(ctx.getApplicationInfo().icon))
                 step = "builder"
-                b = ShortcutBuilder(ctx, "jarvis_talk")
+                b = ShortcutBuilder(actx, "jarvis_talk")
                 b.setShortLabel("Jarvis")
                 b.setLongLabel("Talk to Jarvis")
                 b.setIcon(icon)
@@ -1443,7 +1448,7 @@ def build_jarvis_ui(app):
                 legacy.putExtra(Intent.EXTRA_SHORTCUT_NAME, "Jarvis")
                 legacy.putExtra(Intent.EXTRA_SHORTCUT_INTENT, trigger_intent())
                 legacy.putExtra(Intent.EXTRA_SHORTCUT_ICON_RESOURCE,
-                                ShortcutIconResource.fromContext(ctx, int(ctx.getApplicationInfo().icon)))
+                                ShortcutIconResource.fromContext(get_context(), int(ctx.getApplicationInfo().icon)))
                 ctx.sendBroadcast(legacy)
                 toast("Button bhej diya. Na dikhe to app settings me 'Home screen shortcut' allow kijiye")
             except Exception as exc2:
@@ -1469,7 +1474,10 @@ def build_jarvis_ui(app):
             get_activity().startActivity(trigger_intent())
         except Exception as exc:
             print("Panel test error:", exc)
-            toast("Panel nahi khul paya: " + str(exc)[:60])
+            if "ActivityNotFound" in str(exc) or "No Activity found" in str(exc):
+                toast("JarvisTriggerActivity manifest me nahi juda. manifest_additions.xml jodiye")
+            else:
+                toast("Panel nahi khul paya: " + str(exc)[:70])
 
     for label, fn in [("1. Display over other apps allow karo", allow_overlay),
                       ("2. Home screen par button lagao", add_home_shortcut),
