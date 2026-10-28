@@ -51,6 +51,8 @@ import java.util.Locale;
  */
 public class JarvisOverlayService extends Service {
     public static final String ACTION_TALK = "org.myassistant.TALK";
+    public static final String ACTION_WAKE_ON = "org.myassistant.WAKE_ON";
+    public static final String ACTION_WAKE_OFF = "org.myassistant.WAKE_OFF";
     private static final String CHANNEL_ID = "jarvis_overlay";
     private static final int NOTIF_ID = 4711;
 
@@ -78,6 +80,11 @@ public class JarvisOverlayService extends Service {
     private boolean alive = true;
     private long gen = 0;          // purane jawab ko radd karne ke liye
 
+    // --- "Jarvis" bolne par jaagna (Picovoice Porcupine, reflection se: build kabhi nahi tootta) ---
+    private Object porcupine = null;
+    private boolean wakeEnabled = false;
+    private boolean wakeRunning = false;
+
     // ----------------------------------------------------------- lifecycle --
     @Override
     public IBinder onBind(Intent intent) {
@@ -86,30 +93,189 @@ public class JarvisOverlayService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        String action = intent == null ? null : intent.getAction();
         try {
-            startAsForeground();
-            if (panel == null) {
-                alive = true;
-                wm = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
-                showPanel();
-                initTts();
-                main.post(ticker);
+            if (action == null) {
+                // system ne service dobara chalayi: wake word chalu tha to wahi karo
+                action = prefs().getBoolean("wake_enabled", false) ? ACTION_WAKE_ON : ACTION_WAKE_OFF;
             }
-            startListening();
+            startAsForeground(ACTION_TALK.equals(action) || panel != null);
+            if (ACTION_WAKE_OFF.equals(action)) {
+                wakeEnabled = false;
+                stopWake(true);
+                setWakeStatus("band");
+                if (panel == null) {
+                    stopForeground(true);
+                    stopSelf();
+                }
+                return START_NOT_STICKY;
+            }
+            if (ACTION_WAKE_ON.equals(action)) {
+                wakeEnabled = true;
+                if (panel == null) {
+                    startWake();
+                }
+                return START_STICKY;
+            }
+            talk();
         } catch (Exception e) {
-            toastError("Jarvis panel nahi khul paya: " + e);
+            toastError("Jarvis shuru nahi ho paya: " + e);
+            setWakeStatus("error: " + e);
             shutdown();
         }
-        return START_NOT_STICKY;
+        return wakeEnabled ? START_STICKY : START_NOT_STICKY;
+    }
+
+    /** Panel dikhao aur sunna shuru karo (button ya wake word se). */
+    private void talk() {
+        if (panel == null) {
+            alive = true;
+            wm = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
+            stopWake(false);              // mic ek hi cheez use kar sakti hai
+            showPanel();
+            initTts();
+            main.post(ticker);
+        }
+        startListening();
     }
 
     @Override
     public void onDestroy() {
+        stopWake(true);
         cleanup();
         super.onDestroy();
     }
 
-    private void startAsForeground() {
+    // ------------------------------------------------------------ wake word --
+    private void setWakeStatus(String s) {
+        try {
+            prefs().edit().putString("wake_status", s).apply();
+        } catch (Exception ignored) {
+        }
+    }
+
+    private static Throwable root(Throwable t) {
+        while (t.getCause() != null && t.getCause() != t) {
+            t = t.getCause();
+        }
+        return t;
+    }
+
+    private void startWake() {
+        if (!wakeEnabled) {
+            return;
+        }
+        if (wakeRunning) {
+            return;
+        }
+        String key = prefs().getString("picovoice_key", "").trim();
+        if (key.length() == 0) {
+            setWakeStatus("error: Picovoice key set nahi hai");
+            toastError("Pehle Jarvis Settings me Picovoice key daaliye");
+            return;
+        }
+        try {
+            if (porcupine == null) {
+                Class<?> bClass = Class.forName("ai.picovoice.porcupine.PorcupineManager$Builder");
+                Object builder = bClass.getConstructor().newInstance();
+                bClass.getMethod("setAccessKey", String.class).invoke(builder, key);
+                Class<?> kwClass = Class.forName("ai.picovoice.porcupine.Porcupine$BuiltInKeyword");
+                Object jarvis = null;
+                for (Object k : kwClass.getEnumConstants()) {
+                    if ("JARVIS".equals(String.valueOf(k))) {
+                        jarvis = k;
+                    }
+                }
+                if (jarvis == null) {
+                    throw new IllegalStateException("JARVIS keyword is version me nahi hai");
+                }
+                bClass.getMethod("setKeyword", kwClass).invoke(builder, jarvis);
+                try {
+                    bClass.getMethod("setSensitivity", float.class).invoke(builder, 0.7f);
+                } catch (NoSuchMethodException ignored) {
+                }
+                Class<?> cbClass = Class.forName("ai.picovoice.porcupine.PorcupineManagerCallback");
+                Object cb = java.lang.reflect.Proxy.newProxyInstance(cbClass.getClassLoader(),
+                        new Class<?>[]{cbClass}, new java.lang.reflect.InvocationHandler() {
+                            @Override
+                            public Object invoke(Object proxy, java.lang.reflect.Method method,
+                                                 Object[] args) {
+                                String n = method.getName();
+                                if ("invoke".equals(n)) {
+                                    main.post(new Runnable() {
+                                        @Override
+                                        public void run() {
+                                            onWakeWord();
+                                        }
+                                    });
+                                    return null;
+                                }
+                                if ("hashCode".equals(n)) {
+                                    return Integer.valueOf(System.identityHashCode(proxy));
+                                }
+                                if ("equals".equals(n)) {
+                                    return Boolean.valueOf(args != null && args.length > 0 && proxy == args[0]);
+                                }
+                                if ("toString".equals(n)) {
+                                    return "JarvisWakeCallback";
+                                }
+                                return null;
+                            }
+                        });
+                porcupine = bClass.getMethod("build", Context.class, cbClass)
+                        .invoke(builder, getApplicationContext(), cb);
+            }
+            porcupine.getClass().getMethod("start").invoke(porcupine);
+            wakeRunning = true;
+            setWakeStatus("sun raha hai");
+        } catch (Throwable t) {
+            wakeRunning = false;
+            Throwable r = root(t);
+            String msg = r.getClass().getSimpleName() + ": " + r.getMessage();
+            setWakeStatus("error: " + msg);
+            toastError("Wake word shuru nahi hua: " + msg);
+            if (r instanceof ClassNotFoundException) {
+                toastError("Porcupine library APK me nahi judi (buildozer.spec ki gradle_dependencies check kijiye)");
+            }
+        }
+    }
+
+    /** delete=true: poori tarah band; false: sirf mic chhodne ke liye roko. */
+    private void stopWake(boolean delete) {
+        if (porcupine == null) {
+            wakeRunning = false;
+            return;
+        }
+        try {
+            if (wakeRunning) {
+                porcupine.getClass().getMethod("stop").invoke(porcupine);
+            }
+        } catch (Throwable ignored) {
+        }
+        wakeRunning = false;
+        if (delete) {
+            try {
+                porcupine.getClass().getMethod("delete").invoke(porcupine);
+            } catch (Throwable ignored) {
+            }
+            porcupine = null;
+        }
+    }
+
+    private void onWakeWord() {
+        if (panel != null) {
+            return;
+        }
+        try {
+            startAsForeground(true);
+            talk();
+        } catch (Exception e) {
+            toastError("Jarvis panel nahi khul paya: " + e);
+            shutdown();
+        }
+    }
+
+    private void startAsForeground(boolean talking) {
         NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         Notification.Builder nb;
         if (Build.VERSION.SDK_INT >= 26) {
@@ -120,7 +286,8 @@ public class JarvisOverlayService extends Service {
         } else {
             nb = new Notification.Builder(this);
         }
-        nb.setContentTitle("JARVIS").setContentText("Jarvis sun raha hai")
+        nb.setContentTitle("JARVIS")
+                .setContentText(talking ? "Jarvis sun raha hai" : "'Jarvis' bolne ka intezaar hai")
                 .setSmallIcon(getApplicationInfo().icon).setOngoing(true);
         Notification n = nb.build();
         if (Build.VERSION.SDK_INT >= 30) {
@@ -132,6 +299,22 @@ public class JarvisOverlayService extends Service {
 
     private void shutdown() {
         cleanup();
+        if (wakeEnabled) {
+            try {
+                startAsForeground(false);
+            } catch (Exception ignored) {
+            }
+            // mic ko thoda waqt do (SpeechRecognizer chhodta hai), phir wake word dobara chalu
+            main.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    if (panel == null) {
+                        startWake();
+                    }
+                }
+            }, 900);
+            return;
+        }
         try {
             stopForeground(true);
         } catch (Exception ignored) {
