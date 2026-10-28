@@ -1,4 +1,4 @@
-"""JARVIS v0.52 - professional UI module (main.py ke saath kaam karta hai).
+"""JARVIS v0.53 - professional UI module (main.py ke saath kaam karta hai).
 
 main.py ko sirf yahi chahiye:
     from jarvis_ui import build_jarvis_ui
@@ -1628,6 +1628,31 @@ def build_jarvis_ui(app):
             beep["ev"].cancel()
         beep["ev"] = Clock.schedule_once(unmute_beep, 12)    # safety: kabhi mute atka na rahe
 
+    def tts_busy():
+        try:
+            t = getattr(app, "tts", None)
+            return bool(t is not None and t.isSpeaking())
+        except Exception:
+            return False
+
+    def when_speech_done(callback, max_wait=90.0):
+        """Jab tak Jarvis bol raha hai ruko, bolna khatam hote hi callback chalao."""
+        st = {"t": 0.0, "started": False}
+
+        def poll(dt):
+            st["t"] += 0.3
+            if tts_busy():
+                st["started"] = True
+            elif st["started"] or st["t"] >= 2.5 or getattr(app, "tts", None) is None:
+                callback()
+                return False
+            if st["t"] >= max_wait:
+                callback()
+                return False
+            return True
+
+        return Clock.schedule_interval(poll, 0.3)
+
     def ai_ready():
         return bool(client is not None and app.ai_enabled and app.gemini_key.strip())
 
@@ -1645,8 +1670,10 @@ def build_jarvis_ui(app):
         spoken = ai_brain.speech_text(reply) if ok else reply
         speak(spoken)
         if not ai["from_typed"]:
-            delay = min(25.0, max(2.5, 1.2 + len(spoken) * 0.075))
-            ai["relisten"] = Clock.schedule_once(lambda dt: app.listen(), delay)
+            def go():
+                ai["relisten"] = Clock.schedule_once(lambda dt: app.listen(), 0.5)
+
+            ai["relisten"] = when_speech_done(go)       # pura bol chuke tabhi mic khule
 
     def ask_ai(text):
         """Sawaal Gemini ko bhejo (background me); jawab aane par bolo."""
@@ -1751,6 +1778,16 @@ def build_jarvis_ui(app):
         def listen(*args):
             if ai["busy"]:
                 return None                       # AI jawab de raha hai: abhi mic mat kholo
+            if tts_busy():                        # Jarvis bol raha hai: khatam hone ka intezaar
+                if not ai.get("listen_wait"):
+                    ai["listen_wait"] = True
+
+                    def go():
+                        ai["listen_wait"] = False
+                        listen()
+
+                    when_speech_done(go, 60.0)
+                return None
             mute_beep()
             return original_listen(*args)
 
@@ -1787,6 +1824,12 @@ def build_jarvis_ui(app):
         ai["gen"] += 1                      # chal raha AI jawab radd
         ai["busy"] = False
         cancel_relisten()
+        try:
+            t = getattr(app, "tts", None)
+            if t is not None:
+                t.stop()                          # orb dabane par Jarvis chup ho jaye
+        except Exception:
+            pass
         orb.mode = "listening"
         set_status("Listening...")
         try:
