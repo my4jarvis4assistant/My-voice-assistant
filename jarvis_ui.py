@@ -1,4 +1,4 @@
-"""JARVIS v0.40 - professional UI module (main.py ke saath kaam karta hai).
+"""JARVIS v0.42 - professional UI module (main.py ke saath kaam karta hai).
 
 main.py ko sirf yahi chahiye:
     from jarvis_ui import build_jarvis_ui
@@ -1598,6 +1598,14 @@ def build_jarvis_ui(app):
         Clock.schedule_once(lambda dt: unmute_beep(), 0)
         ai["typed"] = False
         Clock.schedule_once(lambda dt: add_history(cmd), 0)
+        if ai_brain is not None:
+            quick = ai_brain.creator_reply(cmd)
+            if quick:                                   # turant jawab, internet ki zaroorat nahi
+                ai["busy"] = True
+                ai["gen"] += 1
+                gen = ai["gen"]
+                Clock.schedule_once(lambda dt: deliver(gen, True, quick), 0)
+                return
         if ai_ready() and should_route_ai(cmd):
             ai["busy"] = True
             Clock.schedule_once(lambda dt: ask_ai(cmd), 0)
