@@ -157,7 +157,7 @@ public class JarvisBrain {
                 + "Gemini ya Google ka product mat batao. User se ek samajhdar dost ki tarah natural "
                 + "Hinglish me baat karo (Hindi shabd Roman letters me). Jawab bolkar sunaya jayega, "
                 + "isliye markdown, bullet, emoji, symbols aur link mat likho. " + rule + " "
-                + "Agar user koi kaam kehta hai (alarm, timer, app kholna, torch, web ya YouTube search) "
+                + "Agar user koi kaam kehta hai (alarm, timer, app kholna, call karna, torch, web ya YouTube search) "
                 + "to uske liye function call karo, lamba jawab mat do. Alarm ke liye 24 ghante ka "
                 + "samay nikaalo (subah 4:50 = hour 4 minute 50, shaam 5 baje = hour 17). Baaki sawal ya "
                 + "baat-cheet ka seedha jawab do. Pata na ho to saaf bol do, andaza mat lagao. "
@@ -193,6 +193,9 @@ public class JarvisBrain {
         fns.put(fn("open_app", "Phone ka koi app kholo.",
                 new JSONObject().put("app_name", prop("STRING", "App ka naam, jaise WhatsApp, Camera")),
                 "app_name"));
+        fns.put(fn("call_contact", "Contacts me se kisi ko call lagao (naam se).",
+                new JSONObject().put("name", prop("STRING", "Contact ka naam, jaise Priya Bhai, Mummy")),
+                "name"));
         fns.put(fn("flashlight", "Torch (flashlight) on ya off karo.",
                 new JSONObject().put("on", prop("BOOLEAN", "true = on, false = off")), "on"));
         fns.put(fn("web_search", "Google par kuch search karo.",
