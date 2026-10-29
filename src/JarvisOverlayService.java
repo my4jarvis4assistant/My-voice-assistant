@@ -84,6 +84,8 @@ public class JarvisOverlayService extends Service {
     private Object porcupine = null;
     private boolean wakeEnabled = false;
     private boolean wakeRunning = false;
+    private JarvisVoskWake vosk = null;
+    private boolean useVosk = false;
 
     // ----------------------------------------------------------- lifecycle --
     @Override
@@ -169,9 +171,8 @@ public class JarvisOverlayService extends Service {
             return;
         }
         String key = prefs().getString("picovoice_key", "").trim();
-        if (key.length() == 0) {
-            setWakeStatus("error: Picovoice key set nahi hai");
-            toastError("Pehle Jarvis Settings me Picovoice key daaliye");
+        if (key.length() == 0 || useVosk) {
+            startVosk();           // key nahi: offline Vosk
             return;
         }
         try {
@@ -234,14 +235,47 @@ public class JarvisOverlayService extends Service {
             String msg = r.getClass().getSimpleName() + ": " + r.getMessage();
             setWakeStatus("error: " + msg);
             toastError("Wake word shuru nahi hua: " + msg);
-            if (r instanceof ClassNotFoundException) {
-                toastError("Porcupine library APK me nahi judi (buildozer.spec ki gradle_dependencies check kijiye)");
+            if (r instanceof ClassNotFoundException || r instanceof NoClassDefFoundError) {
+                useVosk = true;
+                startVosk();
             }
         }
     }
 
+    private void startVosk() {
+        if (vosk == null) {
+            vosk = new JarvisVoskWake(this, new JarvisVoskWake.Listener() {
+                @Override
+                public void onWake() {
+                    main.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            wakeRunning = false;
+                            onWakeWord();
+                        }
+                    });
+                }
+
+                @Override
+                public void onStatus(String status) {
+                    setWakeStatus(status);
+                }
+            });
+        }
+        vosk.start();
+        wakeRunning = true;
+    }
+
     /** delete=true: poori tarah band; false: sirf mic chhodne ke liye roko. */
     private void stopWake(boolean delete) {
+        if (vosk != null) {
+            if (delete) {
+                vosk.release();
+                vosk = null;
+            } else {
+                vosk.stop();
+            }
+        }
         if (porcupine == null) {
             wakeRunning = false;
             return;
