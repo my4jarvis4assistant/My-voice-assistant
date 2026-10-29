@@ -1,4 +1,4 @@
-"""JARVIS v0.60 - professional UI module (main.py ke saath kaam karta hai).
+"""JARVIS v0.61 - professional UI module (main.py ke saath kaam karta hai).
 
 main.py ko sirf yahi chahiye:
     from jarvis_ui import build_jarvis_ui
@@ -1512,19 +1512,19 @@ def build_jarvis_ui(app):
 
     def refresh_wake_info(*_):
         st = read_wake_status()
-        if not app.picovoice_key:
-            wake_info.text = "Pehle Picovoice ki free key paste karke Save dabaiye."
-        elif app.wake_enabled:
-            wake_info.text = "Chalu: " + (st or "shuru ho raha hai...") + \
+        engine = "Picovoice" if app.picovoice_key else "offline (Vosk)"
+        if app.wake_enabled:
+            wake_info.text = "Chalu [" + engine + "]: " + (st or "shuru ho raha hai...") + \
                 "\nBolo: 'Jarvis' ya 'Hey Jarvis'"
         else:
-            wake_info.text = "Band hai. On karne par Jarvis 'Jarvis' bolne ka intezaar karega."
+            wake_info.text = ("Band hai. On karne par Jarvis 'Jarvis' bolne ka intezaar karega. "
+                              "Key na ho to bhi chalega (pehli baar ~40 MB model download hoga).")
 
     wake_key_row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(44),
                              spacing=dp(10))
     wake_key_wrap = PlateBox(fill=INPUT, edge=EDGE, radius=dp(12), orientation="horizontal",
                              padding=[dp(10), 0, dp(10), 0])
-    wake_key_input = style_input(TextInput(text="", hint_text="Picovoice AccessKey paste kijiye",
+    wake_key_input = style_input(TextInput(text="", hint_text="Picovoice key (optional, na ho to khali)",
                                            font_size=sp(14), password=True))
     wake_key_wrap.add_widget(wake_key_input)
     wake_key_row.add_widget(wake_key_wrap)
@@ -1550,9 +1550,6 @@ def build_jarvis_ui(app):
     def apply_wake(announce=True):
         try:
             if app.wake_enabled:
-                if not app.picovoice_key:
-                    toast("Pehle Picovoice key save kijiye")
-                    return
                 from jnius import autoclass
                 Settings = autoclass("android.provider.Settings")
                 if not Settings.canDrawOverlays(get_context()):
@@ -1569,8 +1566,24 @@ def build_jarvis_ui(app):
         except Exception as exc:
             print("Wake service error:", exc)
             toast("Wake word shuru nahi hua: " + str(exc)[:60])
-        Clock.schedule_once(refresh_wake_info, 2.0)
         refresh_wake_info()
+        poll_wake_status()
+
+    wake_poll = {"ev": None}
+
+    def poll_wake_status(*_):
+        """Settings khuli ho tab tak har 2 second status (download % waghera) dikhao."""
+        if wake_poll["ev"] is not None:
+            return
+
+        def tick(dt):
+            refresh_wake_info()
+            if not view["settings"]:
+                wake_poll["ev"] = None
+                return False
+            return True
+
+        wake_poll["ev"] = Clock.schedule_interval(tick, 2.0)
 
     def save_wake_key(*_):
         app.picovoice_key = wake_key_input.text.strip() or app.picovoice_key
@@ -1693,6 +1706,8 @@ def build_jarvis_ui(app):
         orb.paused = True
         refresh_history()
         refresh_wake_info()
+        if app.wake_enabled:
+            poll_wake_status()
         root.remove_widget(home)
         settings_page.opacity = 0
         root.add_widget(settings_page, index=len(root.children))
