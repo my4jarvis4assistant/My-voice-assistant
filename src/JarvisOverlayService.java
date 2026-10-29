@@ -843,6 +843,8 @@ public class JarvisOverlayService extends Service {
                 return setTimer(a.optInt("seconds", 0));
             } else if ("open_app".equals(name)) {
                 return openApp(a.optString("app_name", ""));
+            } else if ("call_contact".equals(name)) {
+                return callContact(a.optString("name", ""));
             } else if ("flashlight".equals(name)) {
                 return flashlight(a.optBoolean("on", true));
             } else if ("web_search".equals(name)) {
@@ -948,6 +950,78 @@ public class JarvisOverlayService extends Service {
         launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         startActivity(launch);
         return String.valueOf(best.loadLabel(pm)) + " khol raha hoon.";
+    }
+
+    private boolean granted(String perm) {
+        return Build.VERSION.SDK_INT < 23
+                || checkSelfPermission(perm) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private String callContact(String wanted) {
+        String w = wanted.toLowerCase(Locale.ENGLISH).trim();
+        if (w.length() == 0) {
+            return "Kisko call karna hai?";
+        }
+        if (!granted("android.permission.READ_CONTACTS")) {
+            return "Contacts ki permission nahi hai. Jarvis app ki Settings me 'Calling permission allow karo' dabaiye.";
+        }
+        String bestName = null;
+        String bestNumber = null;
+        int bestScore = 0;
+        android.database.Cursor c = null;
+        try {
+            c = getContentResolver().query(
+                    android.provider.ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                    new String[]{android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                            android.provider.ContactsContract.CommonDataKinds.Phone.NUMBER},
+                    null, null, null);
+            while (c != null && c.moveToNext()) {
+                String n = c.getString(0);
+                String num = c.getString(1);
+                if (n == null || num == null) {
+                    continue;
+                }
+                String low = n.toLowerCase(Locale.ENGLISH);
+                int score = 0;
+                if (low.equals(w)) {
+                    score = 4;
+                } else if (low.startsWith(w)) {
+                    score = 3;
+                } else if (low.contains(w)) {
+                    score = 2;
+                } else {
+                    String[] parts = w.split("\\s+");
+                    boolean all = parts.length > 0;
+                    for (String part : parts) {
+                        if (part.length() == 0 || !low.contains(part)) {
+                            all = false;
+                        }
+                    }
+                    if (all) {
+                        score = 1;
+                    }
+                }
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestName = n;
+                    bestNumber = num;
+                }
+            }
+        } finally {
+            if (c != null) {
+                c.close();
+            }
+        }
+        if (bestNumber == null) {
+            return wanted + " naam ka contact nahi mila.";
+        }
+        String clean = bestNumber.replaceAll("[^0-9+]", "");
+        boolean direct = granted("android.permission.CALL_PHONE");
+        Intent i = new Intent(direct ? Intent.ACTION_CALL : Intent.ACTION_DIAL,
+                Uri.parse("tel:" + clean));
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        startActivity(i);
+        return direct ? bestName + " ko call kar raha hoon." : bestName + " ka number dialer me khol diya.";
     }
 
     private String flashlight(boolean on) {
