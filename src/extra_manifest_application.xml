@@ -2,8 +2,7 @@
     android:name="org.myassistant.myvoiceassistant.JarvisAlarmReceiver"
     android:enabled="true"
     android:exported="false" />
-<!-- Ye 2 tukde apni src/extra_manifest_application.xml me, purane <receiver ...> ke
-     neeche (usi file ke andar) jod dijiye. Pura file replace mat kijiye. -->
+
 <service
     android:name="org.myassistant.myvoiceassistant.JarvisOverlayService"
     android:exported="false"
@@ -16,3 +15,14 @@
     android:noHistory="true"
     android:taskAffinity=""
     android:exported="true" />
+
+<service
+    android:name="org.myassistant.myvoiceassistant.JarvisTileService"
+    android:label="Jarvis"
+    android:icon="@android:drawable/ic_btn_speak_now"
+    android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
+    android:exported="true">
+    <intent-filter>
+        <action android:name="android.service.quicksettings.action.QS_TILE" />
+    </intent-filter>
+</service>
