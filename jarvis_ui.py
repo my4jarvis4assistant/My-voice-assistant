@@ -1,4 +1,4 @@
-"""JARVIS v0.62 - professional UI module (main.py ke saath kaam karta hai).
+"""JARVIS v0.63 - professional UI module (main.py ke saath kaam karta hai).
 
 main.py ko sirf yahi chahiye:
     from jarvis_ui import build_jarvis_ui
@@ -1514,6 +1514,10 @@ def build_jarvis_ui(app):
         st = read_wake_status()
         engine = "Picovoice" if app.picovoice_key else "offline (Vosk)"
         if app.wake_enabled:
+            waited = Clock.get_time() - wake_poll["since"] if wake_poll["since"] else 0
+            if not st and waited > 6:
+                st = ("service ne koi jawab nahi diya. Manifest (JarvisOverlayService) ya "
+                      "Battery 'No restrictions' check kijiye")
             wake_info.text = "Chalu [" + engine + "]: " + (st or "shuru ho raha hai...") + \
                 "\nBolo: 'Jarvis' ya 'Hey Jarvis'"
         else:
@@ -1533,6 +1537,8 @@ def build_jarvis_ui(app):
     wake_key_row.add_widget(wake_key_btn)
     wake_ai_card.add_widget(wake_key_row)
 
+    wake_poll = {"ev": None, "since": 0}
+
     def wake_service(action):
         from jnius import autoclass
         Intent = autoclass("android.content.Intent")
@@ -1543,9 +1549,12 @@ def build_jarvis_ui(app):
                             "org.myassistant.myvoiceassistant.JarvisOverlayService")
         intent.setAction(action)
         if int(Build.SDK_INT) >= 26:
-            ctx.startForegroundService(intent)
+            comp = ctx.startForegroundService(intent)
         else:
-            ctx.startService(intent)
+            comp = ctx.startService(intent)
+        if comp is None:
+            raise RuntimeError("JarvisOverlayService manifest me nahi mili")
+        wake_poll["since"] = Clock.get_time()
 
     def apply_wake(announce=True):
         try:
@@ -1568,8 +1577,6 @@ def build_jarvis_ui(app):
             toast("Wake word shuru nahi hua: " + str(exc)[:60])
         refresh_wake_info()
         poll_wake_status()
-
-    wake_poll = {"ev": None}
 
     def poll_wake_status(*_):
         """Settings khuli ho tab tak har 2 second status (download % waghera) dikhao."""
