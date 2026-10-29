@@ -25,8 +25,8 @@ android.accept_sdk_license = True
 android.add_src = src
 android.extra_manifest_application_xml = src/extra_manifest_application.xml
 
-# "Hey Jarvis" wake word (Picovoice Porcupine)
-android.gradle_dependencies = ai.picovoice:porcupine-android:3.0.2
+# "Hey Jarvis" wake word (Vosk, offline)
+android.gradle_dependencies = net.java.dev.jna:jna:5.13.0@aar,com.alphacephei:vosk-android:0.3.47@aar
 android.enable_androidx = True
 
 p4a.branch = master
