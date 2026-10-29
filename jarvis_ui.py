@@ -1,4 +1,4 @@
-"""JARVIS v0.61 - professional UI module (main.py ke saath kaam karta hai).
+"""JARVIS v0.62 - professional UI module (main.py ke saath kaam karta hai).
 
 main.py ko sirf yahi chahiye:
     from jarvis_ui import build_jarvis_ui
@@ -1627,7 +1627,18 @@ def build_jarvis_ui(app):
         except Exception as exc:
             print("Battery settings error:", exc)
 
-    for label, fn in [("Free Picovoice key banaiye", open_picovoice),
+    def allow_calling(*_):
+        try:
+            from android.permissions import request_permissions
+            request_permissions(["android.permission.READ_CONTACTS",
+                                 "android.permission.CALL_PHONE"])
+            toast("Contacts aur Call ki permission Allow kijiye")
+        except Exception as exc:
+            print("Calling permission error:", exc)
+            toast("Phone Settings > Apps > Jarvis > Permissions me Contacts aur Phone allow kijiye")
+
+    for label, fn in [("Calling permission allow karo (Contacts + Phone)", allow_calling),
+                      ("Free Picovoice key banaiye", open_picovoice),
                       ("Battery / Autostart settings", open_battery)]:
         row = ActionRow(label)
         row.bind(on_release=lambda w, f=fn: f())
