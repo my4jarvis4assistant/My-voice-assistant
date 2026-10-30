@@ -1133,6 +1133,12 @@ def build_jarvis_ui(app):
     app.ai_enabled = bool(state.get("ai_enabled", True))
     app.ai_model = str(state.get("ai_model", "") or "")
     app.wake_enabled = bool(state.get("wake_enabled", False))
+    try:                                   # notification / tile se On-Off kiya ho to wahi sach hai
+        _sp = app.activity.getSharedPreferences("jarvis_prefs", 0)
+        if _sp.contains("wake_enabled"):
+            app.wake_enabled = bool(_sp.getBoolean("wake_enabled", False))
+    except Exception:
+        pass
     try:
         import ai_brain
     except Exception as exc:                    # AI file na mile to baaki app chalta rahe
@@ -1511,8 +1517,8 @@ def build_jarvis_ui(app):
     # 4c) Home screen button + floating panel
     home_card = make_card("Home Screen Jarvis")
     home_card.add_widget(make_label(
-        "Home screen par Jarvis ka button lagaiye. Dabate hi Jarvis home screen ke upar hi "
-        "chhota panel kholkar sunta hai, jawab deta hai aur kaam karta hai (app nahi khulta).",
+        "Koi bada panel nahi: sirf status bar me chhota safed gola. Jarvis kisi bhi app ya home "
+        "screen par rehkar sunta hai, bolkar jawab deta hai aur kaam karta hai (app nahi khulta).",
         12, MUTED, height=dp(66), lines=4))
     PKG_CLASS = "org.myassistant.myvoiceassistant.JarvisTriggerActivity"
 
