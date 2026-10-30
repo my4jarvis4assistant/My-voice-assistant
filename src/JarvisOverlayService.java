@@ -107,6 +107,7 @@ public class JarvisOverlayService extends Service {
             startAsForeground(ACTION_TALK.equals(action) || panel != null);
             if (ACTION_WAKE_OFF.equals(action)) {
                 wakeEnabled = false;
+                prefs().edit().putBoolean("wake_enabled", false).apply();
                 stopWake(true);
                 setWakeStatus("band");
                 if (panel == null) {
@@ -117,6 +118,7 @@ public class JarvisOverlayService extends Service {
             }
             if (ACTION_WAKE_ON.equals(action)) {
                 wakeEnabled = true;
+                prefs().edit().putBoolean("wake_enabled", true).apply();
                 if (panel == null) {
                     startWake();
                 }
@@ -244,7 +246,27 @@ public class JarvisOverlayService extends Service {
         }
         nb.setContentTitle("JARVIS")
                 .setContentText(talking ? "Jarvis sun raha hai" : "'Jarvis' bolne ka intezaar hai")
-                .setSmallIcon(getApplicationInfo().icon).setOngoing(true);
+                .setOngoing(true);
+        if (Build.VERSION.SDK_INT >= 23) {
+            // status bar me chhota safed gola (white dot)
+            android.graphics.Bitmap bmp = android.graphics.Bitmap.createBitmap(96, 96,
+                    android.graphics.Bitmap.Config.ARGB_8888);
+            android.graphics.Canvas cv = new android.graphics.Canvas(bmp);
+            android.graphics.Paint pt = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+            pt.setColor(Color.WHITE);
+            cv.drawCircle(48, 48, 34, pt);
+            nb.setSmallIcon(android.graphics.drawable.Icon.createWithBitmap(bmp));
+            Intent off = new Intent(this, JarvisOverlayService.class);
+            off.setAction(ACTION_WAKE_OFF);
+            int f = PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE;
+            PendingIntent pi = Build.VERSION.SDK_INT >= 26
+                    ? PendingIntent.getForegroundService(this, 77, off, f)
+                    : PendingIntent.getService(this, 77, off, f);
+            nb.addAction(new Notification.Action.Builder(
+                    android.graphics.drawable.Icon.createWithBitmap(bmp), "Band karo (Off)", pi).build());
+        } else {
+            nb.setSmallIcon(getApplicationInfo().icon);
+        }
         Notification n = nb.build();
         if (Build.VERSION.SDK_INT >= 30) {
             startForeground(NOTIF_ID, n, 128);   // 128 = FOREGROUND_SERVICE_TYPE_MICROPHONE
@@ -321,117 +343,42 @@ public class JarvisOverlayService extends Service {
         return (int) (v * getResources().getDisplayMetrics().density + 0.5f);
     }
 
+    /** Bada panel nahi: sirf ek chhota safed gola (dot) jo bolte/sunte waqt dhadakta hai. Dabane par band. */
     private void showPanel() {
-        GradientDrawable bg = new GradientDrawable();
-        bg.setColor(Color.parseColor("#F2101A1D"));
-        bg.setCornerRadius(dp(28));
-        bg.setStroke(dp(1), Color.parseColor("#33FFFFFF"));
-
         panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setBackground(bg);
-        panel.setPadding(dp(18), dp(14), dp(18), dp(16));
-
-        // header: JARVIS + green dot + close
-        LinearLayout header = new LinearLayout(this);
-        header.setOrientation(LinearLayout.HORIZONTAL);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = new TextView(this);
-        title.setText("JARVIS");
-        title.setTextColor(Color.parseColor("#E6F2F5"));
-        title.setTextSize(18);
-        title.setTypeface(Typeface.DEFAULT_BOLD);
-        header.addView(title);
-        View dot = new View(this);
-        GradientDrawable dotShape = new GradientDrawable();
-        dotShape.setShape(GradientDrawable.OVAL);
-        dotShape.setColor(Color.parseColor("#1FF285"));
-        dot.setBackground(dotShape);
-        LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(dp(8), dp(8));
-        dlp.leftMargin = dp(8);
-        header.addView(dot, dlp);
-        View spacer = new View(this);
-        header.addView(spacer, new LinearLayout.LayoutParams(0, 1, 1f));
-        TextView close = new TextView(this);
-        close.setText("✕");
-        close.setTextColor(Color.parseColor("#8CA8AD"));
-        close.setTextSize(20);
-        close.setPadding(dp(12), dp(4), dp(4), dp(4));
-        close.setOnClickListener(new View.OnClickListener() {
+        orbView = new View(this);
+        orbShape = new GradientDrawable();
+        orbShape.setShape(GradientDrawable.OVAL);
+        orbShape.setColor(Color.WHITE);
+        orbShape.setStroke(dp(1), Color.parseColor("#55000000"));
+        orbView.setBackground(orbShape);
+        panel.addView(orbView, new LinearLayout.LayoutParams(dp(18), dp(18)));
+        panel.setPadding(dp(10), dp(10), dp(10), dp(10));
+        panel.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 shutdown();
             }
         });
-        header.addView(close);
-        panel.addView(header);
-
-        // orb
-        orbView = new View(this);
-        orbShape = new GradientDrawable();
-        orbShape.setShape(GradientDrawable.OVAL);
-        orbShape.setGradientType(GradientDrawable.RADIAL_GRADIENT);
-        orbShape.setGradientRadius(dp(44));
-        orbShape.setGradientCenter(0.5f, 0.38f);
-        orbShape.setColors(new int[]{Color.parseColor("#C4D6FF"), Color.parseColor("#6D93F0"),
-                Color.parseColor("#3F6BE0")});
-        orbView.setBackground(orbShape);
-        LinearLayout.LayoutParams olp = new LinearLayout.LayoutParams(dp(72), dp(72));
-        olp.gravity = Gravity.CENTER_HORIZONTAL;
-        olp.topMargin = dp(10);
-        olp.bottomMargin = dp(10);
-        panel.addView(orbView, olp);
-
-        // text
-        statusView = new TextView(this);
-        statusView.setTextColor(Color.parseColor("#E6F2F5"));
-        statusView.setTextSize(17);
-        statusView.setGravity(Gravity.CENTER);
-        statusView.setText("Listening...");
-        ScrollView sv = new ScrollView(this);
-        sv.addView(statusView);
-        panel.addView(sv, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(150)));
-
-        heardView = new TextView(this);
-        heardView.setTextColor(Color.parseColor("#7F979B"));
-        heardView.setTextSize(12);
-        heardView.setGravity(Gravity.CENTER);
-        panel.addView(heardView);
-
-        // mic button
-        TextView again = new TextView(this);
-        again.setText("Dobara bolein");
-        again.setTextColor(Color.parseColor("#06201F"));
-        again.setTextSize(14);
-        again.setGravity(Gravity.CENTER);
-        GradientDrawable pill = new GradientDrawable();
-        pill.setColor(Color.parseColor("#4DE0D9"));
-        pill.setCornerRadius(dp(20));
-        again.setBackground(pill);
-        again.setPadding(dp(22), dp(9), dp(22), dp(9));
-        again.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                startListening();
-            }
-        });
-        LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        alp.gravity = Gravity.CENTER_HORIZONTAL;
-        alp.topMargin = dp(8);
-        panel.addView(again, alp);
-
-        DisplayMetrics dm = getResources().getDisplayMetrics();
         int type = Build.VERSION.SDK_INT >= 26 ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
                 : WindowManager.LayoutParams.TYPE_PHONE;
         WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
-                dm.widthPixels - dp(24), WindowManager.LayoutParams.WRAP_CONTENT, type,
+                WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT, type,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                         | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
                 PixelFormat.TRANSLUCENT);
-        lp.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
-        lp.y = dp(28);
+        lp.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
+        lp.y = dp(26);
         wm.addView(panel, lp);
+    }
+
+    private void showText(String text) {
+        try {
+            android.widget.Toast.makeText(this, text, text.length() > 60
+                    ? android.widget.Toast.LENGTH_LONG : android.widget.Toast.LENGTH_SHORT).show();
+        } catch (Exception ignored) {
+        }
     }
 
     private void setStatus(final String text, final int newMode) {
@@ -440,6 +387,8 @@ public class JarvisOverlayService extends Service {
             public void run() {
                 if (statusView != null) {
                     statusView.setText(text);
+                } else if (newMode == MODE_IDLE && text != null && text.length() > 0 && alive) {
+                    showText(text);
                 }
                 mode = newMode;
             }
