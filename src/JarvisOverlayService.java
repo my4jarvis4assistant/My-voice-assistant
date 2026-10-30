@@ -90,6 +90,11 @@ public class JarvisOverlayService extends Service {
     private boolean awaitingName = false;     // "Kisko call karun?" ke baad agla jawab naam hai
     private boolean listenAfterSpeech = false; // bolna khatam hote hi dobara sunna
 
+    // --- floating bubble (hamesha dikhta hai; sleep = dhundhla, active = chamakta) ---
+    private WindowManager.LayoutParams bubbleLp = null;
+    private boolean session = false;          // True = Jarvis abhi sun/bol raha hai (baatcheet chal rahi hai)
+    private int idleCount = 0;                // lagataar kitni baar kuch sunai nahi diya
+
     // ----------------------------------------------------------- lifecycle --
     @Override
     public IBinder onBind(Intent intent) {
@@ -104,22 +109,24 @@ public class JarvisOverlayService extends Service {
                 // system ne service dobara chalayi: wake word chalu tha to wahi karo
                 action = prefs().getBoolean("wake_enabled", false) ? ACTION_WAKE_ON : ACTION_WAKE_OFF;
             }
-            startAsForeground(ACTION_TALK.equals(action) || panel != null);
+            startAsForeground(ACTION_TALK.equals(action) || session);
             if (ACTION_WAKE_OFF.equals(action)) {
                 wakeEnabled = false;
                 prefs().edit().putBoolean("wake_enabled", false).apply();
                 stopWake(true);
+                cleanup();
+                removeBubble();
                 setWakeStatus("band");
-                if (panel == null) {
-                    stopForeground(true);
-                    stopSelf();
-                }
+                stopForeground(true);
+                stopSelf();
                 return START_NOT_STICKY;
             }
             if (ACTION_WAKE_ON.equals(action)) {
                 wakeEnabled = true;
                 prefs().edit().putBoolean("wake_enabled", true).apply();
-                if (panel == null) {
+                ensureBubble();
+                if (!session) {
+                    setBubbleActive(false);
                     startWake();
                 }
                 return START_STICKY;
@@ -135,11 +142,13 @@ public class JarvisOverlayService extends Service {
 
     /** Panel dikhao aur sunna shuru karo (button ya wake word se). */
     private void talk() {
-        if (panel == null) {
+        if (!session) {
+            session = true;
             alive = true;
-            wm = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
+            idleCount = 0;
             stopWake(false);              // mic ek hi cheez use kar sakti hai
-            showPanel();
+            ensureBubble();
+            setBubbleActive(true);
             initTts();
             main.post(ticker);
         }
@@ -150,6 +159,7 @@ public class JarvisOverlayService extends Service {
     public void onDestroy() {
         stopWake(true);
         cleanup();
+        removeBubble();
         super.onDestroy();
     }
 
@@ -221,7 +231,7 @@ public class JarvisOverlayService extends Service {
     }
 
     private void onWakeWord() {
-        if (panel != null) {
+        if (session) {
             return;
         }
         try {
@@ -275,9 +285,14 @@ public class JarvisOverlayService extends Service {
         }
     }
 
+    /** Baatcheet khatam: bubble dhundhla (sleep) ho jata hai aur sirf "Jarvis" ka intezaar chalta hai. */
     private void shutdown() {
         cleanup();
+        pendingChoices = null;
+        awaitingName = false;
+        listenAfterSpeech = false;
         if (wakeEnabled) {
+            setBubbleActive(false);
             try {
                 startAsForeground(false);
             } catch (Exception ignored) {
@@ -286,13 +301,14 @@ public class JarvisOverlayService extends Service {
             main.postDelayed(new Runnable() {
                 @Override
                 public void run() {
-                    if (panel == null) {
+                    if (!session) {
                         startWake();
                     }
                 }
             }, 900);
             return;
         }
+        removeBubble();
         try {
             stopForeground(true);
         } catch (Exception ignored) {
@@ -302,6 +318,7 @@ public class JarvisOverlayService extends Service {
 
     private void cleanup() {
         alive = false;
+        session = false;
         gen++;
         main.removeCallbacksAndMessages(null);
         muteBeep(false);
@@ -322,6 +339,9 @@ public class JarvisOverlayService extends Service {
         }
         tts = null;
         ttsReady = false;
+    }
+
+    private void removeBubble() {
         try {
             if (panel != null && wm != null) {
                 wm.removeView(panel);
@@ -329,6 +349,8 @@ public class JarvisOverlayService extends Service {
         } catch (Exception ignored) {
         }
         panel = null;
+        orbView = null;
+        bubbleLp = null;
     }
 
     private void toastError(String msg) {
@@ -343,34 +365,124 @@ public class JarvisOverlayService extends Service {
         return (int) (v * getResources().getDisplayMetrics().density + 0.5f);
     }
 
-    /** Bada panel nahi: sirf ek chhota safed gola (dot) jo bolte/sunte waqt dhadakta hai. Dabane par band. */
-    private void showPanel() {
-        panel = new LinearLayout(this);
-        panel.setOrientation(LinearLayout.VERTICAL);
-        orbView = new View(this);
-        orbShape = new GradientDrawable();
-        orbShape.setShape(GradientDrawable.OVAL);
-        orbShape.setColor(Color.WHITE);
-        orbShape.setStroke(dp(1), Color.parseColor("#55000000"));
-        orbView.setBackground(orbShape);
-        panel.addView(orbView, new LinearLayout.LayoutParams(dp(18), dp(18)));
-        panel.setPadding(dp(10), dp(10), dp(10), dp(10));
-        panel.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                shutdown();
+    /** Chhota safed gola (bubble): hamesha dikhta hai. Pakad kar kahin bhi rakh sakte hain, tap = on/off. */
+    private void ensureBubble() {
+        if (panel != null) {
+            return;
+        }
+        try {
+            if (Build.VERSION.SDK_INT >= 23 && !android.provider.Settings.canDrawOverlays(this)) {
+                toastError("Jarvis bubble ke liye 'Display over other apps' allow kijiye");
+                return;
             }
-        });
-        int type = Build.VERSION.SDK_INT >= 26 ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-                : WindowManager.LayoutParams.TYPE_PHONE;
-        WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
-                WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT, type,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                        | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
-                PixelFormat.TRANSLUCENT);
-        lp.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
-        lp.y = dp(26);
-        wm.addView(panel, lp);
+            wm = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
+            panel = new LinearLayout(this);
+            panel.setOrientation(LinearLayout.VERTICAL);
+            orbView = new View(this);
+            orbShape = new GradientDrawable();
+            orbShape.setShape(GradientDrawable.OVAL);
+            orbShape.setColor(Color.WHITE);
+            orbShape.setStroke(dp(1), Color.parseColor("#55000000"));
+            orbView.setBackground(orbShape);
+            panel.addView(orbView, new LinearLayout.LayoutParams(dp(18), dp(18)));
+            panel.setPadding(dp(12), dp(12), dp(12), dp(12));
+            int type = Build.VERSION.SDK_INT >= 26 ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                    : WindowManager.LayoutParams.TYPE_PHONE;
+            bubbleLp = new WindowManager.LayoutParams(
+                    WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT, type,
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                            | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+                    PixelFormat.TRANSLUCENT);
+            bubbleLp.gravity = Gravity.TOP | Gravity.LEFT;
+            DisplayMetrics dm = getResources().getDisplayMetrics();
+            SharedPreferences p = prefs();
+            bubbleLp.x = p.getInt("bubble_x", dm.widthPixels / 2 - dp(21));
+            bubbleLp.y = p.getInt("bubble_y", dp(28));
+            clampBubble();
+            panel.setOnTouchListener(bubbleTouch);
+            wm.addView(panel, bubbleLp);
+        } catch (Exception e) {
+            toastError("Bubble nahi ban paya: " + e);
+            panel = null;
+            orbView = null;
+            bubbleLp = null;
+        }
+    }
+
+    private void clampBubble() {
+        if (bubbleLp == null) {
+            return;
+        }
+        DisplayMetrics dm = getResources().getDisplayMetrics();
+        int size = dp(42);
+        bubbleLp.x = Math.max(0, Math.min(dm.widthPixels - size, bubbleLp.x));
+        bubbleLp.y = Math.max(0, Math.min(dm.heightPixels - size, bubbleLp.y));
+    }
+
+    /** active = chamakta safed (sun raha hai); warna dhundhla (so raha hai, sirf 'Jarvis' ka intezaar). */
+    private void setBubbleActive(boolean active) {
+        if (orbView == null) {
+            return;
+        }
+        orbView.setAlpha(active ? 1.0f : 0.40f);
+        orbView.setScaleX(1f);
+        orbView.setScaleY(1f);
+    }
+
+    private final View.OnTouchListener bubbleTouch = new View.OnTouchListener() {
+        private float downX, downY;
+        private int startX, startY;
+        private boolean dragging = false;
+
+        @Override
+        public boolean onTouch(View v, android.view.MotionEvent e) {
+            if (bubbleLp == null) {
+                return false;
+            }
+            switch (e.getActionMasked()) {
+                case android.view.MotionEvent.ACTION_DOWN:
+                    downX = e.getRawX();
+                    downY = e.getRawY();
+                    startX = bubbleLp.x;
+                    startY = bubbleLp.y;
+                    dragging = false;
+                    return true;
+                case android.view.MotionEvent.ACTION_MOVE:
+                    float dx = e.getRawX() - downX;
+                    float dy = e.getRawY() - downY;
+                    if (!dragging && Math.abs(dx) + Math.abs(dy) > dp(8)) {
+                        dragging = true;
+                    }
+                    if (dragging) {
+                        bubbleLp.x = startX + (int) dx;
+                        bubbleLp.y = startY + (int) dy;
+                        clampBubble();
+                        try {
+                            wm.updateViewLayout(panel, bubbleLp);
+                        } catch (Exception ignored) {
+                        }
+                    }
+                    return true;
+                case android.view.MotionEvent.ACTION_UP:
+                    if (dragging) {
+                        prefs().edit().putInt("bubble_x", bubbleLp.x).putInt("bubble_y", bubbleLp.y).apply();
+                    } else {
+                        onBubbleTap();
+                    }
+                    return true;
+                default:
+                    return true;
+            }
+        }
+    };
+
+    /** Tap: so raha ho to jagao (sunna shuru), jaag raha ho to sula do. */
+    private void onBubbleTap() {
+        if (session) {
+            shutdown();
+        } else {
+            onWakeWord();
+        }
     }
 
     private void showText(String text) {
@@ -454,8 +566,8 @@ public class JarvisOverlayService extends Service {
                                     if (listenAfterSpeech && alive) {
                                         listenAfterSpeech = false;
                                         startListening();
-                                    } else {
-                                        scheduleClose(5000);
+                                    } else if (alive) {
+                                        scheduleClose(700);
                                     }
                                 }
                             });
@@ -621,7 +733,21 @@ public class JarvisOverlayService extends Service {
             }
             if (error == SpeechRecognizer.ERROR_NO_MATCH
                     || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
-                setStatus("Kuch sunai nahi diya. 'Dobara bolein' dabaiye.", MODE_IDLE);
+                idleCount++;
+                if (idleCount < 3) {
+                    main.postDelayed(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (alive && session) {
+                                startListening();
+                            }
+                        }
+                    }, 300);
+                    return;
+                }
+                setStatus("Kuch sunai nahi diya. Jarvis so gaya.", MODE_IDLE);
+                scheduleClose(1500);
+                return;
             } else if (error == SpeechRecognizer.ERROR_NETWORK
                     || error == SpeechRecognizer.ERROR_NETWORK_TIMEOUT) {
                 setStatus("Speech ke liye internet chahiye. Connection check kijiye.", MODE_IDLE);
@@ -638,8 +764,7 @@ public class JarvisOverlayService extends Service {
             muteBeep(false);
             ArrayList<String> list = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
             if (list == null || list.isEmpty()) {
-                setStatus("Kuch sunai nahi diya. 'Dobara bolein' dabaiye.", MODE_IDLE);
-                scheduleClose(7000);
+                onError(SpeechRecognizer.ERROR_NO_MATCH);
                 return;
             }
             handleCommand(list.get(0));
@@ -663,6 +788,17 @@ public class JarvisOverlayService extends Service {
         final long myGen = ++gen;
         if (heardView != null) {
             heardView.setText("\"" + text + "\"");
+        }
+        idleCount = 0;
+        if (isDismiss(text)) {
+            pendingChoices = null;
+            awaitingName = false;
+            listenAfterSpeech = false;
+            String bye = "Theek hai. Jab zaroorat ho, Jarvis bolkar bula lena.";
+            setStatus(bye, MODE_IDLE);
+            speak(bye);
+            scheduleClose(4500);
+            return;
         }
         if (handleCallFlow(text)) {
             return;
@@ -709,11 +845,44 @@ public class JarvisOverlayService extends Service {
         }).start();
     }
 
+    /** Jawab bolo, phir baatcheet jaari: bolna khatam hote hi dobara sunna. */
     private void reply(String text) {
-        setStatus(text, MODE_IDLE);
-        speak(JarvisBrain.speechText(text));
-        // TTS ready na ho ya bolna shuru na ho to bhi panel kuch der baad band ho jaye
-        scheduleClose(Math.max(9000, text.length() * 90L));
+        replyAndListen(text, JarvisBrain.speechText(text));
+    }
+
+    private boolean isDismiss(String text) {
+        StringBuilder sbw = new StringBuilder(" ");
+        for (String w : JarvisContactMatch.words(text)) {
+            sbw.append(w).append(' ');
+        }
+        String t = sbw.toString();
+        String[] device = {" wifi ", " bluetooth ", " torch ", " flashlight ", " data ", " hotspot ", " volume ",
+                " screen ", " brightness ", " music ", " gaana ", " alarm ", " timer ", " call "};
+        for (String d : device) {
+            if (t.contains(d)) {
+                return false;
+            }
+        }
+        String[] phrases = {" kaam ho gaya ", " kam ho gaya ", " ja sakte ho ", " ja sakta hai ", " tum ja ", " tu ja ",
+                " tum jao ", " ab jao ", " ab tum jao ", " off ho jao ", " off ho ja ", " band ho jao ", " band ho ja ",
+                " bond ho ", " bandh ho ", " ab off ", " tum off ", " tu off ", " jarvis off ", " jarvis band ",
+                " bye ", " bye bye ", " goodbye ", " good bye ", " alvida ", " so jao ", " so ja ", " go to sleep ",
+                " sleep ", " stop listening ", " chup ho ", " chup raho ", " thats all ", " that s all ",
+                " bas itna ", " bas ab ", " go away ", " shut down ", " shutdown ", " tata ", " you can go ",
+                " dismiss ", " exit ", " sunna band ", " sunna band karo "};
+        for (String ph : phrases) {
+            if (t.contains(ph)) {
+                return true;
+            }
+        }
+        String[] thanks = {" thank you ", " thanks ", " dhanyavad ", " shukriya ", " thank u "};
+        int n = JarvisContactMatch.words(text).size();
+        for (String th : thanks) {
+            if (t.contains(th) && n <= 4) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Jawab dikhao + bolo, phir bolna khatam hote hi mic dobara kholo (jawab ka intezaar). */
