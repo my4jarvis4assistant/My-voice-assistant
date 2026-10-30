@@ -1517,9 +1517,10 @@ def build_jarvis_ui(app):
     # 4c) Home screen button + floating panel
     home_card = make_card("Home Screen Jarvis")
     home_card.add_widget(make_label(
-        "Koi bada panel nahi: sirf status bar me chhota safed gola. Jarvis kisi bhi app ya home "
-        "screen par rehkar sunta hai, bolkar jawab deta hai aur kaam karta hai (app nahi khulta).",
-        12, MUTED, height=dp(66), lines=4))
+        "Screen par chhota safed gola (bubble) rehta hai, pakad kar kahin bhi rakhiye. Dhundhla = so "
+        "raha hai. 'Jarvis' bolne ya gole par tap karne se jaagta hai, sunta hai aur kaam karta hai. "
+        "'Jarvis ab tum ja sakte ho' bolne ya dobara tap karne par so jata hai.",
+        12, MUTED, height=dp(84), lines=5))
     PKG_CLASS = "org.myassistant.myvoiceassistant.JarvisTriggerActivity"
 
     def get_activity():
