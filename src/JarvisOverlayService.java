@@ -80,12 +80,15 @@ public class JarvisOverlayService extends Service {
     private boolean alive = true;
     private long gen = 0;          // purane jawab ko radd karne ke liye
 
-    // --- "Jarvis" bolne par jaagna (Picovoice Porcupine, reflection se: build kabhi nahi tootta) ---
-    private Object porcupine = null;
+    // --- "Jarvis" bolne par jaagna (offline Vosk, kisi key ki zaroorat nahi) ---
     private boolean wakeEnabled = false;
     private boolean wakeRunning = false;
     private JarvisVoskWake vosk = null;
-    private boolean useVosk = false;
+
+    // --- naam se call: kai match hon to list dikhakar number se chunna ---
+    private List<JarvisContactMatch.Scored> pendingChoices = null;
+    private boolean awaitingName = false;     // "Kisko call karun?" ke baad agla jawab naam hai
+    private boolean listenAfterSpeech = false; // bolna khatam hote hi dobara sunna
 
     // ----------------------------------------------------------- lifecycle --
     @Override
@@ -164,81 +167,17 @@ public class JarvisOverlayService extends Service {
     }
 
     private void startWake() {
-        if (!wakeEnabled) {
-            return;
-        }
-        if (wakeRunning) {
-            return;
-        }
-        String key = prefs().getString("picovoice_key", "").trim();
-        if (key.length() == 0 || useVosk) {
-            startVosk();           // key nahi: offline Vosk
+        if (!wakeEnabled || wakeRunning) {
             return;
         }
         try {
-            if (porcupine == null) {
-                Class<?> bClass = Class.forName("ai.picovoice.porcupine.PorcupineManager$Builder");
-                Object builder = bClass.getConstructor().newInstance();
-                bClass.getMethod("setAccessKey", String.class).invoke(builder, key);
-                Class<?> kwClass = Class.forName("ai.picovoice.porcupine.Porcupine$BuiltInKeyword");
-                Object jarvis = null;
-                for (Object k : kwClass.getEnumConstants()) {
-                    if ("JARVIS".equals(String.valueOf(k))) {
-                        jarvis = k;
-                    }
-                }
-                if (jarvis == null) {
-                    throw new IllegalStateException("JARVIS keyword is version me nahi hai");
-                }
-                bClass.getMethod("setKeyword", kwClass).invoke(builder, jarvis);
-                try {
-                    bClass.getMethod("setSensitivity", float.class).invoke(builder, 0.7f);
-                } catch (NoSuchMethodException ignored) {
-                }
-                Class<?> cbClass = Class.forName("ai.picovoice.porcupine.PorcupineManagerCallback");
-                Object cb = java.lang.reflect.Proxy.newProxyInstance(cbClass.getClassLoader(),
-                        new Class<?>[]{cbClass}, new java.lang.reflect.InvocationHandler() {
-                            @Override
-                            public Object invoke(Object proxy, java.lang.reflect.Method method,
-                                                 Object[] args) {
-                                String n = method.getName();
-                                if ("invoke".equals(n)) {
-                                    main.post(new Runnable() {
-                                        @Override
-                                        public void run() {
-                                            onWakeWord();
-                                        }
-                                    });
-                                    return null;
-                                }
-                                if ("hashCode".equals(n)) {
-                                    return Integer.valueOf(System.identityHashCode(proxy));
-                                }
-                                if ("equals".equals(n)) {
-                                    return Boolean.valueOf(args != null && args.length > 0 && proxy == args[0]);
-                                }
-                                if ("toString".equals(n)) {
-                                    return "JarvisWakeCallback";
-                                }
-                                return null;
-                            }
-                        });
-                porcupine = bClass.getMethod("build", Context.class, cbClass)
-                        .invoke(builder, getApplicationContext(), cb);
-            }
-            porcupine.getClass().getMethod("start").invoke(porcupine);
-            wakeRunning = true;
-            setWakeStatus("sun raha hai");
-        } catch (Throwable t) {
+            startVosk();
+        } catch (Throwable th) {
             wakeRunning = false;
-            Throwable r = root(t);
+            Throwable r = root(th);
             String msg = r.getClass().getSimpleName() + ": " + r.getMessage();
             setWakeStatus("error: " + msg);
             toastError("Wake word shuru nahi hua: " + msg);
-            if (r instanceof ClassNotFoundException || r instanceof NoClassDefFoundError) {
-                useVosk = true;
-                startVosk();
-            }
         }
     }
 
@@ -276,24 +215,7 @@ public class JarvisOverlayService extends Service {
                 vosk.stop();
             }
         }
-        if (porcupine == null) {
-            wakeRunning = false;
-            return;
-        }
-        try {
-            if (wakeRunning) {
-                porcupine.getClass().getMethod("stop").invoke(porcupine);
-            }
-        } catch (Throwable ignored) {
-        }
         wakeRunning = false;
-        if (delete) {
-            try {
-                porcupine.getClass().getMethod("delete").invoke(porcupine);
-            } catch (Throwable ignored) {
-            }
-            porcupine = null;
-        }
     }
 
     private void onWakeWord() {
@@ -468,7 +390,7 @@ public class JarvisOverlayService extends Service {
         statusView.setText("Listening...");
         ScrollView sv = new ScrollView(this);
         sv.addView(statusView);
-        panel.addView(sv, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(110)));
+        panel.addView(sv, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(150)));
 
         heardView = new TextView(this);
         heardView.setTextColor(Color.parseColor("#7F979B"));
@@ -580,7 +502,12 @@ public class JarvisOverlayService extends Service {
                             main.post(new Runnable() {
                                 @Override
                                 public void run() {
-                                    scheduleClose(5000);
+                                    if (listenAfterSpeech && alive) {
+                                        listenAfterSpeech = false;
+                                        startListening();
+                                    } else {
+                                        scheduleClose(5000);
+                                    }
                                 }
                             });
                         }
@@ -788,6 +715,9 @@ public class JarvisOverlayService extends Service {
         if (heardView != null) {
             heardView.setText("\"" + text + "\"");
         }
+        if (handleCallFlow(text)) {
+            return;
+        }
         String quick = JarvisBrain.creatorReply(text);
         if (quick != null) {
             reply(quick);
@@ -814,7 +744,10 @@ public class JarvisOverlayService extends Service {
                         if (r.error != null) {
                             reply(r.error);
                         } else if (r.function != null) {
-                            reply(runFunction(r.function, r.args));
+                            String out = runFunction(r.function, r.args);
+                            if (out != null) {
+                                reply(out);
+                            }
                         } else {
                             reply(r.reply);
                         }
@@ -834,6 +767,24 @@ public class JarvisOverlayService extends Service {
         scheduleClose(Math.max(9000, text.length() * 90L));
     }
 
+    /** Jawab dikhao + bolo, phir bolna khatam hote hi mic dobara kholo (jawab ka intezaar). */
+    private void replyAndListen(String shown, String spoken) {
+        cancelClose();
+        setStatus(shown, MODE_IDLE);
+        listenAfterSpeech = true;
+        speak(spoken);
+        // TTS na chale to bhi 20 second baad mic khul jaye
+        main.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                if (listenAfterSpeech && alive && !speaking) {
+                    listenAfterSpeech = false;
+                    startListening();
+                }
+            }
+        }, Math.max(6000L, spoken.length() * 110L));
+    }
+
     // -------------------------------------------------------------- actions --
     private String runFunction(String name, JSONObject a) {
         try {
@@ -844,7 +795,8 @@ public class JarvisOverlayService extends Service {
             } else if ("open_app".equals(name)) {
                 return openApp(a.optString("app_name", ""));
             } else if ("call_contact".equals(name)) {
-                return callContact(a.optString("name", ""));
+                callByName(a.optString("name", ""));
+                return null;
             } else if ("flashlight".equals(name)) {
                 return flashlight(a.optBoolean("on", true));
             } else if ("web_search".equals(name)) {
@@ -864,28 +816,21 @@ public class JarvisOverlayService extends Service {
         if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
             return "Alarm ka samay samajh nahi aaya. Dobara boliye.";
         }
+        try {
+            // phone ki asli Clock app se: ye hamesha bajta hai (AlarmManager receiver MIUI par chup rehta tha)
+            Intent i = new Intent(android.provider.AlarmClock.ACTION_SET_ALARM);
+            i.putExtra(android.provider.AlarmClock.EXTRA_HOUR, hour);
+            i.putExtra(android.provider.AlarmClock.EXTRA_MINUTES, minute);
+            i.putExtra(android.provider.AlarmClock.EXTRA_MESSAGE, "JARVIS");
+            i.putExtra(android.provider.AlarmClock.EXTRA_SKIP_UI, true);
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(i);
+        } catch (Exception e) {
+            return "Alarm set nahi ho paya: " + e.getMessage();
+        }
         Calendar cal = Calendar.getInstance();
         cal.set(Calendar.HOUR_OF_DAY, hour);
         cal.set(Calendar.MINUTE, minute);
-        cal.set(Calendar.SECOND, 0);
-        cal.set(Calendar.MILLISECOND, 0);
-        if (cal.getTimeInMillis() <= System.currentTimeMillis()) {
-            cal.add(Calendar.DAY_OF_YEAR, 1);
-        }
-        AlarmManager am = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
-        Intent i = new Intent(this, JarvisAlarmReceiver.class);
-        i.putExtra("jarvis_type", "alarm");
-        i.putExtra("jarvis_message", "JARVIS alarm");
-        int f = PendingIntent.FLAG_UPDATE_CURRENT;
-        if (Build.VERSION.SDK_INT >= 23) {
-            f |= PendingIntent.FLAG_IMMUTABLE;
-        }
-        PendingIntent pi = PendingIntent.getBroadcast(this, 9001, i, f);
-        if (Build.VERSION.SDK_INT >= 23) {
-            am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, cal.getTimeInMillis(), pi);
-        } else {
-            am.setExact(AlarmManager.RTC_WAKEUP, cal.getTimeInMillis(), pi);
-        }
         String shown = new java.text.SimpleDateFormat("hh:mm a", Locale.ENGLISH).format(cal.getTime());
         return "Alarm " + shown + " ke liye set ho gaya.";
     }
@@ -894,20 +839,15 @@ public class JarvisOverlayService extends Service {
         if (seconds <= 0 || seconds > 86400) {
             return "Timer ka samay samajh nahi aaya. Dobara boliye.";
         }
-        AlarmManager am = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
-        Intent i = new Intent(this, JarvisAlarmReceiver.class);
-        i.putExtra("jarvis_type", "timer");
-        i.putExtra("jarvis_message", "JARVIS timer complete");
-        int f = PendingIntent.FLAG_UPDATE_CURRENT;
-        if (Build.VERSION.SDK_INT >= 23) {
-            f |= PendingIntent.FLAG_IMMUTABLE;
-        }
-        PendingIntent pi = PendingIntent.getBroadcast(this, 9002, i, f);
-        long at = SystemClock.elapsedRealtime() + seconds * 1000L;
-        if (Build.VERSION.SDK_INT >= 23) {
-            am.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, pi);
-        } else {
-            am.setExact(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, pi);
+        try {
+            Intent i = new Intent(android.provider.AlarmClock.ACTION_SET_TIMER);
+            i.putExtra(android.provider.AlarmClock.EXTRA_LENGTH, seconds);
+            i.putExtra(android.provider.AlarmClock.EXTRA_MESSAGE, "JARVIS");
+            i.putExtra(android.provider.AlarmClock.EXTRA_SKIP_UI, true);
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(i);
+        } catch (Exception e) {
+            return "Timer start nahi ho paya: " + e.getMessage();
         }
         String shown = seconds >= 60 ? (seconds / 60) + " minute" + (seconds % 60 > 0 ? " " + (seconds % 60)
                 + " second" : "") : seconds + " second";
@@ -957,17 +897,51 @@ public class JarvisOverlayService extends Service {
                 || checkSelfPermission(perm) == PackageManager.PERMISSION_GRANTED;
     }
 
-    private String callContact(String wanted) {
-        String w = wanted.toLowerCase(Locale.ENGLISH).trim();
-        if (w.length() == 0) {
-            return "Kisko call karna hai?";
+    // ------------------------------------------------------------- calling --
+    /** Call se judi baat ho to yahin sambhal lo (true = ho gaya). Gemini ki zaroorat nahi. */
+    private boolean handleCallFlow(String text) {
+        if (pendingChoices != null) {
+            int pick = JarvisContactMatch.parseChoice(text, pendingChoices.size());
+            if (pick > 0) {
+                JarvisContactMatch.Scored s = pendingChoices.get(pick - 1);
+                pendingChoices = null;
+                reply(dial(s.contact));
+                return true;
+            }
+            if (pick < 0) {
+                pendingChoices = null;
+                reply("Theek hai, call nahi kar raha.");
+                return true;
+            }
+            String again = JarvisContactMatch.parseCallRequest(text);
+            if (again == null || again.length() == 0) {
+                replyAndListen(choicesText(pendingChoices),
+                        "Samajh nahi aaya. Number boliye, jaise do.");
+                return true;
+            }
+            pendingChoices = null;       // naya naam bola: usse dhoondo
         }
-        if (!granted("android.permission.READ_CONTACTS")) {
-            return "Contacts ki permission nahi hai. Jarvis app ki Settings me 'Calling permission allow karo' dabaiye.";
+        if (awaitingName) {
+            awaitingName = false;
+            String nm = JarvisContactMatch.parseCallRequest("call " + text);
+            callByName(nm == null || nm.length() == 0 ? text : nm);
+            return true;
         }
-        String bestName = null;
-        String bestNumber = null;
-        int bestScore = 0;
+        String name = JarvisContactMatch.parseCallRequest(text);
+        if (name == null) {
+            return false;
+        }
+        if (name.length() == 0) {
+            awaitingName = true;
+            replyAndListen("Kisko call karun?", "Kisko call karun?");
+            return true;
+        }
+        callByName(name);
+        return true;
+    }
+
+    private List<JarvisContactMatch.Contact> loadContacts() {
+        List<JarvisContactMatch.Contact> out = new ArrayList<JarvisContactMatch.Contact>();
         android.database.Cursor c = null;
         try {
             c = getContentResolver().query(
@@ -978,33 +952,8 @@ public class JarvisOverlayService extends Service {
             while (c != null && c.moveToNext()) {
                 String n = c.getString(0);
                 String num = c.getString(1);
-                if (n == null || num == null) {
-                    continue;
-                }
-                String low = n.toLowerCase(Locale.ENGLISH);
-                int score = 0;
-                if (low.equals(w)) {
-                    score = 4;
-                } else if (low.startsWith(w)) {
-                    score = 3;
-                } else if (low.contains(w)) {
-                    score = 2;
-                } else {
-                    String[] parts = w.split("\\s+");
-                    boolean all = parts.length > 0;
-                    for (String part : parts) {
-                        if (part.length() == 0 || !low.contains(part)) {
-                            all = false;
-                        }
-                    }
-                    if (all) {
-                        score = 1;
-                    }
-                }
-                if (score > bestScore) {
-                    bestScore = score;
-                    bestName = n;
-                    bestNumber = num;
+                if (n != null && num != null) {
+                    out.add(new JarvisContactMatch.Contact(n, num));
                 }
             }
         } finally {
@@ -1012,16 +961,80 @@ public class JarvisOverlayService extends Service {
                 c.close();
             }
         }
-        if (bestNumber == null) {
-            return wanted + " naam ka contact nahi mila.";
+        return out;
+    }
+
+    private String choicesText(List<JarvisContactMatch.Scored> list) {
+        StringBuilder sb = new StringBuilder("Ye contacts mile. Bolkar chuniye (jaise \"2 ko call karo\"):\n");
+        for (int i = 0; i < list.size(); i++) {
+            JarvisContactMatch.Contact c = list.get(i).contact;
+            sb.append("\n").append(i + 1).append(".  ").append(c.name).append("\n     ").append(c.number);
         }
-        String clean = bestNumber.replaceAll("[^0-9+]", "");
-        boolean direct = granted("android.permission.CALL_PHONE");
-        Intent i = new Intent(direct ? Intent.ACTION_CALL : Intent.ACTION_DIAL,
-                Uri.parse("tel:" + clean));
-        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        startActivity(i);
-        return direct ? bestName + " ko call kar raha hoon." : bestName + " ka number dialer me khol diya.";
+        return sb.toString();
+    }
+
+    private String choicesSpeech(List<JarvisContactMatch.Scored> list) {
+        StringBuilder sb = new StringBuilder("Mujhe " + list.size() + " contacts mile. ");
+        for (int i = 0; i < list.size(); i++) {
+            JarvisContactMatch.Contact c = list.get(i).contact;
+            String d = JarvisContactMatch.digits(c.number);
+            boolean sameName = false;
+            for (int j = 0; j < list.size(); j++) {
+                if (j != i && JarvisContactMatch.speakable(list.get(j).contact.name)
+                        .equalsIgnoreCase(JarvisContactMatch.speakable(c.name))) {
+                    sameName = true;
+                }
+            }
+            sb.append("Number ").append(i + 1).append(", ").append(JarvisContactMatch.speakable(c.name));
+            if (sameName && d.length() >= 4) {
+                sb.append(", number ").append(d.substring(d.length() - 4).replaceAll("(.)", "$1 ")).append("par khatam");
+            }
+            sb.append(". ");
+        }
+        sb.append("Kaun sa call karun?");
+        return sb.toString();
+    }
+
+    private void callByName(String wanted) {
+        String w = wanted == null ? "" : wanted.trim();
+        if (w.length() == 0) {
+            awaitingName = true;
+            replyAndListen("Kisko call karun?", "Kisko call karun?");
+            return;
+        }
+        if (!granted("android.permission.READ_CONTACTS")) {
+            reply("Contacts ki permission nahi hai. Jarvis app ki Settings me 'Calling permission allow karo' dabaiye.");
+            return;
+        }
+        List<JarvisContactMatch.Scored> found;
+        try {
+            found = JarvisContactMatch.find(w, loadContacts(), 4);
+        } catch (Exception e) {
+            reply("Contacts padh nahi paya: " + e.getMessage());
+            return;
+        }
+        if (found.isEmpty()) {
+            reply(w + " naam ka contact nahi mila.");
+        } else if (found.size() == 1) {
+            reply(dial(found.get(0).contact));
+        } else {
+            pendingChoices = found;
+            replyAndListen(choicesText(found), choicesSpeech(found));
+        }
+    }
+
+    private String dial(JarvisContactMatch.Contact c) {
+        String clean = c.number.replaceAll("[^0-9+]", "");
+        String say = JarvisContactMatch.speakable(c.name);
+        try {
+            boolean direct = granted("android.permission.CALL_PHONE");
+            Intent i = new Intent(direct ? Intent.ACTION_CALL : Intent.ACTION_DIAL, Uri.parse("tel:" + clean));
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(i);
+            return direct ? say + " ko call kar raha hoon." : say + " ka number dialer me khol diya.";
+        } catch (Exception e) {
+            return "Call nahi lag paya: " + e.getMessage();
+        }
     }
 
     private String flashlight(boolean on) {
