@@ -1,4 +1,4 @@
-"""JARVIS v0.63 - professional UI module (main.py ke saath kaam karta hai).
+"""JARVIS v0.64 - professional UI module (main.py ke saath kaam karta hai).
 
 main.py ko sirf yahi chahiye:
     from jarvis_ui import build_jarvis_ui
@@ -170,6 +170,13 @@ def glow_pixel(u, v):
     return 0.18, 0.85, 0.90, a
 
 
+def blob_pixel(u, v):
+    """Naram gol dhabba (beech me saaf, kinaare par gayab) - Safe orb ke behte baadal."""
+    d = min(1.0, math.hypot((u - 0.5) * 2, (v - 0.5) * 2))
+    a = (1 - d * d) ** 1.6
+    return 1.0, 1.0, 1.0, a
+
+
 def bg_pixel(u, v):
     return (BG_BOTTOM[0] + (BG_TOP[0] - BG_BOTTOM[0]) * v,
             BG_BOTTOM[1] + (BG_TOP[1] - BG_BOTTOM[1]) * v,
@@ -187,6 +194,8 @@ def get_texture(name):
             _TEX[name] = _make_texture(128, 128, make_cloud_pixel_fn(), periodic=True)
         elif name == "glow":
             _TEX[name] = _make_texture(64, 64, glow_pixel)
+        elif name == "blob":
+            _TEX[name] = _make_texture(64, 64, blob_pixel)
         else:
             _TEX[name] = _make_texture(2, 64, bg_pixel)
     return _TEX[name]
@@ -400,7 +409,7 @@ class TextureOrb(ButtonBehavior, Widget):
         self._ticks = 0
         self._t = 0.0
         self._lvl = 0.0          # 0 = shaant, 1 = poori halchal
-        self._flow = 0.012       # baadal ki raftaar
+        self._flow = 0.045       # baadal ki raftaar
         self._u1 = 0.0
         self._u2 = 0.0
         sky, cloud = get_texture("sky"), get_texture("cloud")
@@ -422,6 +431,12 @@ class TextureOrb(ButtonBehavior, Widget):
         self.bind(pos=self._tick, size=self._tick)
         self._ev = Clock.schedule_interval(self._tick, 1 / 30.0)
 
+    def stop(self):
+        try:
+            self._ev.cancel()
+        except Exception:
+            pass
+
     def _tick(self, dt=0, *_):
         if not isinstance(dt, (int, float)):
             dt = 0                      # pos/size change se bula: sirf layout update
@@ -436,12 +451,12 @@ class TextureOrb(ButtonBehavior, Widget):
         if self.speaking:
             target = 0.55 + 0.45 * (0.6 * abs(math.sin(t * 5.1))
                                     + 0.4 * abs(math.sin(t * 2.3 + 1.0)))
-            flow_t = 0.075
+            flow_t = 0.20
         elif self.mode in ("listening", "thinking"):
             target = 0.30 + 0.20 * math.sin(t * (4.2 if self.mode == "thinking" else 2.2))
-            flow_t = 0.035
+            flow_t = 0.11
         else:
-            target, flow_t = 0.0, 0.012
+            target, flow_t = 0.0, 0.045
         self._lvl += (target - self._lvl) * min(1.0, dt * 8.0)
         self._flow += (flow_t - self._flow) * min(1.0, dt * 3.0)
         self._u1 = (self._u1 + dt * self._flow) % 1.0
@@ -604,6 +619,12 @@ class ShaderOrb(ButtonBehavior, Widget):
         self.bind(pos=self._tick, size=self._tick)
         self._ev = Clock.schedule_interval(self._tick, 1 / 30.0)
 
+    def stop(self):
+        try:
+            self._ev.cancel()
+        except Exception:
+            pass
+
     def _tick(self, dt=0, *_):
         if not isinstance(dt, (int, float)):
             dt = 0                      # pos/size change se bula: sirf layout update
@@ -621,7 +642,7 @@ class ShaderOrb(ButtonBehavior, Widget):
         else:
             target = 0.0
         e = self._e = self._e + (target - self._e) * min(1.0, dt * 3.0)
-        self._time += dt * (0.55 + 0.9 * e)
+        self._time += dt * (1.6 + 2.2 * e)      # idle me bhi baadal saaf behte dikhen
 
         breath = (math.sin(t * (1.2 + 1.4 * e)) * (0.010 + 0.030 * e)
                   + math.sin(t * 2.7 + 1.0) * 0.008 * e)
@@ -638,7 +659,16 @@ class ShaderOrb(ButtonBehavior, Widget):
 
 
 class SimpleOrb(ButtonBehavior, Widget):
-    """Sabse safe orb: sirf Ellipse + gradient texture (koi shader/stencil nahi)."""
+    """SAFE orb: sirf Ellipse/Rectangle + chhoti textures (koi shader ya stencil nahi).
+    Aasmaani disc ke andar naram safed/neele dhabbe (blobs) lagatar behte rehte hain."""
+
+    # (x-raftaar, y-raftaar, x-phase, y-phase, x-failaav, y-failaav, y-jagah, size, alpha) (d ke hisaab se)
+    LIGHT = ((0.55, 0.41, 0.0, 1.3, 0.16, 0.05, -0.02, 0.62, 0.60),
+             (0.37, 0.63, 2.1, 0.4, 0.15, 0.06, 0.08, 0.52, 0.55),
+             (0.71, 0.29, 4.0, 2.2, 0.14, 0.07, -0.12, 0.46, 0.50),
+             (0.47, 0.52, 1.1, 3.1, 0.17, 0.05, 0.15, 0.40, 0.45))
+    DARK = ((0.43, 0.33, 0.5, 2.0, 0.12, 0.05, 0.20, 0.34, 0.40),
+            (0.61, 0.47, 3.3, 0.9, 0.12, 0.05, 0.14, 0.32, 0.35))
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -647,18 +677,28 @@ class SimpleOrb(ButtonBehavior, Widget):
         self.paused = False
         self._ticks = 0
         self._t = 0.0
+        self._tt = 0.0
         self._lvl = 0.0
+        blob = get_texture("blob")
+        self._blobs = []
         with self.canvas:
             self._glow_c = Color(1, 1, 1, ORB_GLOW)
             self._glow = Rectangle(texture=get_texture("glow"))
             Color(1, 1, 1, 1)
             self._disc = Ellipse(texture=get_texture("sky"), segments=64)
-            self._w1_c = Color(0.97, 0.985, 1.0, 0.30)
-            self._w1 = Ellipse(segments=48)
-            self._w2_c = Color(0.97, 0.985, 1.0, 0.22)
-            self._w2 = Ellipse(segments=48)
+            for spec, rgb in [(b, (0.28, 0.47, 0.91)) for b in self.DARK] + \
+                             [(b, (0.97, 0.985, 1.0)) for b in self.LIGHT]:
+                col = Color(rgb[0], rgb[1], rgb[2], spec[8])
+                rect = Rectangle(texture=blob)
+                self._blobs.append((spec, col, rect))
         self.bind(pos=self._tick, size=self._tick)
         self._ev = Clock.schedule_interval(self._tick, 1 / 30.0)
+
+    def stop(self):
+        try:
+            self._ev.cancel()
+        except Exception:
+            pass
 
     def _tick(self, dt=0, *_):
         if not isinstance(dt, (int, float)):
@@ -676,21 +716,103 @@ class SimpleOrb(ButtonBehavior, Widget):
         else:
             target = 0.0
         self._lvl += (target - self._lvl) * min(1.0, dt * 6.0)
+        self._tt += dt * (0.9 + 2.4 * self._lvl)          # shaant me bhi dhabbe behte dikhen
+        tt = self._tt
         cx, cy = self.center
         base = min(self.width * 0.60, self.height * 0.80)
-        d = base * (1 + 0.020 * math.sin(t * 1.4) + 0.07 * self._lvl)
+        d = base * (1 + 0.025 * math.sin(t * 1.4) + 0.08 * self._lvl)
         g = d * (1.45 + 0.2 * self._lvl)
         self._glow.size = (g, g)
         self._glow.pos = (cx - g / 2, cy - g / 2)
         self._glow_c.a = ORB_GLOW * (0.75 + 0.25 * self._lvl)
         self._disc.size = (d, d)
         self._disc.pos = (cx - d / 2, cy - d / 2)
-        w1 = (d * 0.70, d * 0.10)
-        self._w1.size = w1
-        self._w1.pos = (cx - w1[0] / 2 + math.sin(t * 0.6) * d * 0.07, cy - d * 0.05 - w1[1] / 2)
-        w2 = (d * 0.55, d * 0.08)
-        self._w2.size = w2
-        self._w2.pos = (cx - w2[0] / 2 + math.sin(t * 0.45 + 2.0) * d * 0.08, cy + d * 0.03 - w2[1] / 2)
+        grow = 1.0 + 0.10 * self._lvl
+        for (fx, fy, px, py, ax, ay, by, size, alpha), col, rect in self._blobs:
+            bx = cx + math.sin(tt * fx + px) * ax * d * (1 + 0.5 * self._lvl)
+            byy = cy + (by + math.sin(tt * fy + py) * ay) * d
+            sz = size * d * grow * (1 + 0.06 * math.sin(tt * 1.3 + px))
+            rect.size = (sz, sz)
+            rect.pos = (bx - sz / 2, byy - sz / 2)
+            col.a = alpha * (0.85 + 0.15 * math.sin(tt * 0.9 + py))
+
+
+class OrbHost(FloatLayout):
+    """Orb ka dibba: Settings me Advanced/Safe badalte hi bina app band kiye orb badal jata hai.
+    main.py/jarvis_ui ke baaki hisse isse seedha orb ki tarah use karte hain (mode, speaking, paused)."""
+    __events__ = ("on_release",)
+
+    def __init__(self, level=0, **kwargs):
+        super().__init__(**kwargs)
+        self.orb = None
+        self.engine = ""
+        self.level = level
+        self._mode = "idle"
+        self._speaking = False
+        self._paused = False
+        self.set_level(level)
+
+    def on_release(self, *args):
+        pass
+
+    @property
+    def mode(self):
+        return self._mode
+
+    @mode.setter
+    def mode(self, value):
+        self._mode = value
+        if self.orb is not None:
+            self.orb.mode = value
+
+    @property
+    def speaking(self):
+        return self._speaking
+
+    @speaking.setter
+    def speaking(self, value):
+        self._speaking = bool(value)
+        if self.orb is not None:
+            self.orb.speaking = self._speaking
+
+    @property
+    def paused(self):
+        return self._paused
+
+    @paused.setter
+    def paused(self, value):
+        self._paused = bool(value)
+        if self.orb is not None:
+            self.orb.paused = self._paused
+
+    @property
+    def _ticks(self):
+        return getattr(self.orb, "_ticks", 0) if self.orb is not None else 0
+
+    def set_level(self, level):
+        """level 0 = Advanced (GPU), 2 = Safe. Asli chalne wale orb ka naam lautata hai."""
+        old = self.orb
+        if old is not None:
+            try:
+                old.stop()
+                self.remove_widget(old)
+            except Exception as exc:
+                print("JARVIS orb remove error:", exc)
+        orb = make_orb(level, size_hint=(1, 1), pos_hint={"x": 0, "y": 0})
+        orb.mode = self._mode
+        orb.speaking = self._speaking
+        orb.paused = self._paused
+        orb.bind(on_release=lambda *a: self.dispatch("on_release"))
+        self.add_widget(orb)
+        self.orb = orb
+        self.level = level
+        if isinstance(orb, ShaderOrb):
+            self.engine = "Advanced (GPU shader)"
+        elif isinstance(orb, TextureOrb):
+            self.engine = "Texture (GPU shader is phone par nahi chala)"
+        else:
+            self.engine = "Safe"
+        return self.engine
 
 
 def make_orb(level=0, **kwargs):
@@ -952,7 +1074,6 @@ def _sync_prefs(app):
         ed.putString("ai_model", str(getattr(app, "ai_model", "") or ""))
         ed.putString("verbosity", str(getattr(app, "verbosity", "Balanced")))
         ed.putBoolean("ai_enabled", bool(getattr(app, "ai_enabled", True)))
-        ed.putString("picovoice_key", str(getattr(app, "picovoice_key", "") or ""))
         ed.putBoolean("wake_enabled", bool(getattr(app, "wake_enabled", False)))
         pitch, rate = VOICES.get(getattr(app, "selected_voice", "Male Alpha"), (1.0, 1.0))
         ed.putFloat("pitch", float(pitch))
@@ -977,7 +1098,6 @@ def _save_state(app):
                 "gemini_key": getattr(app, "gemini_key", ""),
                 "ai_enabled": getattr(app, "ai_enabled", True),
                 "ai_model": getattr(app, "ai_model", ""),
-                "picovoice_key": getattr(app, "picovoice_key", ""),
                 "wake_enabled": getattr(app, "wake_enabled", False),
             }, fh, ensure_ascii=False)
     except Exception as exc:
@@ -986,6 +1106,7 @@ def _save_state(app):
 
 # ================================================================ BUILD UI ===
 TALK_ACTION = "org.myassistant.TALK"
+UI_VERSION = "0.64"
 
 
 def build_jarvis_ui(app):
@@ -1011,7 +1132,6 @@ def build_jarvis_ui(app):
     app.gemini_key = str(state.get("gemini_key", "") or "").strip()
     app.ai_enabled = bool(state.get("ai_enabled", True))
     app.ai_model = str(state.get("ai_model", "") or "")
-    app.picovoice_key = str(state.get("picovoice_key", "") or "").strip()
     app.wake_enabled = bool(state.get("wake_enabled", False))
     try:
         import ai_brain
@@ -1071,8 +1191,8 @@ def build_jarvis_ui(app):
     header.add_widget(gear_btn)
     home.add_widget(header)
 
-    orb = make_orb(orb_level, size_hint=(1, 0.44),
-                   pos_hint={"center_x": 0.5, "center_y": 0.60})
+    orb = OrbHost(orb_level, size_hint=(1, 0.44),
+                  pos_hint={"center_x": 0.5, "center_y": 0.60})
     home.add_widget(orb)
 
     # Agar UI me koi galti aaye to app band nahi hoga, yahan chhoti laal line dikhegi.
@@ -1417,6 +1537,10 @@ def build_jarvis_ui(app):
         return intent
 
     def add_home_shortcut(*_):
+        if not parts_ok("JarvisTriggerActivity"):
+            refresh_parts()
+            toast("Panel is APK me nahi hai, isliye button kaam nahi karta. Pehle rebuild kijiye")
+            return
         step = "start"
         try:
             from jnius import autoclass, cast
@@ -1480,22 +1604,83 @@ def build_jarvis_ui(app):
             print("Overlay permission error:", exc)
             toast("Settings > Apps > Jarvis > Display over other apps chalu kijiye")
 
+    PKG_PREFIX = "org.myassistant.myvoiceassistant."
+    PARTS = (("Panel (Trigger)", "JarvisTriggerActivity", "activity"),
+             ("Sunne wali service", "JarvisOverlayService", "service"),
+             ("Quick tile", "JarvisTileService", "service"),
+             ("Alarm receiver", "JarvisAlarmReceiver", "receiver"))
+
+    def check_parts():
+        """Installed APK me Jarvis ke Java hisse (manifest me) hain ya nahi: [(naam, hai?)]."""
+        out = []
+        try:
+            from jnius import autoclass
+            ComponentName = autoclass("android.content.ComponentName")
+            act = get_activity()
+            pm = act.getPackageManager()
+            pkg = act.getPackageName()
+            for label, cls, kind in PARTS:
+                ok = True
+                try:
+                    cn = ComponentName(pkg, PKG_PREFIX + cls)
+                    if kind == "activity":
+                        pm.getActivityInfo(cn, 0)
+                    elif kind == "service":
+                        pm.getServiceInfo(cn, 0)
+                    else:
+                        pm.getReceiverInfo(cn, 0)
+                except Exception:
+                    ok = False
+                out.append((label, ok))
+        except Exception as exc:
+            print("Parts check error:", exc)
+        return out
+
+    def parts_text():
+        res = check_parts()
+        if not res:
+            return "UI v" + UI_VERSION + "  (parts check nahi ho paya)"
+        lines = ["UI v" + UI_VERSION + "  |  APK ke hisse:"]
+        missing = [lbl for lbl, ok in res if not ok]
+        for lbl, ok in res:
+            lines.append(("  OK   " if ok else "  NAHI ") + lbl)
+        if missing:
+            lines.append("-> Ye APK me juda hi nahi. p4a_hook.py repo me daal kar naya build kijiye.")
+        return "\n".join(lines)
+
+    def refresh_parts(*_):
+        try:
+            parts_label.text = parts_text()
+        except Exception as exc:
+            print("refresh_parts error:", exc)
+
+    def parts_ok(cls):
+        for (lbl, c, k), (_l, ok) in zip(PARTS, check_parts()):
+            if c == cls:
+                return ok
+        return True
+
     def test_panel(*_):
+        refresh_parts()
+        if not parts_ok("JarvisTriggerActivity"):
+            toast("Panel is APK me nahi hai. Neeche list dekhiye, p4a_hook.py jodkar rebuild kijiye")
+            return
         try:
             get_activity().startActivity(trigger_intent())
         except Exception as exc:
             print("Panel test error:", exc)
-            if "ActivityNotFound" in str(exc) or "No Activity found" in str(exc):
-                toast("JarvisTriggerActivity manifest me nahi juda. manifest_additions.xml jodiye")
-            else:
-                toast("Panel nahi khul paya: " + str(exc)[:70])
+            toast("Panel nahi khul paya: " + str(exc)[:70])
 
     for label, fn in [("1. Display over other apps allow karo", allow_overlay),
                       ("2. Home screen par button lagao", add_home_shortcut),
-                      ("Panel abhi test karo", test_panel)]:
+                      ("Panel abhi test karo", test_panel),
+                      ("APK ke hisse dobara check karo", refresh_parts)]:
         row = ActionRow(label)
         row.bind(on_release=lambda w, f=fn: f())
         home_card.add_widget(row)
+    parts_label = make_label("", 12, MUTED, height=dp(128), lines=7)
+    home_card.add_widget(parts_label)
+    Clock.schedule_once(refresh_parts, 1.0)
     content.add_widget(home_card)
 
     # 4d) "Jarvis" bolkar kahin se bhi jagana
@@ -1512,7 +1697,7 @@ def build_jarvis_ui(app):
 
     def refresh_wake_info(*_):
         st = read_wake_status()
-        engine = "Picovoice" if app.picovoice_key else "offline (Vosk)"
+        engine = "offline"
         if app.wake_enabled:
             waited = Clock.get_time() - wake_poll["since"] if wake_poll["since"] else 0
             if not st and waited > 6:
@@ -1521,21 +1706,8 @@ def build_jarvis_ui(app):
             wake_info.text = "Chalu [" + engine + "]: " + (st or "shuru ho raha hai...") + \
                 "\nBolo: 'Jarvis' ya 'Hey Jarvis'"
         else:
-            wake_info.text = ("Band hai. On karne par Jarvis 'Jarvis' bolne ka intezaar karega. "
-                              "Key na ho to bhi chalega (pehli baar ~40 MB model download hoga).")
-
-    wake_key_row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(44),
-                             spacing=dp(10))
-    wake_key_wrap = PlateBox(fill=INPUT, edge=EDGE, radius=dp(12), orientation="horizontal",
-                             padding=[dp(10), 0, dp(10), 0])
-    wake_key_input = style_input(TextInput(text="", hint_text="Picovoice key (optional, na ho to khali)",
-                                           font_size=sp(14), password=True))
-    wake_key_wrap.add_widget(wake_key_input)
-    wake_key_row.add_widget(wake_key_wrap)
-    wake_key_btn = PillButton(text="Save", size_hint=(None, None), width=dp(72), height=dp(36),
-                              pos_hint={"center_y": 0.5})
-    wake_key_row.add_widget(wake_key_btn)
-    wake_ai_card.add_widget(wake_key_row)
+            wake_info.text = ("Band hai. On karne par Jarvis 'Jarvis' bolne ka intezaar karega "
+                              "(offline, kisi key ki zaroorat nahi). Pehli baar ~40 MB model download hoga.")
 
     wake_poll = {"ev": None, "since": 0}
 
@@ -1592,17 +1764,6 @@ def build_jarvis_ui(app):
 
         wake_poll["ev"] = Clock.schedule_interval(tick, 2.0)
 
-    def save_wake_key(*_):
-        app.picovoice_key = wake_key_input.text.strip() or app.picovoice_key
-        if wake_key_input.text.strip():
-            wake_key_input.text = ""
-            wake_key_input.focus = False
-        _save_state(app)
-        refresh_wake_info()
-        toast("Picovoice key save ho gayi")
-
-    wake_key_btn.bind(on_release=save_wake_key)
-
     def on_wake_toggle(value):
         app.wake_enabled = (value == "On")
         _save_state(app)
@@ -1610,16 +1771,6 @@ def build_jarvis_ui(app):
 
     wake_ai_card.add_widget(Segmented(["On", "Off"], "On" if app.wake_enabled else "Off",
                                       on_wake_toggle))
-
-    def open_picovoice(*_):
-        try:
-            from jnius import autoclass
-            Intent = autoclass("android.content.Intent")
-            Uri = autoclass("android.net.Uri")
-            app.open_intent(Intent(Intent.ACTION_VIEW, Uri.parse("https://console.picovoice.ai/")))
-        except Exception as exc:
-            print("Picovoice page error:", exc)
-            toast("Browser me console.picovoice.ai kholiye")
 
     def open_battery(*_):
         try:
@@ -1645,7 +1796,6 @@ def build_jarvis_ui(app):
             toast("Phone Settings > Apps > Jarvis > Permissions me Contacts aur Phone allow kijiye")
 
     for label, fn in [("Calling permission allow karo (Contacts + Phone)", allow_calling),
-                      ("Free Picovoice key banaiye", open_picovoice),
                       ("Battery / Autostart settings", open_battery)]:
         row = ActionRow(label)
         row.bind(on_release=lambda w, f=fn: f())
@@ -1695,14 +1845,36 @@ def build_jarvis_ui(app):
     # 6b) Orb animation
     orb_card = make_card("Orb Animation")
 
-    def on_orb_style(value):
-        set_orb_level(app, 0 if value == "Advanced" else 1)
-        toast("App band karke dobara kholiye")
+    orb_preview = OrbHost(orb_level, size_hint=(1, None), height=dp(150))
+    orb_preview.mode = "listening"
+    orb_preview.paused = True
+    orb_info = make_label("", 11, MUTED, height=dp(34), lines=2)
 
+    def show_orb_info():
+        orb_info.text = ("Abhi chal raha hai: " + orb.engine +
+                         "\nAdvanced = behte baadal (GPU). Safe = sabse halka, kabhi nahi atkta.")
+
+    def on_orb_style(value):
+        level = 0 if value == "Advanced" else 2
+        set_orb_level(app, level)
+        try:
+            orb.set_level(level)                 # bina app band kiye turant badlo
+            orb_preview.set_level(level)
+        except Exception as exc:
+            print("Orb switch error:", exc)
+            toast("Orb badalne me galti: " + str(exc)[:50])
+            return
+        show_orb_info()
+        if level == 0 and not isinstance(orb.orb, ShaderOrb):
+            toast("Is phone ka GPU Advanced nahi chala paya, Texture orb chal raha hai")
+        else:
+            toast(("Advanced" if level == 0 else "Safe") + " orb chalu")
+
+    orb_card.add_widget(orb_preview)
     orb_card.add_widget(Segmented(["Advanced", "Safe"],
                                   "Advanced" if orb_level == 0 else "Safe", on_orb_style))
-    orb_card.add_widget(make_label("Advanced = behte baadal (GPU). Agar app atke ya band ho "
-                                   "to Safe chuniye.", 11, MUTED, height=dp(34), lines=2))
+    orb_card.add_widget(orb_info)
+    show_orb_info()
     content.add_widget(orb_card)
 
     # 7) Integrations
@@ -1722,6 +1894,9 @@ def build_jarvis_ui(app):
         view["settings"] = True
         chat.focus = False
         orb.paused = True
+        orb_preview.paused = False
+        show_orb_info()
+        refresh_parts()
         refresh_history()
         refresh_wake_info()
         if app.wake_enabled:
@@ -1740,6 +1915,7 @@ def build_jarvis_ui(app):
         root.remove_widget(settings_page)
         root.add_widget(home, index=len(root.children))
         orb.paused = False
+        orb_preview.paused = True
 
     def on_key(window, key, *args):
         if key == 27 and view["settings"]:      # Android back button
@@ -1949,6 +2125,13 @@ def build_jarvis_ui(app):
                 gen = ai["gen"]
                 Clock.schedule_once(lambda dt: deliver(gen, True, quick), 0)
                 return
+        try_call = getattr(app, "_jarvis_try_call", None)
+        if try_call is not None:
+            try:
+                if try_call(cmd):                       # "saket ko call karo" / "2 ko call karo"
+                    return
+            except Exception as exc:
+                print("call flow error:", repr(exc))
         if ai_ready() and should_route_ai(cmd):
             ai["busy"] = True
             Clock.schedule_once(lambda dt: ask_ai(cmd), 0)
@@ -2070,7 +2253,7 @@ def build_jarvis_ui(app):
     apply_voice()
     refresh_ai_info()
     _sync_prefs(app)
-    if app.wake_enabled and app.picovoice_key:
+    if app.wake_enabled:
         Clock.schedule_once(lambda dt: apply_wake(False), 3.0)    # app khulte hi wake word wapas chalu
     refresh_wake_info()
     if actions_mod is not None:
@@ -2078,4 +2261,9 @@ def build_jarvis_ui(app):
             actions_mod.install_actions(app)       # alarm / timer / reminder fix
         except Exception as exc:
             print("install_actions failed:", exc)
+    try:
+        import jarvis_calls
+        jarvis_calls.install_calls(app)            # naam se call + kai match par chunav
+    except Exception as exc:
+        print("install_calls failed:", exc)
     return root
