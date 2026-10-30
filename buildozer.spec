@@ -7,7 +7,7 @@ package.domain = org.myassistant
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,java,xml
 
-version = 0.24
+version = 0.64
 
 requirements = python3,kivy,pyjnius
 
@@ -24,6 +24,7 @@ android.accept_sdk_license = True
 
 android.add_src = src
 android.extra_manifest_application_xml = src/extra_manifest_application.xml
+p4a.hook = p4a_hook.py
 
 # "Hey Jarvis" wake word (Vosk, offline)
 android.gradle_dependencies = net.java.dev.jna:jna:5.13.0@aar,com.alphacephei:vosk-android:0.3.47@aar
