@@ -14,6 +14,8 @@ import android.widget.Toast;
  * aap home screen par hi rehte hain.
  */
 public class JarvisTriggerActivity extends Activity {
+    public static final String ACTION_TOGGLE_WAKE = "org.myassistant.TOGGLE_WAKE";
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -28,7 +30,14 @@ public class JarvisTriggerActivity extends Activity {
                 startActivity(perm);
             } else {
                 Intent svc = new Intent(this, JarvisOverlayService.class);
-                svc.setAction(JarvisOverlayService.ACTION_TALK);
+                if (ACTION_TOGGLE_WAKE.equals(getIntent().getAction())) {
+                    boolean on = getSharedPreferences("jarvis_prefs", 0).getBoolean("wake_enabled", false);
+                    svc.setAction(on ? JarvisOverlayService.ACTION_WAKE_OFF : JarvisOverlayService.ACTION_WAKE_ON);
+                    Toast.makeText(this, on ? "Jarvis sunna band" : "Jarvis ab hamesha sun raha hai",
+                            Toast.LENGTH_SHORT).show();
+                } else {
+                    svc.setAction(JarvisOverlayService.ACTION_TALK);
+                }
                 if (Build.VERSION.SDK_INT >= 26) {
                     startForegroundService(svc);
                 } else {
