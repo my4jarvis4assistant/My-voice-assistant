@@ -151,7 +151,7 @@ def digits(number):
     return d[-10:] if len(d) > 10 else d
 
 
-def find(spoken, contacts, max_n=4):
+def find(spoken, contacts, max_n=4, floor=0.7):
     """contacts = [(name, number)]. Sabse achhe match, ek number ek hi baar."""
     scored = []
     best = 0.0
@@ -159,7 +159,7 @@ def find(spoken, contacts, max_n=4):
         if not name or not number:
             continue
         s = score(spoken, name)
-        if s >= 0.7:
+        if s >= floor:
             scored.append((s, name, number))
             best = max(best, s)
     scored.sort(key=lambda x: -x[0])
@@ -175,6 +175,12 @@ def find(spoken, contacts, max_n=4):
         if len(out) >= max_n:
             break
     return out
+
+
+def find_loose(spoken, contacts, max_n=4):
+    """Pehle seedha match; na mile to dheela match (thoda alag bola/suna ho tab bhi)."""
+    out = find(spoken, contacts, max_n)
+    return out if out else find(spoken, contacts, max_n, floor=0.5)
 
 
 _NUMS = {
