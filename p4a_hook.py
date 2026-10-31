@@ -72,6 +72,7 @@ ACCESS_XML = """<?xml version="1.0" encoding="utf-8"?>
     android:accessibilityFeedbackType="feedbackGeneric"
     android:accessibilityFlags="flagReportViewIds|flagRetrieveInteractiveWindows"
     android:canRetrieveWindowContent="true"
+    android:canPerformGestures="true"
     android:notificationTimeout="150"
     android:packageNames="com.whatsapp,com.whatsapp.w4b" />
 """
