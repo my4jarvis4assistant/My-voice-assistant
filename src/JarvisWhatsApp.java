@@ -23,13 +23,42 @@ public final class JarvisWhatsApp {
         public String name = "";
         public long cid = 0;
         public String pkg = "com.whatsapp";
+        public String number = "";
+        public boolean wa = false;
         public final Map<String, Long> ids = new HashMap<String, Long>();
         public final Map<String, String> mime = new HashMap<String, String>();
     }
 
     public static List<Person> load(Context ctx) {
-        Map<String, Person> people = new HashMap<String, Person>();
+        Map<Long, Person> people = new HashMap<Long, Person>();
         Cursor c = null;
+        try {
+            c = ctx.getContentResolver().query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                    new String[]{"contact_id", "display_name", "data1"}, null, null, null);
+            while (c != null && c.moveToNext()) {
+                long cid = c.getLong(0);
+                String name = c.getString(1);
+                if (name == null) {
+                    continue;
+                }
+                Person p = people.get(cid);
+                if (p == null) {
+                    p = new Person();
+                    p.name = name;
+                    p.cid = cid;
+                    people.put(cid, p);
+                }
+                String n = normalize(c.getString(2));
+                if (p.number.length() == 0 && n.length() > 0) {
+                    p.number = n;
+                }
+            }
+        } finally {
+            if (c != null) {
+                c.close();
+            }
+        }
+        c = null;
         try {
             c = ctx.getContentResolver().query(ContactsContract.Data.CONTENT_URI,
                     new String[]{"_id", "contact_id", "display_name", "mimetype"},
@@ -39,20 +68,25 @@ public final class JarvisWhatsApp {
                 long cid = c.getLong(1);
                 String name = c.getString(2);
                 String mime = c.getString(3);
-                if (name == null || mime == null) {
+                if (mime == null) {
                     continue;
                 }
                 boolean business = mime.contains(".w4b.");
                 String kind = mime.substring(mime.lastIndexOf("whatsapp.") + 9).replace("w4b.", "");
-                String key = cid + (business ? "b" : "n");
-                Person p = people.get(key);
+                Person p = people.get(cid);
                 if (p == null) {
                     p = new Person();
-                    p.name = name;
+                    p.name = name == null ? "" : name;
                     p.cid = cid;
-                    p.pkg = business ? "com.whatsapp.w4b" : "com.whatsapp";
-                    people.put(key, p);
+                    people.put(cid, p);
                 }
+                if (p.wa && p.pkg.equals("com.whatsapp") && business) {
+                    continue;
+                }
+                if (business && !p.wa) {
+                    p.pkg = "com.whatsapp.w4b";
+                }
+                p.wa = true;
                 p.ids.put(kind, did);
                 p.mime.put(kind, mime);
             }
@@ -61,15 +95,13 @@ public final class JarvisWhatsApp {
                 c.close();
             }
         }
-        // ek contact normal aur business dono me ho to normal wala
-        Map<Long, Person> best = new HashMap<Long, Person>();
+        List<Person> out = new ArrayList<Person>();
         for (Person p : people.values()) {
-            Person old = best.get(p.cid);
-            if (old == null || p.pkg.equals("com.whatsapp")) {
-                best.put(p.cid, p);
+            if (p.name.length() > 0) {
+                out.add(p);
             }
         }
-        return new ArrayList<Person>(best.values());
+        return out;
     }
 
     public static String normalize(String num) {
