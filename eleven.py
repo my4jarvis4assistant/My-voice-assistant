@@ -34,8 +34,11 @@ def trim_text(text, limit=MAX_CHARS):
 
 def _error_message(code, body):
     low = (body or "").lower()
+    if "missing_permissions" in low:
+        return ("ElevenLabs key me permission kam hai. ElevenLabs me key edit karke "
+                "'Text to Speech' aur 'Voices: Read' On kijiye")
     if code == 401:
-        return "ElevenLabs key galat hai"
+        return "ElevenLabs key galat hai (poori key, bina space ke, dobara paste kijiye)"
     if code in (402, 403) or "payment" in low or "paid" in low:
         return "ElevenLabs: is voice/plan ke liye paid plan chahiye"
     if code == 404 or "voice_not_found" in low:
@@ -92,12 +95,13 @@ def _java_request(method, url, headers, body):
             err = conn.getErrorStream()
             text = ""
             if err is not None:
+                err = cast("java.io.InputStream", err)      # pyjnius ko saaf type chahiye
                 sc = Scanner(err, "UTF-8")
                 sc.useDelimiter("\\A")
                 text = str(sc.next()) if sc.hasNext() else ""
                 err.close()
             return code, text.encode("utf-8")
-        stream = conn.getInputStream()
+        stream = cast("java.io.InputStream", conn.getInputStream())
         b64 = B64Stream(stream, Base64.NO_WRAP)
         sc = Scanner(b64, "US-ASCII")
         sc.useDelimiter("\\A")
