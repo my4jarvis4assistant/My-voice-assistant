@@ -7,7 +7,7 @@ package.domain = org.myassistant
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,java,xml
 
-version = 0.64
+version = 0.65
 
 requirements = python3,kivy,pyjnius
 
