@@ -54,50 +54,16 @@ def build_request(key, voice_id, text):
 
 
 def _download_java(url, headers, body, path):
-    from jnius import autoclass, cast, jarray
-    URL = autoclass("java.net.URL")
-    FileOutputStream = autoclass("java.io.FileOutputStream")
-    conn = cast("java.net.HttpURLConnection", URL(url).openConnection())
-    try:
-        conn.setRequestMethod("POST")
-        conn.setConnectTimeout(15000)
-        conn.setReadTimeout(40000)
-        for k, v in headers.items():
-            conn.setRequestProperty(k, v)
-        conn.setDoOutput(True)
-        out = conn.getOutputStream()
-        out.write(body)
-        out.flush()
-        out.close()
-        code = int(conn.getResponseCode())
-        if code >= 400:
-            err = conn.getErrorStream()
-            text = ""
-            if err is not None:
-                buf = jarray("b")(2048)
-                n = err.read(buf)
-                if n > 0:
-                    text = bytes(bytearray([b & 0xFF for b in buf[:n]])).decode("utf-8", "replace")
-                err.close()
-            return code, text
-        stream = conn.getInputStream()
-        fos = FileOutputStream(path)
-        buf = jarray("b")(8192)
-        total = 0
-        while True:
-            n = stream.read(buf)
-            if n < 0:
-                break
-            fos.write(buf, 0, n)
-            total += n
-        fos.close()
-        stream.close()
-        return code, total
-    finally:
-        try:
-            conn.disconnect()
-        except Exception:
-            pass
+    """Java helper (JarvisEleven.download) se: pyjnius me binary bytes padhna mushkil hai,
+    isliye poora download Java me hota hai. (code, payload) lautata hai."""
+    from jnius import autoclass
+    Helper = autoclass("org.myassistant.myvoiceassistant.JarvisEleven")
+    text = json.loads(body.decode("utf-8")).get("text", "")
+    voice_id = url.split("/text-to-speech/")[1].split("?")[0]
+    err = str(Helper.download(headers.get("xi-api-key", ""), voice_id, text, path) or "")
+    if err:
+        raise ElevenError(err)
+    return 200, os.path.getsize(path) if os.path.exists(path) else 0
 
 
 def _download_urllib(url, headers, body, path):
