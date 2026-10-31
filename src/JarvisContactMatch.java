@@ -37,7 +37,7 @@ public final class JarvisContactMatch {
         }
     }
 
-    private static final Set<String> CALL_WORDS = new HashSet<String>(Arrays.asList(
+    static final Set<String> CALL_WORDS = new HashSet<String>(Arrays.asList(
             "call", "calls", "kall", "caal", "kaal", "cal", "dial", "phone", "fone", "milao", "milana",
             "lagao", "laga", "lagana", "lagado", "lagade", "lagadena"));
 
@@ -52,7 +52,7 @@ public final class JarvisContactMatch {
             "karwao", "krdo", "krde", "kr", "bol", "bolo", "bulao", "bula"));
 
     /** In shabdon ke saath vaakya call ka nahi, kisi aur kaam ka hai. */
-    private static final Set<String> NOT_A_CALL = new HashSet<String>(Arrays.asList(
+    static final Set<String> NOT_A_CALL = new HashSet<String>(Arrays.asList(
             "open", "kholo", "khol", "launch", "alarm", "timer", "remind", "reminder", "note", "settings",
             "setting", "search", "youtube", "play", "message", "sms", "whatsapp", "send", "install", "volume",
             "wifi", "bluetooth", "torch", "flashlight", "brightness", "history", "log", "logs", "recent"));
