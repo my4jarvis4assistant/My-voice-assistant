@@ -1502,7 +1502,42 @@ def build_jarvis_ui(app):
     def test_eleven(*_):
         app.speak("Namaste, main Jarvis hoon. Aapki awaaz ab aisi sunai degi.")
 
-    for label, fn in [("Voices save karo", save_eleven_voices), ("Chuni hui awaaz test karo", test_eleven)]:
+    def fill_free_voices(*_):
+        """Key se account ki sirf FREE (premade) awaazein lakar 7 slot bhar do."""
+        if eleven_mod is None:
+            toast("eleven.py nahi mili")
+            return
+        key = ek_input.text.strip() or app.eleven_key
+        if not key:
+            toast("Pehle ElevenLabs key daaliye")
+            return
+        if ek_input.text.strip():
+            save_eleven_key()
+        toast("Free voices la raha hoon...")
+
+        def work():
+            try:
+                found = eleven_mod.list_free_voices(key, ELEVEN_SLOTS)
+                err = "" if found else "Is key par koi free voice nahi mili"
+            except Exception as exc:
+                found, err = [], str(exc)
+
+            def done(dt):
+                if err:
+                    toast(err[:90])
+                    return
+                for i, (n, v) in enumerate(slot_inputs):
+                    n.text = found[i][0] if i < len(found) else ""
+                    v.text = found[i][1] if i < len(found) else ""
+                save_eleven_voices()
+
+            Clock.schedule_once(done, 0)
+
+        threading.Thread(target=work, daemon=True).start()
+
+    for label, fn in [("Free voices apne aap bharo (key se)", fill_free_voices),
+                      ("Voices save karo", save_eleven_voices),
+                      ("Chuni hui awaaz test karo", test_eleven)]:
         row = ActionRow(label)
         row.bind(on_release=lambda w, f=fn: f())
         eleven_card.add_widget(row)
