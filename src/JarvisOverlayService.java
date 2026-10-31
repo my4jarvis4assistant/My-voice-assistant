@@ -69,6 +69,7 @@ public class JarvisOverlayService extends Service {
     private GradientDrawable orbShape;
     private SpeechRecognizer recognizer;
     private TextToSpeech tts;
+    private final JarvisEleven eleven = new JarvisEleven();
     private boolean ttsReady = false;
     private String pendingSpeech = null;
     private boolean speaking = false;
@@ -331,6 +332,7 @@ public class JarvisOverlayService extends Service {
         }
         recognizer = null;
         try {
+            eleven.stop();
             if (tts != null) {
                 tts.stop();
                 tts.shutdown();
@@ -563,12 +565,7 @@ public class JarvisOverlayService extends Service {
                             main.post(new Runnable() {
                                 @Override
                                 public void run() {
-                                    if (listenAfterSpeech && alive) {
-                                        listenAfterSpeech = false;
-                                        startListening();
-                                    } else if (alive) {
-                                        scheduleClose(700);
-                                    }
+                                    afterSpeech();
                                 }
                             });
                         }
@@ -582,7 +579,7 @@ public class JarvisOverlayService extends Service {
                     if (pendingSpeech != null) {
                         String s = pendingSpeech;
                         pendingSpeech = null;
-                        speak(s);
+                        speakSystem(s);
                     }
                 } catch (Exception ignored) {
                 }
@@ -590,7 +587,51 @@ public class JarvisOverlayService extends Service {
         });
     }
 
-    private void speak(String text) {
+    /** Bolna khatam: baatcheet jaari ho to sunna, warna thodi der me so jao. */
+    private void afterSpeech() {
+        if (listenAfterSpeech && alive) {
+            listenAfterSpeech = false;
+            startListening();
+        } else if (alive) {
+            scheduleClose(700);
+        }
+    }
+
+    /** ElevenLabs ki awaaz chuni ho to wahi, warna (ya galti par) phone ki awaaz. */
+    private void speak(final String text) {
+        SharedPreferences p = prefs();
+        String ek = p.getString("eleven_key", "");
+        String vid = p.getString("eleven_voice_id", "");
+        if (ek.trim().length() > 0 && vid.trim().length() > 0) {
+            muteBeep(false);
+            try {
+                if (tts != null) {
+                    tts.stop();
+                }
+            } catch (Exception ignored) {
+            }
+            speaking = true;
+            eleven.speak(this, ek, vid, text, new JarvisEleven.Callback() {
+                @Override
+                public void onDone(boolean ok, String error) {
+                    speaking = false;
+                    if (!alive) {
+                        return;
+                    }
+                    if (ok) {
+                        afterSpeech();
+                    } else {
+                        showText(error + ". Phone ki awaaz se bol raha hoon");
+                        speakSystem(text);
+                    }
+                }
+            });
+            return;
+        }
+        speakSystem(text);
+    }
+
+    private void speakSystem(String text) {
         if (!ttsReady || tts == null) {
             pendingSpeech = text;
             return;
@@ -657,6 +698,7 @@ public class JarvisOverlayService extends Service {
             if (tts != null) {
                 tts.stop();
             }
+            eleven.stop();
         } catch (Exception ignored) {
         }
         speaking = false;
