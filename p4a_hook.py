@@ -51,11 +51,51 @@ COMPONENTS = [
 ]
 
 
-def patch_manifest_text(text, pkg=PKG):
+ACCESS_COMPONENT = ("JarvisAccessService", """
+        <service
+            android:name="%(p)s.JarvisAccessService"
+            android:label="JARVIS auto-send"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/jarvis_access" />
+        </service>
+""")
+
+ACCESS_XML = """<?xml version="1.0" encoding="utf-8"?>
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagReportViewIds|flagRetrieveInteractiveWindows"
+    android:canRetrieveWindowContent="true"
+    android:notificationTimeout="150"
+    android:packageNames="com.whatsapp,com.whatsapp.w4b" />
+"""
+
+
+def write_access_resource(manifest_path):
+    """res/xml/jarvis_access.xml likho (manifest ke bagal). Kamyab ho to True."""
+    try:
+        res_dir = os.path.join(os.path.dirname(manifest_path), "res", "xml")
+        os.makedirs(res_dir, exist_ok=True)
+        with open(os.path.join(res_dir, "jarvis_access.xml"), "w", encoding="utf-8") as fh:
+            fh.write(ACCESS_XML)
+        return True
+    except Exception as exc:
+        print("[jarvis-hook] access resource nahi bana:", exc)
+        return False
+
+
+def patch_manifest_text(text, pkg=PKG, access=False):
     """Manifest text me jo components nahi hain unhe </application> se pehle jodta hai."""
     added = []
     block = ""
-    for name, xml in COMPONENTS:
+    comps = list(COMPONENTS) + ([ACCESS_COMPONENT] if access else [])
+    for name, xml in comps:
         if (pkg + "." + name) in text or ('"' + "." + name + '"') in text:
             continue
         block += xml % {"p": pkg}
@@ -103,7 +143,8 @@ def _patch_inner(toolchain, when):
     for path in manifests:
         with open(path, "r", encoding="utf-8") as fh:
             text = fh.read()
-        new, added = patch_manifest_text(text)
+        access_ok = write_access_resource(path)
+        new, added = patch_manifest_text(text, access=access_ok)
         if added:
             with open(path, "w", encoding="utf-8") as fh:
                 fh.write(new)
