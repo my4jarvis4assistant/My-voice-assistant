@@ -818,17 +818,7 @@ class OrbHost(FloatLayout):
 def make_orb(level=0, **kwargs):
     """level 0: GPU shader orb, 1: texture orb, 2: simple orb (sabse safe).
     Jo level fail ho jaye, uske neeche wala apne aap chalta hai."""
-    if level <= 0 and _shader_supported():
-        try:
-            return ShaderOrb(**kwargs)
-        except Exception as exc:
-            print("JARVIS ShaderOrb failed:", exc)
-    if level <= 1:
-        try:
-            return TextureOrb(**kwargs)
-        except Exception as exc:
-            print("JARVIS TextureOrb failed:", exc)
-    return SimpleOrb(**kwargs)
+    return SimpleOrb(**kwargs)          # sirf Safe orb: kabhi nahi atkta
 
 
 class VoiceChip(ButtonBehavior, BoxLayout):
@@ -995,10 +985,8 @@ def boot_level(app):
             pending = bool(st.get("pending", False))
     except Exception:
         pass
-    level = max(0, min(2, level))
-    if pending:
-        level = min(2, level + 1)
-    _write_json(path, {"level": level, "pending": True})
+    level = 2                       # sirf Safe orb (Advanced hata diya)
+    _write_json(path, {"level": level, "pending": False})
     return level
 
 
@@ -2109,28 +2097,9 @@ def build_jarvis_ui(app):
     orb_info = make_label("", 11, MUTED, height=dp(34), lines=2)
 
     def show_orb_info():
-        orb_info.text = ("Abhi chal raha hai: " + orb.engine +
-                         "\nAdvanced = behte baadal (GPU). Safe = sabse halka, kabhi nahi atkta.")
-
-    def on_orb_style(value):
-        level = 0 if value == "Advanced" else 2
-        set_orb_level(app, level)
-        try:
-            orb.set_level(level)                 # bina app band kiye turant badlo
-            orb_preview.set_level(level)
-        except Exception as exc:
-            print("Orb switch error:", exc)
-            toast("Orb badalne me galti: " + str(exc)[:50])
-            return
-        show_orb_info()
-        if level == 0 and not isinstance(orb.orb, ShaderOrb):
-            toast("Is phone ka GPU Advanced nahi chala paya, Texture orb chal raha hai")
-        else:
-            toast(("Advanced" if level == 0 else "Safe") + " orb chalu")
+        orb_info.text = "Orb: Safe (sabse halka, kabhi nahi atkta)"
 
     orb_card.add_widget(orb_preview)
-    orb_card.add_widget(Segmented(["Advanced", "Safe"],
-                                  "Advanced" if orb_level == 0 else "Safe", on_orb_style))
     orb_card.add_widget(orb_info)
     show_orb_info()
     content.add_widget(orb_card)
@@ -2549,4 +2518,21 @@ def build_jarvis_ui(app):
     refresh_ai_info()
     _sync_prefs(app)
     if app.wake_enabled:
-        Clock.schedule_once(lambda dt: apply_wake(False), 3.0)    # app khulte hi wake wor
+        Clock.schedule_once(lambda dt: apply_wake(False), 3.0)    # app khulte hi wake word wapas chalu
+    refresh_wake_info()
+    if actions_mod is not None:
+        try:
+            actions_mod.install_actions(app)       # alarm / timer / reminder fix
+        except Exception as exc:
+            print("install_actions failed:", exc)
+    try:
+        import jarvis_calls
+        jarvis_calls.install_calls(app)            # naam se call + kai match par chunav
+    except Exception as exc:
+        print("install_calls failed:", exc)
+    try:
+        import jarvis_social
+        jarvis_social.install_social(app)          # WhatsApp message / voice / video call
+    except Exception as exc:
+        print("install_social failed:", exc)
+    return root
