@@ -53,17 +53,116 @@ def build_request(key, voice_id, text):
     return url, headers, body
 
 
-def _download_java(url, headers, body, path):
-    """Java helper (JarvisEleven.download) se: pyjnius me binary bytes padhna mushkil hai,
-    isliye poora download Java me hota hai. (code, payload) lautata hai."""
+def _read_all(stream, charset):
+    """Java stream ko poora padhkar python str me lautao (java.util.Scanner, koi byte-array nahi chahiye)."""
     from jnius import autoclass
-    Helper = autoclass("org.myassistant.myvoiceassistant.JarvisEleven")
-    text = json.loads(body.decode("utf-8")).get("text", "")
-    voice_id = url.split("/text-to-speech/")[1].split("?")[0]
-    err = str(Helper.download(headers.get("xi-api-key", ""), voice_id, text, path) or "")
-    if err:
-        raise ElevenError(err)
-    return 200, os.path.getsize(path) if os.path.exists(path) else 0
+    Scanner = autoclass("java.util.Scanner")
+    sc = Scanner(stream, charset).useDelimiter("\\A")
+    try:
+        return str(sc.next()) if sc.hasNext() else ""
+    finally:
+        sc.close()
+
+
+def _java_request(method, url, headers, body):
+    """Java HttpURLConnection se: (code, data_bytes). pyjnius me byte-array nahi bana sakte, isliye
+    awaaz ko Base64InputStream se text bana kar padhte hain (Scanner), phir Python me decode karte hain.
+    Koi apni Java class nahi chahiye (background thread me app ki class milti nahi)."""
+    import base64
+    from jnius import autoclass, cast
+    URL = autoclass("java.net.URL")
+    Scanner = autoclass("java.util.Scanner")
+    Base64 = autoclass("android.util.Base64")
+    B64Stream = autoclass("android.util.Base64InputStream")
+    conn = cast("java.net.HttpURLConnection", URL(url).openConnection())
+    try:
+        conn.setRequestMethod(method)
+        conn.setConnectTimeout(15000)
+        conn.setReadTimeout(40000)
+        for k, v in headers.items():
+            conn.setRequestProperty(k, v)
+        if body is not None:
+            conn.setDoOutput(True)
+            out = conn.getOutputStream()
+            out.write(body)
+            out.flush()
+            out.close()
+        code = int(conn.getResponseCode())
+        if code >= 400:
+            err = conn.getErrorStream()
+            text = ""
+            if err is not None:
+                sc = Scanner(err, "UTF-8")
+                sc.useDelimiter("\\A")
+                text = str(sc.next()) if sc.hasNext() else ""
+                err.close()
+            return code, text.encode("utf-8")
+        stream = conn.getInputStream()
+        b64 = B64Stream(stream, Base64.NO_WRAP)
+        sc = Scanner(b64, "US-ASCII")
+        sc.useDelimiter("\\A")
+        text = str(sc.next()) if sc.hasNext() else ""
+        stream.close()
+        return code, base64.b64decode(text)
+    finally:
+        try:
+            conn.disconnect()
+        except Exception:
+            pass
+
+
+def _download_java(url, headers, body, path):
+    code, data = _java_request("POST", url, headers, body)
+    if code >= 400:
+        return code, data.decode("utf-8", "replace")
+    with open(path, "wb") as fh:
+        fh.write(data)
+    return code, len(data)
+
+
+def list_free_voices(key, limit=7, requester=None):
+    """Account ki 'premade' (free plan par chalne wali) awaazein: [(naam, voice_id)]."""
+    if not key or not key.strip():
+        raise ElevenError("ElevenLabs key nahi hai")
+    headers = {"xi-api-key": key.strip(), "Accept": "application/json"}
+    url = "https://api.elevenlabs.io/v1/voices"
+    if requester is None:
+        try:
+            import jnius  # noqa: F401
+            requester = _java_request
+        except Exception:
+            requester = _urllib_request
+    try:
+        code, data = requester("GET", url, headers, None)
+    except Exception as exc:
+        raise ElevenError("ElevenLabs tak internet nahi pahunch paya (%s)" % str(exc)[:60])
+    text = data.decode("utf-8", "replace") if isinstance(data, bytes) else str(data)
+    if code >= 400:
+        raise ElevenError(_error_message(code, text))
+    try:
+        voices = json.loads(text).get("voices", [])
+    except Exception:
+        raise ElevenError("ElevenLabs ka jawab samajh nahi aaya")
+    out = []
+    for v in voices:
+        if str(v.get("category", "")).lower() != "premade":
+            continue
+        name = str(v.get("name", "")).split(" - ")[0].strip()
+        vid = str(v.get("voice_id", "")).strip()
+        if name and vid:
+            out.append((name, vid))
+    return out[:limit]
+
+
+def _urllib_request(method, url, headers, body):
+    import urllib.error
+    import urllib.request
+    req = urllib.request.Request(url, data=body, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=40) as resp:
+            return resp.status, resp.read()
+    except urllib.error.HTTPError as exc:
+        return exc.code, exc.read()
 
 
 def _download_urllib(url, headers, body, path):
