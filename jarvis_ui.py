@@ -1064,6 +1064,30 @@ def _load_state(app):
     return {}
 
 
+ELEVEN_SLOTS = 7
+
+
+def eleven_voice_id(app):
+    """Chuni hui awaaz ElevenLabs ki ho to uski Voice ID, warna ''."""
+    sel = getattr(app, "selected_voice", "")
+    for name, vid in getattr(app, "eleven_voices", []):
+        if name == sel and vid:
+            return vid
+    return ""
+
+
+def _clean_slots(raw):
+    out = []
+    for item in list(raw or [])[:ELEVEN_SLOTS]:
+        try:
+            out.append([str(item[0]).strip(), str(item[1]).strip()])
+        except Exception:
+            out.append(["", ""])
+    while len(out) < ELEVEN_SLOTS:
+        out.append(["", ""])
+    return out
+
+
 def _sync_prefs(app):
     """Key/voice waghera Android SharedPreferences me bhi likho taaki floating panel
     (JarvisOverlayService, Java) bina app khole use kar sake."""
@@ -1078,6 +1102,8 @@ def _sync_prefs(app):
         pitch, rate = VOICES.get(getattr(app, "selected_voice", "Male Alpha"), (1.0, 1.0))
         ed.putFloat("pitch", float(pitch))
         ed.putFloat("rate", float(rate))
+        ed.putString("eleven_key", str(getattr(app, "eleven_key", "") or ""))
+        ed.putString("eleven_voice_id", eleven_voice_id(app))
         ed.apply()
     except Exception as exc:
         print("Prefs sync skipped:", exc)
@@ -1098,6 +1124,8 @@ def _save_state(app):
                 "gemini_key": getattr(app, "gemini_key", ""),
                 "ai_enabled": getattr(app, "ai_enabled", True),
                 "ai_model": getattr(app, "ai_model", ""),
+                "eleven_key": getattr(app, "eleven_key", ""),
+                "eleven_slots": getattr(app, "eleven_slots", []),
                 "wake_enabled": getattr(app, "wake_enabled", False),
             }, fh, ensure_ascii=False)
     except Exception as exc:
@@ -1123,13 +1151,34 @@ def build_jarvis_ui(app):
     # ---- saved settings ----
     state = _load_state(app)
     app.selected_voice = state.get("voice", "Male Alpha")
-    if app.selected_voice not in VOICES:
-        app.selected_voice = "Male Alpha"
+    app.eleven_key = str(state.get("eleven_key", "") or "").strip()
+    app.eleven_slots = _clean_slots(state.get("eleven_slots"))
+    try:
+        import jarvis_secrets as _sec          # build ke waqt GitHub Secrets se banti hai (repo me nahi)
+    except Exception:
+        _sec = None
+    app.eleven_voices = []
     app.wake_word = state.get("wake_word", "Hey JARVIS")
     app.verbosity = state.get("verbosity", "Balanced")
     app.theme = "Dark"
     app.history = list(state.get("history", []))
     app.gemini_key = str(state.get("gemini_key", "") or "").strip()
+    if _sec is not None:                       # saved key ho to wahi chalegi; khali ho tab APK wali use hogi
+        try:
+            if not app.gemini_key:
+                app.gemini_key = str(getattr(_sec, "GEMINI_KEY", "") or "").strip()
+            if not app.eleven_key:
+                app.eleven_key = str(getattr(_sec, "ELEVEN_KEY", "") or "").strip()
+            if not any(v for _n, v in app.eleven_slots):
+                app.eleven_slots = _clean_slots(getattr(_sec, "ELEVEN_VOICES", []))
+            ck = str(getattr(_sec, "CONVERSATION_KEY", "") or "").strip()
+            if ck and not getattr(app, "_conversation_key", "") and hasattr(app, "_save_conversation_key"):
+                app._save_conversation_key(ck)
+        except Exception as exc:
+            print("secrets seed error:", exc)
+    app.eleven_voices = [[n, v] for n, v in app.eleven_slots if n and v]
+    if app.selected_voice not in VOICES and app.selected_voice not in [n for n, _v in app.eleven_voices]:
+        app.selected_voice = "Male Alpha"
     app.ai_enabled = bool(state.get("ai_enabled", True))
     app.ai_model = str(state.get("ai_model", "") or "")
     app.wake_enabled = bool(state.get("wake_enabled", False))
@@ -1292,6 +1341,9 @@ def build_jarvis_ui(app):
         chips.append(chip)
         voice_row.add_widget(chip)
     voice_card.add_widget(voice_row)
+    eleven_box = BoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(4))
+    eleven_box.bind(minimum_height=eleven_box.setter("height"))
+    voice_card.add_widget(eleven_box)
     content.add_widget(voice_card)
 
     def apply_voice(*_):
@@ -1335,6 +1387,130 @@ def build_jarvis_ui(app):
     for c in chips:
         c.set_selected(c.name == app.selected_voice)
         c.bind(on_release=choose_voice)
+
+    # 1b) ElevenLabs awaazein (key + 7 Voice ID)
+    try:
+        import eleven as eleven_mod
+    except Exception as exc:
+        print("eleven import error:", exc)
+        eleven_mod = None
+    speaker = None
+    if eleven_mod is not None:
+        try:
+            cache_dir = str(app.activity.getCacheDir().getAbsolutePath())
+        except Exception:
+            cache_dir = getattr(app, "user_data_dir", "") or "."
+        speaker = eleven_mod.ElevenSpeaker(cache_dir)
+
+    ELEVEN_TINTS = [(0.55, 0.35, 0.85, 1), (0.85, 0.55, 0.20, 1), (0.20, 0.65, 0.70, 1),
+                    (0.80, 0.30, 0.35, 1), (0.35, 0.60, 0.30, 1), (0.30, 0.45, 0.80, 1),
+                    (0.70, 0.60, 0.25, 1)]
+    eleven_chips = []
+
+    def rebuild_eleven_chips():
+        for c in eleven_chips:
+            if c in chips:
+                chips.remove(c)
+        del eleven_chips[:]
+        eleven_box.clear_widgets()
+        voices = list(app.eleven_voices)
+        for start in range(0, len(voices), 4):
+            row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(96),
+                            spacing=dp(4))
+            for idx in range(start, min(start + 4, len(voices))):
+                name = voices[idx][0]
+                chip = VoiceChip(name, name[:1].upper() or "E", ELEVEN_TINTS[idx % len(ELEVEN_TINTS)])
+                chip.set_selected(name == app.selected_voice)
+                chip.bind(on_release=choose_voice)
+                chips.append(chip)
+                eleven_chips.append(chip)
+                row.add_widget(chip)
+            for _ in range(4 - min(4, len(voices) - start)):
+                row.add_widget(Widget())
+            eleven_box.add_widget(row)
+
+    eleven_card = make_card("ElevenLabs Voices")
+    eleven_info = make_label("", 12, MUTED, height=dp(48), lines=3)
+    eleven_card.add_widget(eleven_info)
+
+    def refresh_eleven_info():
+        if not app.eleven_key:
+            eleven_info.text = "Key set nahi hai. ElevenLabs API key paste karke Save dabaiye."
+        elif not app.eleven_voices:
+            eleven_info.text = "Key saved. Neeche naam + Voice ID bharkar 'Voices save karo' dabaiye."
+        else:
+            eleven_info.text = (str(len(app.eleven_voices)) + " voice taiyaar. Upar Voice Selection me "
+                                "chuniye. Galti aaye to phone ki awaaz se bolega.")
+
+    ek_row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(44), spacing=dp(10))
+    ek_wrap = PlateBox(fill=INPUT, edge=EDGE, radius=dp(12), orientation="horizontal",
+                       padding=[dp(10), 0, dp(10), 0])
+    ek_input = style_input(TextInput(text="", hint_text="ElevenLabs API key (sk_...)",
+                                     font_size=sp(14), password=True))
+    ek_wrap.add_widget(ek_input)
+    ek_row.add_widget(ek_wrap)
+    ek_btn = PillButton(text="Save", size_hint=(None, None), width=dp(72), height=dp(36),
+                        pos_hint={"center_y": 0.5})
+    ek_row.add_widget(ek_btn)
+    eleven_card.add_widget(ek_row)
+
+    def save_eleven_key(*_):
+        txt = ek_input.text.strip()
+        if txt:
+            app.eleven_key = txt
+            ek_input.text = ""
+            ek_input.focus = False
+        _save_state(app)
+        refresh_eleven_info()
+        toast("ElevenLabs key save ho gayi" if app.eleven_key else "Key khali hai")
+
+    ek_btn.bind(on_release=save_eleven_key)
+
+    slot_inputs = []
+    for i in range(ELEVEN_SLOTS):
+        srow = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(44), spacing=dp(8))
+        nwrap = PlateBox(fill=INPUT, edge=EDGE, radius=dp(12), orientation="horizontal",
+                         size_hint_x=0.34, padding=[dp(10), 0, dp(6), 0])
+        ninp = style_input(TextInput(text=app.eleven_slots[i][0], hint_text="Naam " + str(i + 1),
+                                     font_size=sp(13)))
+        nwrap.add_widget(ninp)
+        iwrap = PlateBox(fill=INPUT, edge=EDGE, radius=dp(12), orientation="horizontal",
+                         padding=[dp(10), 0, dp(6), 0])
+        iinp = style_input(TextInput(text=app.eleven_slots[i][1], hint_text="Voice ID",
+                                     font_size=sp(13)))
+        iwrap.add_widget(iinp)
+        srow.add_widget(nwrap)
+        srow.add_widget(iwrap)
+        eleven_card.add_widget(srow)
+        slot_inputs.append((ninp, iinp))
+
+    def save_eleven_voices(*_):
+        app.eleven_slots = _clean_slots([[n.text, v.text] for n, v in slot_inputs])
+        names = set(VOICES.keys())
+        app.eleven_voices = [[n, v] for n, v in app.eleven_slots if n and v and n not in names]
+        if app.selected_voice not in VOICES and \
+                app.selected_voice not in [n for n, _v in app.eleven_voices]:
+            app.selected_voice = "Male Alpha"
+            for c in chips:
+                c.set_selected(c.name == app.selected_voice)
+            current_voice.text = "Current: " + app.selected_voice
+        _save_state(app)
+        rebuild_eleven_chips()
+        refresh_eleven_info()
+        toast(str(len(app.eleven_voices)) + " voice save hui")
+
+    def test_eleven(*_):
+        app.speak("Namaste, main Jarvis hoon. Aapki awaaz ab aisi sunai degi.")
+
+    for label, fn in [("Voices save karo", save_eleven_voices), ("Chuni hui awaaz test karo", test_eleven)]:
+        row = ActionRow(label)
+        row.bind(on_release=lambda w, f=fn: f())
+        eleven_card.add_widget(row)
+    eleven_card.add_widget(make_label("Key aur Voice ID sirf is phone me save hote hain. Kabhi GitHub par "
+                                      "mat daaliye.", 11, MUTED, height=dp(34), lines=2))
+    content.add_widget(eleven_card)
+    rebuild_eleven_chips()
+    refresh_eleven_info()
 
     # 2) History
     history_card = make_card("History")
@@ -1993,6 +2169,11 @@ def build_jarvis_ui(app):
 
     def tts_busy():
         try:
+            if speaker is not None and speaker.busy():
+                return True
+        except Exception:
+            pass
+        try:
             t = getattr(app, "tts", None)
             return bool(t is not None and t.isSpeaking())
         except Exception:
@@ -2084,7 +2265,27 @@ def build_jarvis_ui(app):
                 apply_voice()
         except Exception:
             pass
-        if original_speak is not None:
+        used_eleven = False
+        vid = eleven_voice_id(app)
+        if speaker is not None and app.eleven_key and vid and str(text).strip():
+            def fail(msg, _t=text):
+                def fallback(dt):
+                    toast(str(msg) + ". Phone ki awaaz se bol raha hoon")
+                    if original_speak is not None:
+                        original_speak(_t)
+                Clock.schedule_once(fallback, 0)
+            try:
+                try:
+                    tts0 = getattr(app, "tts", None)
+                    if tts0 is not None:
+                        tts0.stop()                     # phone ki awaaz chup
+                except Exception:
+                    pass
+                speaker.speak(app.eleven_key, vid, str(text), on_error=fail)
+                used_eleven = True
+            except Exception as exc:
+                print("eleven speak error:", exc)
+        if not used_eleven and original_speak is not None:
             original_speak(text)
         length = len(str(text))
 
@@ -2198,6 +2399,11 @@ def build_jarvis_ui(app):
         ai["gen"] += 1                      # chal raha AI jawab radd
         ai["busy"] = False
         cancel_relisten()
+        try:
+            if speaker is not None:
+                speaker.stop()
+        except Exception:
+            pass
         try:
             t = getattr(app, "tts", None)
             if t is not None:
