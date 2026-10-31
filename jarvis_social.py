@@ -154,37 +154,51 @@ def normalize_number(num):
 
 
 def load_whatsapp_contacts(app):
-    """WhatsApp wale contacts: [{'name','cid','ids':{'profile','voip.call','video.call'},'pkg','number'}]"""
+    """Saare phone contacts, jinme WhatsApp wale 'ids' ke saath. Har dict:
+    {'name','cid','ids':{'profile','voip.call','video.call'},'pkg','mime','number','wa':bool}"""
     from jnius import autoclass
     Data = autoclass("android.provider.ContactsContract$Data")
+    Phone = autoclass("android.provider.ContactsContract$CommonDataKinds$Phone")
     resolver = app.activity.getContentResolver()
-    cur = resolver.query(Data.CONTENT_URI, ["_id", "contact_id", "display_name", "mimetype"],
-                         "mimetype LIKE ?", [MIME_BASE + "%"], None)
+    people = {}                                  # cid -> person
+    cur = resolver.query(Phone.CONTENT_URI, ["contact_id", "display_name", "data1"], None, None, None)
     if cur is None:
         raise PermissionError("contacts")
-    people = {}
     try:
         while cur.moveToNext():
-            did, cid, name, mime = int(cur.getLong(0)), int(cur.getLong(1)), cur.getString(2), cur.getString(3)
-            if not name or not mime:
+            cid, name, num = int(cur.getLong(0)), cur.getString(1), cur.getString(2)
+            if not name:
                 continue
-            mime = str(mime)
-            business = ".w4b." in mime
-            kind = mime.rsplit("whatsapp.", 1)[-1].replace("w4b.", "")
-            p = people.setdefault((cid, business), {"name": str(name), "cid": cid, "ids": {},
-                                                    "pkg": "com.whatsapp.w4b" if business else "com.whatsapp",
-                                                    "mime": {}, "number": ""})
-            p["ids"][kind] = did
-            p["mime"][kind] = mime
+            p = people.setdefault(cid, {"name": str(name), "cid": cid, "ids": {}, "pkg": "com.whatsapp",
+                                        "mime": {}, "number": "", "wa": False})
+            n = normalize_number(num)
+            if n and not p["number"]:
+                p["number"] = n
     finally:
         cur.close()
-    out = [p for p in people.values() if p["ids"]]
-    names_seen = {}
-    for p in out:                               # normal WhatsApp ko Business par tarjeeh
-        names_seen.setdefault(p["cid"], p)
-        if p["pkg"] == "com.whatsapp":
-            names_seen[p["cid"]] = p
-    return list(names_seen.values())
+    cur = resolver.query(Data.CONTENT_URI, ["_id", "contact_id", "display_name", "mimetype"],
+                         "mimetype LIKE ?", [MIME_BASE + "%"], None)
+    if cur is not None:
+        try:
+            while cur.moveToNext():
+                did, cid, name, mime = int(cur.getLong(0)), int(cur.getLong(1)), cur.getString(2), cur.getString(3)
+                if not mime:
+                    continue
+                mime = str(mime)
+                business = ".w4b." in mime
+                kind = mime.rsplit("whatsapp.", 1)[-1].replace("w4b.", "")
+                p = people.setdefault(cid, {"name": str(name or ""), "cid": cid, "ids": {}, "pkg": "com.whatsapp",
+                                            "mime": {}, "number": "", "wa": False})
+                if p["wa"] and p["pkg"] == "com.whatsapp" and business:
+                    continue                    # normal WhatsApp ko tarjeeh
+                if business and not p["wa"]:
+                    p["pkg"] = "com.whatsapp.w4b"
+                p["wa"] = True
+                p["ids"][kind] = did
+                p["mime"][kind] = mime
+        finally:
+            cur.close()
+    return [p for p in people.values() if p["name"]]
 
 
 def phone_for_contact(app, cid):
@@ -349,9 +363,14 @@ def install_social(app, loader=None, phone=None, call_launcher=None, chat_launch
             st["await_name"] = True
             say("Kisko?", relisten=True)
             return
-        found = jc.find(name, pairs, 4)
+        found = jc.find_loose(name, pairs, 6)
+        wa_found = [f for f in found if by_cid[f[1]].get("wa", True)]
+        if wa_found:
+            found = wa_found                     # WhatsApp wale contacts ko tarjeeh
+        found = found[:4]
         if not found:
-            say(name + " naam ka WhatsApp contact nahi mila.")
+            say(name + " naam ka contact nahi mila (" + str(len(people)) + " contacts me dekha). "
+                "Naam thoda saaf boliye ya contacts permission check kijiye.")
             reset()
         elif len(found) == 1:
             act(by_cid[found[0][1]])
