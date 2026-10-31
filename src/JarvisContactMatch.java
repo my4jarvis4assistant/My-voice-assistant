@@ -264,7 +264,16 @@ public final class JarvisContactMatch {
     }
 
     /** Sabse achhe match (zyada se zyada max). Ek jaisa naam+number ek hi baar. */
+    public static List<Scored> findLoose(String spoken, List<Contact> contacts, int max) {
+        List<Scored> r = find(spoken, contacts, max, 0.7);
+        return r.isEmpty() ? find(spoken, contacts, max, 0.5) : r;
+    }
+
     public static List<Scored> find(String spoken, List<Contact> contacts, int max) {
+        return find(spoken, contacts, max, 0.7);
+    }
+
+    public static List<Scored> find(String spoken, List<Contact> contacts, int max, double floor) {
         List<Scored> all = new ArrayList<Scored>();
         double best = 0;
         for (Contact c : contacts) {
@@ -272,7 +281,7 @@ public final class JarvisContactMatch {
                 continue;
             }
             double s = score(spoken, c.name);
-            if (s >= 0.7) {
+            if (s >= floor) {
                 all.add(new Scored(c, s));
                 best = Math.max(best, s);
             }
