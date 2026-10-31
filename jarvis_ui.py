@@ -2025,8 +2025,35 @@ def build_jarvis_ui(app):
             print("Accessibility settings error:", exc)
             toast("Phone Settings > Accessibility me 'JARVIS auto-send' On kijiye")
 
+    def open_app_info(*_):
+        try:
+            from jnius import autoclass
+            Intent = autoclass("android.content.Intent")
+            Settings = autoclass("android.provider.Settings")
+            Uri = autoclass("android.net.Uri")
+            i = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+            i.setData(Uri.parse("package:" + str(app.activity.getPackageName())))
+            app.open_intent(i)
+            toast("Upar teen dot (⋮) > 'Allow restricted settings' dabaiye, phir Accessibility On kijiye")
+        except Exception as exc:
+            print("App info error:", exc)
+            toast("Settings > Apps > Jarvis > ⋮ > Allow restricted settings")
+
+    def auto_status(*_):
+        try:
+            import jarvis_social as js
+            on = js.accessibility_enabled(app)
+            log = str(app.activity.getSharedPreferences("jarvis_prefs", 0).getString("access_log", "") or "")
+            toast(("Auto-send ON. " if on else "Auto-send OFF - Accessibility me 'JARVIS auto-send' On kijiye. ")
+                  + ("Aakhri: " + log.rsplit(" @", 1)[0] if log else "Abhi tak koi koshish nahi."))
+        except Exception as exc:
+            print("Auto status error:", exc)
+            toast("Halat padh nahi paya")
+
     for label, fn in [("Calling permission allow karo (Contacts + Phone)", allow_calling),
+                      ("WhatsApp auto-send: App info (Allow restricted settings)", open_app_info),
                       ("WhatsApp auto-send: Accessibility On karo", open_accessibility),
+                      ("WhatsApp auto-send: halat dekho", auto_status),
                       ("Battery / Autostart settings", open_battery)]:
         row = ActionRow(label)
         row.bind(on_release=lambda w, f=fn: f())
@@ -2522,21 +2549,4 @@ def build_jarvis_ui(app):
     refresh_ai_info()
     _sync_prefs(app)
     if app.wake_enabled:
-        Clock.schedule_once(lambda dt: apply_wake(False), 3.0)    # app khulte hi wake word wapas chalu
-    refresh_wake_info()
-    if actions_mod is not None:
-        try:
-            actions_mod.install_actions(app)       # alarm / timer / reminder fix
-        except Exception as exc:
-            print("install_actions failed:", exc)
-    try:
-        import jarvis_calls
-        jarvis_calls.install_calls(app)            # naam se call + kai match par chunav
-    except Exception as exc:
-        print("install_calls failed:", exc)
-    try:
-        import jarvis_social
-        jarvis_social.install_social(app)          # WhatsApp message / voice / video call
-    except Exception as exc:
-        print("install_social failed:", exc)
-    return root
+        Clock.schedule_once(lambda dt: apply_wake(False), 3.0)    # app khulte hi wake wor
