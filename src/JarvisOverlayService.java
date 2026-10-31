@@ -1025,9 +1025,23 @@ public class JarvisOverlayService extends Service {
             replyAndListen("Kisko?", "Kisko?");
             return;
         }
-        List<JarvisContactMatch.Scored> found = JarvisContactMatch.find(name, contacts, 4);
+        List<JarvisContactMatch.Scored> found = JarvisContactMatch.findLoose(name, contacts, 6);
+        List<JarvisContactMatch.Scored> waOnly = new ArrayList<JarvisContactMatch.Scored>();
+        for (JarvisContactMatch.Scored f : found) {
+            JarvisWhatsApp.Person pp = sByCid.get(f.contact.number);
+            if (pp != null && pp.wa) {
+                waOnly.add(f);
+            }
+        }
+        if (!waOnly.isEmpty()) {
+            found = waOnly;
+        }
+        if (found.size() > 4) {
+            found = new ArrayList<JarvisContactMatch.Scored>(found.subList(0, 4));
+        }
         if (found.isEmpty()) {
-            reply(name + " naam ka WhatsApp contact nahi mila.");
+            reply(name + " naam ka contact nahi mila (" + contacts.size()
+                    + " contacts me dekha). Naam thoda saaf boliye.");
             socialReset();
         } else if (found.size() == 1) {
             socialAct(sByCid.get(found.get(0).contact.number));
