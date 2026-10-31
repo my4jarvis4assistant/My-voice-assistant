@@ -84,6 +84,63 @@ public class JarvisEleven {
         return "ElevenLabs error " + code;
     }
 
+    /**
+     * Awaaz ki mp3 `path` par likho. Sab theek ho to "" lautata hai, warna galti ka sandesh.
+     * (Python bhi isi ko bulata hai, kyunki pyjnius se binary data padhna mushkil hai.)
+     */
+    public static String download(String key, String voiceId, String text, String path) {
+        try {
+            String t = trim(text == null ? "" : text);
+            if (t.length() == 0) {
+                return "khali text";
+            }
+            JSONObject body = new JSONObject();
+            body.put("text", t);
+            body.put("model_id", MODEL);
+            HttpURLConnection conn = (HttpURLConnection) new URL(API + voiceId.trim()
+                    + "?output_format=mp3_44100_64").openConnection();
+            try {
+                conn.setRequestMethod("POST");
+                conn.setConnectTimeout(15000);
+                conn.setReadTimeout(40000);
+                conn.setDoOutput(true);
+                conn.setRequestProperty("xi-api-key", key.trim());
+                conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+                conn.setRequestProperty("Accept", "audio/mpeg");
+                OutputStream os = conn.getOutputStream();
+                os.write(body.toString().getBytes("UTF-8"));
+                os.flush();
+                os.close();
+                int code = conn.getResponseCode();
+                if (code >= 400) {
+                    String b = "";
+                    InputStream es = conn.getErrorStream();
+                    if (es != null) {
+                        b = readAll(es);
+                    }
+                    return errorFor(code, b);
+                }
+                InputStream is = conn.getInputStream();
+                FileOutputStream fos = new FileOutputStream(new File(path));
+                byte[] buf = new byte[8192];
+                int n;
+                while ((n = is.read(buf)) > 0) {
+                    fos.write(buf, 0, n);
+                }
+                fos.close();
+                is.close();
+                if (new File(path).length() < 200) {
+                    return "ElevenLabs se awaaz nahi aayi";
+                }
+                return "";
+            } finally {
+                conn.disconnect();
+            }
+        } catch (Exception e) {
+            return "ElevenLabs tak internet nahi pahunch paya";
+        }
+    }
+
     public void speak(final Context ctx, final String key, final String voiceId, final String text,
                       final Callback cb) {
         final int my = ++token;
@@ -92,75 +149,20 @@ public class JarvisEleven {
         new Thread(new Runnable() {
             @Override
             public void run() {
-                File out = null;
-                String err = null;
-                try {
-                    String t = trim(text);
-                    if (t.length() == 0) {
-                        throw new Exception("khali text");
-                    }
-                    out = new File(ctx.getCacheDir(), "jarvis_eleven_" + my + ".mp3");
-                    JSONObject body = new JSONObject();
-                    body.put("text", t);
-                    body.put("model_id", MODEL);
-                    HttpURLConnection conn = (HttpURLConnection) new URL(API + voiceId.trim()
-                            + "?output_format=mp3_44100_64").openConnection();
-                    try {
-                        conn.setRequestMethod("POST");
-                        conn.setConnectTimeout(15000);
-                        conn.setReadTimeout(40000);
-                        conn.setDoOutput(true);
-                        conn.setRequestProperty("xi-api-key", key.trim());
-                        conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
-                        conn.setRequestProperty("Accept", "audio/mpeg");
-                        OutputStream os = conn.getOutputStream();
-                        os.write(body.toString().getBytes("UTF-8"));
-                        os.flush();
-                        os.close();
-                        int code = conn.getResponseCode();
-                        if (code >= 400) {
-                            String b = "";
-                            InputStream es = conn.getErrorStream();
-                            if (es != null) {
-                                b = readAll(es);
-                            }
-                            err = errorFor(code, b);
-                        } else {
-                            InputStream is = conn.getInputStream();
-                            FileOutputStream fos = new FileOutputStream(out);
-                            byte[] buf = new byte[8192];
-                            int n;
-                            while ((n = is.read(buf)) > 0) {
-                                fos.write(buf, 0, n);
-                            }
-                            fos.close();
-                            is.close();
-                            if (out.length() < 200) {
-                                err = "ElevenLabs se awaaz nahi aayi";
-                            }
-                        }
-                    } finally {
-                        conn.disconnect();
-                    }
-                } catch (Exception e) {
-                    err = "ElevenLabs tak internet nahi pahunch paya";
-                }
-                final String fe = err;
+                final File out = new File(ctx.getCacheDir(), "jarvis_eleven_" + my + ".mp3");
+                String r = download(key, voiceId, text, out.getAbsolutePath());
+                final String fe = r.length() == 0 ? null : r;
                 final File ff = out;
                 main.post(new Runnable() {
                     @Override
                     public void run() {
                         if (my != token) {
-                            if (ff != null) {
-                                ff.delete();
-                            }
+                            ff.delete();
                             return;
                         }
                         if (fe != null) {
                             busy = false;
-                            if (ff != null) {
-                                ff.delete();
-                            }
+                            ff.delete();
                             cb.onDone(false, fe);
                             return;
                         }
