@@ -91,6 +91,14 @@ public class JarvisOverlayService extends Service {
     private boolean awaitingName = false;     // "Kisko call karun?" ke baad agla jawab naam hai
     private boolean listenAfterSpeech = false; // bolna khatam hote hi dobara sunna
 
+    // --- WhatsApp message / call ---
+    private JarvisSocial.Job sJob = null;
+    private List<JarvisContactMatch.Scored> sChoices = null;
+    private final java.util.Map<String, JarvisWhatsApp.Person> sByCid = new java.util.HashMap<String, JarvisWhatsApp.Person>();
+    private boolean sAwaitBody = false;
+    private boolean sConfirm = false;
+    private boolean sAwaitName = false;
+
     // --- floating bubble (hamesha dikhta hai; sleep = dhundhla, active = chamakta) ---
     private WindowManager.LayoutParams bubbleLp = null;
     private boolean session = false;          // True = Jarvis abhi sun/bol raha hai (baatcheet chal rahi hai)
@@ -832,6 +840,9 @@ public class JarvisOverlayService extends Service {
             heardView.setText("\"" + text + "\"");
         }
         idleCount = 0;
+        if (!isDismiss(text) && handleSocialFlow(text)) {
+            return;
+        }
         if (isDismiss(text)) {
             pendingChoices = null;
             awaitingName = false;
@@ -890,6 +901,196 @@ public class JarvisOverlayService extends Service {
     /** Jawab bolo, phir baatcheet jaari: bolna khatam hote hi dobara sunna. */
     private void reply(String text) {
         replyAndListen(text, JarvisBrain.speechText(text));
+    }
+
+    /** Kaam ho gaya (call/message laga): bolo aur baatcheet band, bubble so jaye. */
+    private void replyDone(String text) {
+        cancelClose();
+        listenAfterSpeech = false;
+        setStatus(text, MODE_IDLE);
+        speak(JarvisBrain.speechText(text));
+        scheduleClose(Math.max(5000L, text.length() * 90L));
+    }
+
+    // ------------------------------------------------------- WhatsApp flow --
+    private void socialReset() {
+        sJob = null;
+        sChoices = null;
+        sAwaitBody = false;
+        sConfirm = false;
+        sAwaitName = false;
+    }
+
+    private boolean handleSocialFlow(String text) {
+        if (sConfirm) {
+            String ans = JarvisSocial.yesNo(text);
+            if (ans.equals("yes")) {
+                sConfirm = false;
+                socialSend();
+                return true;
+            }
+            if (ans.equals("no")) {
+                socialReset();
+                reply("Theek hai, message nahi bheja.");
+                return true;
+            }
+            if (JarvisSocial.parse(text) == null) {
+                replyAndListen("Bhej dun? Haan ya nahi boliye.", "Bhej dun? Haan ya nahi boliye.");
+                return true;
+            }
+            socialReset();
+        }
+        if (sAwaitBody) {
+            sAwaitBody = false;
+            if (JarvisSocial.parse(text) == null || JarvisSocial.yesNo(text).length() == 0) {
+                sJob.body = text.trim();
+                socialAskConfirm();
+                return true;
+            }
+            socialReset();
+        }
+        if (sAwaitName) {
+            sAwaitName = false;
+            List<String> keep = new ArrayList<String>();
+            for (String t : JarvisContactMatch.words(text)) {
+                if (!JarvisSocial.SKIP.contains(t)) {
+                    keep.add(t);
+                }
+            }
+            sJob.name = JarvisSocial.join(keep);
+            socialResolve();
+            return true;
+        }
+        if (sChoices != null) {
+            int pick = JarvisContactMatch.parseChoice(text, sChoices.size());
+            if (pick > 0) {
+                JarvisWhatsApp.Person p = sByCid.get(sChoices.get(pick - 1).contact.number);
+                sChoices = null;
+                socialAct(p);
+                return true;
+            }
+            if (pick < 0) {
+                socialReset();
+                reply("Theek hai, rehne diya.");
+                return true;
+            }
+            if (JarvisSocial.parse(text) == null) {
+                replyAndListen("Number boliye, jaise do.", "Samajh nahi aaya. Number boliye, jaise do.");
+                return true;
+            }
+            sChoices = null;
+        }
+        JarvisSocial.Job j = JarvisSocial.parse(text);
+        if (j == null) {
+            return false;
+        }
+        if (!j.app.equals("whatsapp")) {
+            String nm = j.app.substring(0, 1).toUpperCase(Locale.ENGLISH) + j.app.substring(1);
+            reply(nm + " par message ya call Android me bahar se mumkin nahi hai. "
+                    + "WhatsApp par kar sakta hoon, WhatsApp bolkar dekhiye.");
+            return true;
+        }
+        sJob = j;
+        socialResolve();
+        return true;
+    }
+
+    private void socialResolve() {
+        if (!granted("android.permission.READ_CONTACTS")) {
+            reply("Contacts ki permission nahi hai. Jarvis app ki Settings me 'Calling permission allow karo' dabaiye.");
+            socialReset();
+            return;
+        }
+        List<JarvisContactMatch.Contact> contacts = new ArrayList<JarvisContactMatch.Contact>();
+        try {
+            sByCid.clear();
+            for (JarvisWhatsApp.Person p : JarvisWhatsApp.load(this)) {
+                contacts.add(new JarvisContactMatch.Contact(p.name, String.valueOf(p.cid)));
+                sByCid.put(String.valueOf(p.cid), p);
+            }
+        } catch (Exception e) {
+            reply("WhatsApp contacts padh nahi paya: " + e.getMessage());
+            socialReset();
+            return;
+        }
+        String name = sJob.name;
+        if (sJob.kind.equals("message") && sJob.ambiguous && sJob.body == null) {
+            String[] nb = JarvisSocial.splitNameBody(JarvisContactMatch.words(name), contacts);
+            sJob.name = nb[0];
+            sJob.body = nb[1];
+            name = nb[0];
+        }
+        if (name.trim().length() == 0) {
+            sAwaitName = true;
+            replyAndListen("Kisko?", "Kisko?");
+            return;
+        }
+        List<JarvisContactMatch.Scored> found = JarvisContactMatch.find(name, contacts, 4);
+        if (found.isEmpty()) {
+            reply(name + " naam ka WhatsApp contact nahi mila.");
+            socialReset();
+        } else if (found.size() == 1) {
+            socialAct(sByCid.get(found.get(0).contact.number));
+        } else {
+            sChoices = found;
+            StringBuilder sb = new StringBuilder("Ye WhatsApp contacts mile. Bolkar chuniye (jaise \"2\"):\n");
+            for (int i = 0; i < found.size(); i++) {
+                sb.append("\n").append(i + 1).append(".  ").append(found.get(i).contact.name);
+            }
+            replyAndListen(sb.toString(), choicesSpeech(found));
+        }
+    }
+
+    private void socialAct(JarvisWhatsApp.Person p) {
+        if (p == null || sJob == null) {
+            socialReset();
+            return;
+        }
+        String shown = JarvisContactMatch.speakable(p.name);
+        if (sJob.kind.equals("call")) {
+            try {
+                JarvisWhatsApp.call(this, p, sJob.video);
+                replyDone(shown + " ko WhatsApp par " + (sJob.video ? "video" : "voice") + " call laga raha hoon.");
+            } catch (Exception e) {
+                replyDone(e.getMessage() != null && e.getMessage().contains("WhatsApp")
+                        ? e.getMessage() : "WhatsApp call nahi lag paya.");
+            }
+            socialReset();
+            return;
+        }
+        sJob.person = p;
+        if (sJob.body == null || sJob.body.length() == 0) {
+            sAwaitBody = true;
+            replyAndListen(shown + " ko kya message bhejna hai?", shown + " ko kya message bhejna hai?");
+            return;
+        }
+        socialAskConfirm();
+    }
+
+    private void socialAskConfirm() {
+        String shown = JarvisContactMatch.speakable(sJob.person.name);
+        sConfirm = true;
+        replyAndListen(shown + " ko WhatsApp par bhejna hai: " + sJob.body + "\nBhej dun?",
+                shown + " ko WhatsApp par bhejna hai. " + sJob.body + ". Bhej dun?");
+    }
+
+    private void socialSend() {
+        JarvisSocial.Job job = sJob;
+        String shown = JarvisContactMatch.speakable(job.person.name);
+        try {
+            String number = JarvisWhatsApp.phoneFor(this, job.person.cid);
+            if (number.length() == 0) {
+                replyDone(shown + " ka number nahi mila.");
+            } else {
+                JarvisWhatsApp.chat(this, job.person, number, job.body);
+                replyDone(JarvisWhatsApp.accessibilityOn(this)
+                        ? shown + " ko message bhej raha hoon."
+                        : "Chat khol di hai. Bas Send dabaiye. Apne aap bhejne ke liye Accessibility me JARVIS auto-send On kijiye.");
+            }
+        } catch (Exception e) {
+            replyDone("WhatsApp khul nahi paya.");
+        }
+        socialReset();
     }
 
     private boolean isDismiss(String text) {
@@ -1065,7 +1266,7 @@ public class JarvisOverlayService extends Service {
             if (pick > 0) {
                 JarvisContactMatch.Scored s = pendingChoices.get(pick - 1);
                 pendingChoices = null;
-                reply(dial(s.contact));
+                replyDone(dial(s.contact));
                 return true;
             }
             if (pick < 0) {
@@ -1176,7 +1377,7 @@ public class JarvisOverlayService extends Service {
         if (found.isEmpty()) {
             reply(w + " naam ka contact nahi mila.");
         } else if (found.size() == 1) {
-            reply(dial(found.get(0).contact));
+            replyDone(dial(found.get(0).contact));
         } else {
             pendingChoices = found;
             replyAndListen(choicesText(found), choicesSpeech(found));
