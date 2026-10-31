@@ -1826,7 +1826,8 @@ def build_jarvis_ui(app):
     PARTS = (("Panel (Trigger)", "JarvisTriggerActivity", "activity"),
              ("Sunne wali service", "JarvisOverlayService", "service"),
              ("Quick tile", "JarvisTileService", "service"),
-             ("Alarm receiver", "JarvisAlarmReceiver", "receiver"))
+             ("Alarm receiver", "JarvisAlarmReceiver", "receiver"),
+             ("WhatsApp auto-send", "JarvisAccessService", "service"))
 
     def check_parts():
         """Installed APK me Jarvis ke Java hisse (manifest me) hain ya nahi: [(naam, hai?)]."""
@@ -1896,7 +1897,7 @@ def build_jarvis_ui(app):
         row = ActionRow(label)
         row.bind(on_release=lambda w, f=fn: f())
         home_card.add_widget(row)
-    parts_label = make_label("", 12, MUTED, height=dp(128), lines=7)
+    parts_label = make_label("", 12, MUTED, height=dp(150), lines=8)
     home_card.add_widget(parts_label)
     Clock.schedule_once(refresh_parts, 1.0)
     content.add_widget(home_card)
@@ -2013,7 +2014,19 @@ def build_jarvis_ui(app):
             print("Calling permission error:", exc)
             toast("Phone Settings > Apps > Jarvis > Permissions me Contacts aur Phone allow kijiye")
 
+    def open_accessibility(*_):
+        try:
+            from jnius import autoclass
+            Intent = autoclass("android.content.Intent")
+            Settings = autoclass("android.provider.Settings")
+            app.open_intent(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            toast("Installed apps/Downloaded apps me 'JARVIS auto-send' On kijiye")
+        except Exception as exc:
+            print("Accessibility settings error:", exc)
+            toast("Phone Settings > Accessibility me 'JARVIS auto-send' On kijiye")
+
     for label, fn in [("Calling permission allow karo (Contacts + Phone)", allow_calling),
+                      ("WhatsApp auto-send: Accessibility On karo", open_accessibility),
                       ("Battery / Autostart settings", open_battery)]:
         row = ActionRow(label)
         row.bind(on_release=lambda w, f=fn: f())
@@ -2368,6 +2381,13 @@ def build_jarvis_ui(app):
                 gen = ai["gen"]
                 Clock.schedule_once(lambda dt: deliver(gen, True, quick), 0)
                 return
+        try_social = getattr(app, "_jarvis_try_social", None)
+        if try_social is not None:
+            try:
+                if try_social(cmd):                     # WhatsApp message / call
+                    return
+            except Exception as exc:
+                print("social flow error:", repr(exc))
         try_call = getattr(app, "_jarvis_try_call", None)
         if try_call is not None:
             try:
@@ -2514,4 +2534,9 @@ def build_jarvis_ui(app):
         jarvis_calls.install_calls(app)            # naam se call + kai match par chunav
     except Exception as exc:
         print("install_calls failed:", exc)
+    try:
+        import jarvis_social
+        jarvis_social.install_social(app)          # WhatsApp message / voice / video call
+    except Exception as exc:
+        print("install_social failed:", exc)
     return root
