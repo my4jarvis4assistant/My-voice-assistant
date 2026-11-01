@@ -6,11 +6,15 @@ import android.content.SharedPreferences;
 import android.graphics.Path;
 import android.graphics.Rect;
 import android.os.Build;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 
+import org.json.JSONObject;
+
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -28,6 +32,9 @@ public class JarvisAccessService extends AccessibilityService {
                 @Override
                 public void onSharedPreferenceChanged(SharedPreferences sp, String key) {
                     if ("access_send_until".equals(key) && sp.getLong(key, 0) > System.currentTimeMillis()) {
+                        startPolling();
+                    }
+                    if ("ui_task".equals(key) && sp.getString(key, "").length() > 0) {
                         startPolling();
                     }
                 }
@@ -64,7 +71,274 @@ public class JarvisAccessService extends AccessibilityService {
     }
 
     private boolean armed() {
-        return System.currentTimeMillis() <= getSharedPreferences("jarvis_prefs", 0).getLong("access_send_until", 0);
+        return System.currentTimeMillis() <= getSharedPreferences("jarvis_prefs", 0).getLong("access_send_until", 0)
+                || uiActive();
+    }
+
+    // ---------------------------------------------------------------- WhatsApp ke andar naam se dhundhna --
+    private String uiKind = "", uiName = "", uiBody = "";
+    private long uiUntil = 0, uiStageAt = 0, uiId = 0;
+    private int uiStage = 0, uiBacks = 0;
+    private boolean uiTriedFirst = false;
+
+    private boolean uiActive() {
+        loadUi();
+        return uiKind.length() > 0 && System.currentTimeMillis() <= uiUntil;
+    }
+
+    private void loadUi() {
+        try {
+            String raw = getSharedPreferences("jarvis_prefs", 0).getString("ui_task", "");
+            if (raw.length() == 0) {
+                uiKind = "";
+                return;
+            }
+            JSONObject o = new JSONObject(raw);
+            long id = o.optLong("id", 0);
+            if (id != uiId) {                       // naya kaam: shuru se
+                uiId = id;
+                uiStage = 0;
+                uiBacks = 0;
+                uiTriedFirst = false;
+                uiStageAt = System.currentTimeMillis();
+            }
+            uiKind = o.optString("kind", "");
+            uiName = o.optString("name", "");
+            uiBody = o.optString("body", "");
+            uiUntil = o.optLong("until", 0);
+        } catch (Exception e) {
+            uiKind = "";
+        }
+    }
+
+    private void uiEnd(String why) {
+        log(why);
+        getSharedPreferences("jarvis_prefs", 0).edit().putString("ui_task", "")
+                .putString("ui_result", why).apply();
+        uiKind = "";
+        final String msg = why;
+        handler.post(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    android.widget.Toast.makeText(JarvisAccessService.this, msg, android.widget.Toast.LENGTH_LONG).show();
+                } catch (Exception ignored) {
+                }
+            }
+        });
+    }
+
+    private void uiStep(AccessibilityNodeInfo root) {
+        long now = System.currentTimeMillis();
+        long inStage = now - uiStageAt;
+        if (uiStage == 0) {                                   // WhatsApp ki list par aao, search dabao
+            AccessibilityNodeInfo search = byId(root, "menuitem_search");
+            if (search == null) {
+                search = byDesc(root, "search");
+            }
+            if (search != null && click(search)) {
+                uiStage = 1;
+                uiStageAt = now;
+                log("search khula");
+            } else if (inStage > 1500 && uiBacks < 4) {
+                uiBacks++;
+                uiStageAt = now;
+                performGlobalAction(GLOBAL_ACTION_BACK);
+                log("peeche ja raha hoon (" + uiBacks + ")");
+            } else if (inStage > 12000) {
+                uiEnd("WhatsApp ka search nahi mila");
+            }
+            return;
+        }
+        if (uiStage == 1) {                                   // naam likho
+            AccessibilityNodeInfo field = byId(root, "search_src_text");
+            if (field == null) {
+                field = firstEdit(root);
+            }
+            if (field != null) {
+                String q = uiName;
+                if (uiTriedFirst) {
+                    String[] t = uiName.trim().split("\\s+");
+                    q = t.length > 0 ? t[0] : uiName;
+                }
+                Bundle b = new Bundle();
+                b.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, q);
+                field.performAction(AccessibilityNodeInfo.ACTION_FOCUS);
+                if (field.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, b)) {
+                    uiStage = 2;
+                    uiStageAt = now;
+                    log("naam likha: " + q);
+                }
+            } else if (inStage > 6000) {
+                uiEnd("Search ka dabba nahi mila");
+            }
+            return;
+        }
+        if (uiStage == 2) {                                   // nateeje me se sahi naam chuno
+            if (inStage < 1300) {
+                return;
+            }
+            List<AccessibilityNodeInfo> texts = new ArrayList<AccessibilityNodeInfo>();
+            collectTexts(root, texts, 0);
+            AccessibilityNodeInfo best = null;
+            double bestScore = 0;
+            for (AccessibilityNodeInfo n : texts) {
+                CharSequence t = n.getText();
+                if (t == null || n.isEditable()) {
+                    continue;
+                }
+                String tx = t.toString().trim();
+                if (tx.length() == 0 || tx.length() > 60) {
+                    continue;
+                }
+                double sc = JarvisContactMatch.score(uiName, tx);
+                if (sc > bestScore) {
+                    bestScore = sc;
+                    best = n;
+                }
+            }
+            if (best != null && bestScore >= 0.7) {
+                if (click(best)) {
+                    uiStage = 3;
+                    uiStageAt = now;
+                    log("chuna: " + best.getText());
+                }
+            } else if (inStage > 4500) {
+                String[] t = uiName.trim().split("\\s+");
+                if (!uiTriedFirst && t.length > 1) {
+                    uiTriedFirst = true;
+                    uiStage = 1;
+                    uiStageAt = now;
+                } else {
+                    uiEnd(uiName + " naam WhatsApp me nahi mila");
+                }
+            }
+            return;
+        }
+        if (uiStage == 3) {                                   // chat khul gayi
+            if (uiKind.equals("message")) {
+                AccessibilityNodeInfo entry = byId(root, "entry");
+                if (entry == null) {
+                    if (inStage > 8000) {
+                        uiEnd("Chat nahi khuli");
+                    }
+                    return;
+                }
+                Bundle b = new Bundle();
+                b.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, uiBody);
+                entry.performAction(AccessibilityNodeInfo.ACTION_FOCUS);
+                if (entry.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, b)) {
+                    uiStage = 4;
+                    uiStageAt = now;
+                }
+                return;
+            }
+            String want = uiKind.equals("video") ? "video call" : "voice call";
+            AccessibilityNodeInfo callBtn = byDesc(root, want);
+            if (callBtn == null && uiKind.equals("call")) {
+                callBtn = byDesc(root, "audio call");
+            }
+            if (callBtn != null && click(callBtn)) {
+                uiStage = 5;
+                uiStageAt = now;
+            } else if (inStage > 8000) {
+                uiEnd("Call ka button nahi mila");
+            }
+            return;
+        }
+        if (uiStage == 4) {                                   // message likha hai, Send dabao
+            if (inStage < 400) {
+                return;
+            }
+            AccessibilityNodeInfo send = find(root);
+            if (send != null && (click(send) || tap(send))) {
+                uiEnd("Message bhej diya");
+            } else if (inStage > 6000) {
+                uiEnd("Send nahi dab paya");
+            }
+            return;
+        }
+        if (uiStage == 5) {                                   // call ki pushti wala dabba aaye to 'Call' dabao
+            AccessibilityNodeInfo ok = byText(root, "call");
+            if (ok == null) {
+                ok = byText(root, "voice call");
+            }
+            if (ok != null && ok.isClickable() && !uiKind.equals("none")) {
+                click(ok);
+            }
+            if (inStage > 2500) {
+                uiEnd("Call laga raha hoon");
+            }
+        }
+    }
+
+    private AccessibilityNodeInfo byId(AccessibilityNodeInfo root, String shortId) {
+        String[] pk = {"com.whatsapp:id/", "com.whatsapp.w4b:id/"};
+        for (String p : pk) {
+            List<AccessibilityNodeInfo> l = root.findAccessibilityNodeInfosByViewId(p + shortId);
+            if (l != null && !l.isEmpty()) {
+                return l.get(0);
+            }
+        }
+        return null;
+    }
+
+    private AccessibilityNodeInfo byDesc(AccessibilityNodeInfo n, String contains) {
+        if (n == null) {
+            return null;
+        }
+        CharSequence d = n.getContentDescription();
+        if (d != null && d.toString().toLowerCase().contains(contains)) {
+            return n;
+        }
+        for (int i = 0; i < n.getChildCount(); i++) {
+            AccessibilityNodeInfo r = byDesc(n.getChild(i), contains);
+            if (r != null) {
+                return r;
+            }
+        }
+        return null;
+    }
+
+    private AccessibilityNodeInfo byText(AccessibilityNodeInfo root, String exact) {
+        List<AccessibilityNodeInfo> l = root.findAccessibilityNodeInfosByText(exact);
+        if (l != null) {
+            for (AccessibilityNodeInfo n : l) {
+                CharSequence t = n.getText();
+                if (t != null && t.toString().trim().equalsIgnoreCase(exact)) {
+                    return n;
+                }
+            }
+        }
+        return null;
+    }
+
+    private AccessibilityNodeInfo firstEdit(AccessibilityNodeInfo n) {
+        if (n == null) {
+            return null;
+        }
+        if (n.isEditable() || "android.widget.EditText".contentEquals(n.getClassName() == null ? "" : n.getClassName())) {
+            return n;
+        }
+        for (int i = 0; i < n.getChildCount(); i++) {
+            AccessibilityNodeInfo r = firstEdit(n.getChild(i));
+            if (r != null) {
+                return r;
+            }
+        }
+        return null;
+    }
+
+    private void collectTexts(AccessibilityNodeInfo n, List<AccessibilityNodeInfo> out, int depth) {
+        if (n == null || depth > 25) {
+            return;
+        }
+        if (n.getText() != null && n.getText().length() > 0) {
+            out.add(n);
+        }
+        for (int i = 0; i < n.getChildCount(); i++) {
+            collectTexts(n.getChild(i), out, depth + 1);
+        }
     }
 
     private void log(String s) {
@@ -92,6 +366,24 @@ public class JarvisAccessService extends AccessibilityService {
 
     private void attempt() {
         if (!armed()) {
+            return;
+        }
+        if (uiActive()) {
+            try {
+                AccessibilityNodeInfo r = getRootInActiveWindow();
+                CharSequence pk = r == null ? null : r.getPackageName();
+                if (r != null && pk != null && pk.toString().startsWith("com.whatsapp")) {
+                    uiStep(r);
+                } else if (System.currentTimeMillis() - uiStageAt > 15000) {
+                    uiEnd("WhatsApp samne nahi aaya");
+                }
+            } catch (Exception e) {
+                log("ui error: " + e.getClass().getSimpleName());
+            }
+            if (uiActive()) {
+                polling = true;
+                handler.postDelayed(tick, 450);
+            }
             return;
         }
         tries++;
