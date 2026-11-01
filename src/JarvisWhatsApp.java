@@ -25,6 +25,7 @@ public final class JarvisWhatsApp {
         public String pkg = "com.whatsapp";
         public String number = "";
         public boolean wa = false;
+        public final List<String> aliases = new ArrayList<String>();
         public final Map<String, Long> ids = new HashMap<String, Long>();
         public final Map<String, String> mime = new HashMap<String, String>();
     }
@@ -61,7 +62,7 @@ public final class JarvisWhatsApp {
         c = null;
         try {
             c = ctx.getContentResolver().query(ContactsContract.Data.CONTENT_URI,
-                    new String[]{"_id", "contact_id", "display_name", "mimetype"},
+                    new String[]{"_id", "contact_id", "display_name", "mimetype", "data1"},
                     "mimetype LIKE ?", new String[]{MIME_BASE + "%"}, null);
             while (c != null && c.moveToNext()) {
                 long did = c.getLong(0);
@@ -89,7 +90,29 @@ public final class JarvisWhatsApp {
                 p.wa = true;
                 p.ids.put(kind, did);
                 p.mime.put(kind, mime);
+                String jid = c.getString(4);
+                if (p.number.length() == 0 && jid != null && jid.indexOf('@') > 0) {
+                    p.number = normalize(jid.substring(0, jid.indexOf('@')));
+                }
             }
+        } finally {
+            if (c != null) {
+                c.close();
+            }
+        }
+        // ek contact ke saare naam (phone wala, WhatsApp wala...)
+        c = null;
+        try {
+            c = ctx.getContentResolver().query(ContactsContract.RawContacts.CONTENT_URI,
+                    new String[]{"contact_id", "display_name"}, "deleted=0", null, null);
+            while (c != null && c.moveToNext()) {
+                Person p = people.get(c.getLong(0));
+                String nm = c.getString(1);
+                if (p != null && nm != null && !nm.equals(p.name) && !p.aliases.contains(nm)) {
+                    p.aliases.add(nm);
+                }
+            }
+        } catch (Exception ignored) {
         } finally {
             if (c != null) {
                 c.close();
