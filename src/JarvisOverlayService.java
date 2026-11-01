@@ -965,6 +965,7 @@ public class JarvisOverlayService extends Service {
             int pick = JarvisContactMatch.parseChoice(text, sChoices.size());
             if (pick > 0) {
                 JarvisWhatsApp.Person p = sByCid.get(sChoices.get(pick - 1).contact.number);
+                p.name = sChoices.get(pick - 1).contact.name;
                 sChoices = null;
                 socialAct(p);
                 return true;
@@ -1006,6 +1007,9 @@ public class JarvisOverlayService extends Service {
             sByCid.clear();
             for (JarvisWhatsApp.Person p : JarvisWhatsApp.load(this)) {
                 contacts.add(new JarvisContactMatch.Contact(p.name, String.valueOf(p.cid)));
+                for (String al : p.aliases) {
+                    contacts.add(new JarvisContactMatch.Contact(al, String.valueOf(p.cid)));
+                }
                 sByCid.put(String.valueOf(p.cid), p);
             }
         } catch (Exception e) {
@@ -1044,7 +1048,9 @@ public class JarvisOverlayService extends Service {
                     + " contacts me dekha). Naam thoda saaf boliye.");
             socialReset();
         } else if (found.size() == 1) {
-            socialAct(sByCid.get(found.get(0).contact.number));
+            JarvisWhatsApp.Person one = sByCid.get(found.get(0).contact.number);
+            one.name = found.get(0).contact.name;
+            socialAct(one);
         } else {
             sChoices = found;
             StringBuilder sb = new StringBuilder("Ye WhatsApp contacts mile. Bolkar chuniye (jaise \"2\"):\n");
