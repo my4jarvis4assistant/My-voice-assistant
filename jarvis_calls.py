@@ -91,12 +91,12 @@ def token_score(q, c):
         return 0.0
     if pq == pc:
         return 0.9
-    if len(pq) >= 3 and pc.startswith(pq):
+    if len(pq) == 3 and pc.startswith(pq):
         return 0.82
-    if len(pq) >= 4 and lev(pq, pc) <= 1:
+    if len(pq) >= 5 and pq[0] == pc[0] and lev(pq, pc) <= 1:
         return 0.78
     ratio = 1.0 - float(lev(q, c)) / max(len(q), len(c))
-    if len(q) >= 4 and ratio >= 0.75:
+    if len(q) >= 4 and ratio >= 0.8:
         return ratio * 0.85
     return 0.0
 
