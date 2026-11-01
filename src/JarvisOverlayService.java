@@ -1029,7 +1029,7 @@ public class JarvisOverlayService extends Service {
             replyAndListen("Kisko?", "Kisko?");
             return;
         }
-        List<JarvisContactMatch.Scored> found = JarvisContactMatch.findLoose(name, contacts, 6);
+        List<JarvisContactMatch.Scored> found = JarvisContactMatch.findFlexible(name, contacts, 6);
         List<JarvisContactMatch.Scored> waOnly = new ArrayList<JarvisContactMatch.Scored>();
         for (JarvisContactMatch.Scored f : found) {
             JarvisWhatsApp.Person pp = sByCid.get(f.contact.number);
