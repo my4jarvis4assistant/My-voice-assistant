@@ -201,7 +201,7 @@ public final class JarvisInbox {
         load(c);
         it.canReply = ACTIONS.containsKey(it.key);
         ITEMS.add(it);
-        while (ITEMS.size() > 120) {
+        while (ITEMS.size() > 1000) {
             ITEMS.remove(0);
         }
         save(c);
@@ -682,7 +682,11 @@ public final class JarvisInbox {
                     String r = compose(app, probe);
                     if (r == null) {
                         synchronized (JarvisInbox.class) {
-                            last.asked = true;
+                            for (Item it : ITEMS) {
+                                if (it.key.equals(key) && it.kind.equals("msg") && !it.read && !it.replied) {
+                                    it.asked = true;
+                                }
+                            }
                             ASKS.add(last);
                         }
                         save(app);
@@ -691,14 +695,32 @@ public final class JarvisInbox {
                     }
                     Thread.sleep(1200 + (long) (Math.random() * 1800));
                     if (!send(app, last, r)) {
+                        synchronized (JarvisInbox.class) {
+                            for (Item it : ITEMS) {
+                                if (it.key.equals(key) && it.kind.equals("msg") && !it.read && !it.replied) {
+                                    it.asked = true;             // dobara-dobara koshish ka loop na bane
+                                }
+                            }
+                        }
                         log(app, "reply bhej nahi paya (" + last.app + ")");
                     } else {
                         log(app, "auto-reply bheja: " + last.sender);
                     }
                 } catch (Exception ignored) {
                 } finally {
+                    boolean more = false;
                     synchronized (JarvisInbox.class) {
                         BUSY.remove(key);
+                        for (Item it : ITEMS) {
+                            if (it.key.equals(key) && it.kind.equals("msg") && !it.read && !it.replied
+                                    && !it.asked && !it.group) {
+                                more = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (more) {
+                        autoKey(app, key);           // jawab dete waqt aur message aa gaye: unka bhi jawab
                     }
                 }
             }
@@ -714,7 +736,7 @@ public final class JarvisInbox {
             if (!it.kind.equals("msg") || !it.canReply || it.group || !autoApp(it.pkg)) {
                 return;
             }
-            // ek sender ko ghante me 6 se zyada auto-reply nahi (bot se loop na ban jaye)
+            // ek sender ko ghante me 500 se zyada nahi (sirf bot-loop se bachne ki bahut badi hadd)
             int recent = 0;
             long hour = System.currentTimeMillis() - 3600L * 1000;
             synchronized (JarvisInbox.class) {
@@ -724,7 +746,7 @@ public final class JarvisInbox {
                     }
                 }
             }
-            if (recent >= 6) {
+            if (recent >= 500) {
                 return;
             }
             autoKey(c, it.key);
