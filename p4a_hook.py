@@ -36,6 +36,17 @@ COMPONENTS = [
             android:taskAffinity=""
             android:exported="true" />
 """),
+    ("JarvisNotifService", """
+        <service
+            android:name="%(p)s.JarvisNotifService"
+            android:label="JARVIS messages"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+"""),
     ("JarvisTileService", """
         <service
             android:name="%(p)s.JarvisTileService"
