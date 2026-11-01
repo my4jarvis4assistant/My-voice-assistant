@@ -25,6 +25,7 @@ public final class JarvisWhatsApp {
         public String pkg = "com.whatsapp";
         public String number = "";
         public boolean wa = false;
+        public boolean ui = false;          // phone me nahi, WhatsApp ke andar naam se dhundhna hai
         public final List<String> aliases = new ArrayList<String>();
         public final Map<String, Long> ids = new HashMap<String, Long>();
         public final Map<String, String> mime = new HashMap<String, String>();
@@ -177,6 +178,27 @@ public final class JarvisWhatsApp {
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         ctx.getSharedPreferences("jarvis_prefs", 0).edit()
                 .putLong("access_send_until", System.currentTimeMillis() + 25000).apply();
+        ctx.startActivity(i);
+    }
+
+    /** WhatsApp kholkar uske andar naam search karke message/call karwao (Accessibility service karti hai). */
+    public static void uiTask(Context ctx, String kind, String name, String body) throws Exception {
+        org.json.JSONObject o = new org.json.JSONObject();
+        o.put("id", System.currentTimeMillis());
+        o.put("kind", kind);
+        o.put("name", name);
+        o.put("body", body == null ? "" : body);
+        o.put("until", System.currentTimeMillis() + 60000);
+        ctx.getSharedPreferences("jarvis_prefs", 0).edit().putString("ui_task", o.toString())
+                .putString("ui_result", "").apply();
+        Intent i = ctx.getPackageManager().getLaunchIntentForPackage("com.whatsapp");
+        if (i == null) {
+            i = ctx.getPackageManager().getLaunchIntentForPackage("com.whatsapp.w4b");
+        }
+        if (i == null) {
+            throw new Exception("WhatsApp installed nahi hai");
+        }
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         ctx.startActivity(i);
     }
 
