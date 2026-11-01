@@ -1260,8 +1260,17 @@ public class JarvisOverlayService extends Service {
             found = new ArrayList<JarvisContactMatch.Scored>(found.subList(0, 4));
         }
         if (found.isEmpty()) {
-            reply(name + " naam ka contact nahi mila (" + contacts.size()
-                    + " contacts me dekha). Naam thoda saaf boliye.");
+            if (JarvisWhatsApp.accessibilityOn(this)) {
+                // phone contacts me nahi: WhatsApp me jis naam se save hai, wahan dhundho
+                JarvisWhatsApp.Person ui = new JarvisWhatsApp.Person();
+                ui.name = name;
+                ui.cid = -1;
+                ui.ui = true;
+                socialAct(ui);
+                return;
+            }
+            reply(name + " naam ka contact nahi mila. Agar ye naam sirf WhatsApp me save hai to Accessibility me "
+                    + "JARVIS auto-send On kijiye, tab main WhatsApp ke andar dhundh lunga.");
             socialReset();
         } else if (found.size() == 1) {
             JarvisWhatsApp.Person one = sByCid.get(found.get(0).contact.number);
@@ -1277,6 +1286,22 @@ public class JarvisOverlayService extends Service {
         }
     }
 
+    private void watchUi(final String name) {
+        main.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    String res = prefs().getString("ui_result", "");
+                    if (res.contains("nahi")) {
+                        speak(res.contains("naam") ? JarvisContactMatch.speakable(name)
+                                + " naam ka contact WhatsApp me nahi mila." : res);
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+        }, 14000);
+    }
+
     private void socialAct(JarvisWhatsApp.Person p) {
         if (p == null || sJob == null) {
             socialReset();
@@ -1285,7 +1310,12 @@ public class JarvisOverlayService extends Service {
         String shown = JarvisContactMatch.speakable(p.name);
         if (sJob.kind.equals("call")) {
             try {
-                JarvisWhatsApp.call(this, p, sJob.video);
+                if (p.ui) {
+                    JarvisWhatsApp.uiTask(this, sJob.video ? "video" : "call", p.name, "");
+                    watchUi(p.name);
+                } else {
+                    JarvisWhatsApp.call(this, p, sJob.video);
+                }
                 replyDone(shown + " ko WhatsApp par " + (sJob.video ? "video" : "voice") + " call laga raha hoon.");
             } catch (Exception e) {
                 replyDone(e.getMessage() != null && e.getMessage().contains("WhatsApp")
@@ -1314,6 +1344,13 @@ public class JarvisOverlayService extends Service {
         JarvisSocial.Job job = sJob;
         String shown = JarvisContactMatch.speakable(job.person.name);
         try {
+            if (job.person.ui) {
+                JarvisWhatsApp.uiTask(this, "message", job.person.name, job.body);
+                watchUi(job.person.name);
+                replyDone(shown + " ko WhatsApp me dhundh kar message bhej raha hoon.");
+                socialReset();
+                return;
+            }
             String number = JarvisWhatsApp.phoneFor(this, job.person.cid);
             if (number.length() == 0) {
                 replyDone(shown + " ka number nahi mila.");
