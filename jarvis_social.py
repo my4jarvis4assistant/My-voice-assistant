@@ -116,17 +116,17 @@ def parse_social(utterance):
 
 
 def search_name(name, pairs, n=4):
-    """Pura naam na mile to bacha-kucha shabd hatakar (par/per/ko jaise bekaar shabd) chhote tukde se dhundho."""
+    """Pura naam na mile to peeche ke shabd hatakar (par/per jaise bekaar shabd) pehle shabdon se dhundho.
+    Dheela (galat) match kabhi nahi: na mile to khaali list."""
     toks = jc.words(name)
     for size in range(len(toks), 0, -1):
-        for i in range(0, len(toks) - size + 1):
-            cand = " ".join(toks[i:i + size])
-            if size == 1 and len(cand) < 3:
-                continue
-            r = jc.find(cand, pairs, n)
-            if r:
-                return r
-    return jc.find_loose(name, pairs, n)
+        cand = " ".join(toks[:size])
+        if size == 1 and len(cand) < 3:
+            continue
+        r = jc.find(cand, pairs, n)
+        if r:
+            return r
+    return []
 
 
 def split_name_body(tokens, contacts):
@@ -290,6 +290,25 @@ def launch_whatsapp_chat(app, person, number, text):
     app.activity.startActivity(intent)
 
 
+def launch_whatsapp_ui(app, kind, name, body):
+    """WhatsApp kholo aur Accessibility service ko bolo ki andar naam search karke kaam kare."""
+    import json
+    from jnius import autoclass
+    Intent = autoclass("android.content.Intent")
+    ms = int(time.time() * 1000)
+    task = json.dumps({"id": ms, "kind": kind, "name": name, "body": body or "", "until": ms + 60000})
+    ed = app.activity.getSharedPreferences("jarvis_prefs", 0).edit()
+    ed.putString("ui_task", task)
+    ed.putString("ui_result", "")
+    ed.apply()
+    pm = app.activity.getPackageManager()
+    intent = pm.getLaunchIntentForPackage("com.whatsapp") or pm.getLaunchIntentForPackage("com.whatsapp.w4b")
+    if intent is None:
+        raise RuntimeError("WhatsApp installed nahi hai")
+    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP)
+    app.activity.startActivity(intent)
+
+
 def accessibility_enabled(app):
     try:
         from jnius import autoclass
@@ -302,13 +321,14 @@ def accessibility_enabled(app):
 
 # ------------------------------------------------------------------ flow ---
 def install_social(app, loader=None, phone=None, call_launcher=None, chat_launcher=None,
-                   permission=None, autosend=None):
+                   permission=None, autosend=None, ui_launcher=None):
     """app._jarvis_try_social(command) lagata hai. True = yahin sambhal liya."""
     from kivy.clock import Clock
     st = {"choices": None, "job": None, "await_body": False, "confirm": False, "await_name": False}
     load = loader or (lambda: load_whatsapp_contacts(app))
     get_phone = phone or (lambda cid: phone_for_contact(app, cid))
     do_call = call_launcher or (lambda person, video: launch_whatsapp_call(app, person, video))
+    do_ui = ui_launcher or (lambda kind, name, body: launch_whatsapp_ui(app, kind, name, body))
     do_chat = chat_launcher or (lambda person, number, text: launch_whatsapp_chat(app, person, number, text))
     perm = permission or (lambda p: jc.has_permission(app, p))
     auto_ok = autosend or (lambda: accessibility_enabled(app))
@@ -324,6 +344,17 @@ def install_social(app, loader=None, phone=None, call_launcher=None, chat_launch
                 print("social say error:", exc)
         Clock.schedule_once(run, 0)
 
+    def watch_ui(name):
+        """WhatsApp ke andar dhundhne ka nateeja kuch der baad dekho; na mila to saaf bolo."""
+        def check(dt):
+            try:
+                res = str(app.activity.getSharedPreferences("jarvis_prefs", 0).getString("ui_result", "") or "")
+                if res and ("nahi" in res):
+                    say(jc.speakable(name) + " naam ka contact WhatsApp me nahi mila." if "naam" in res else res)
+            except Exception as exc:
+                print("watch_ui error:", exc)
+        Clock.schedule_once(check, 14)
+
     def reset():
         st.update(choices=None, job=None, await_body=False, confirm=False, await_name=False)
 
@@ -332,7 +363,11 @@ def install_social(app, loader=None, phone=None, call_launcher=None, chat_launch
         shown = jc.speakable(person["name"])
         if job["kind"] == "call":
             try:
-                do_call(person, job["video"])
+                if person.get("ui"):
+                    do_ui("video" if job["video"] else "call", person["name"], "")
+                    watch_ui(person["name"])
+                else:
+                    do_call(person, job["video"])
                 say(shown + " ko WhatsApp par " + ("video" if job["video"] else "voice") + " call laga raha hoon.")
             except Exception as exc:
                 print("wa call error:", repr(exc))
@@ -358,6 +393,12 @@ def install_social(app, loader=None, phone=None, call_launcher=None, chat_launch
         person = job["person"]
         shown = jc.speakable(person["name"])
         try:
+            if person.get("ui"):
+                do_ui("message", person["name"], job["body"])
+                watch_ui(person["name"])
+                say(shown + " ko WhatsApp me dhundh kar message bhej raha hoon.")
+                reset()
+                return
             number = person.get("number") or get_phone(person["cid"])
             if not number:
                 say(shown + " ka number nahi mila.")
@@ -409,8 +450,12 @@ def install_social(app, loader=None, phone=None, call_launcher=None, chat_launch
         for n_, c_, _s in found:                 # jis naam se bola, wahi naam bolkar jawab do
             by_cid[c_]["name"] = n_
         if not found:
-            say(name + " naam ka contact nahi mila (" + str(len(people)) + " contacts me dekha). "
-                "Naam thoda saaf boliye ya contacts permission check kijiye.")
+            if auto_ok() and name.strip():
+                # phone contacts me nahi: WhatsApp me jis naam se save hai, wahan dhundho
+                act({"name": name, "cid": -1, "ui": True, "ids": {}, "wa": True})
+                return
+            say(name + " naam ka contact nahi mila. Agar ye naam sirf WhatsApp me save hai to Accessibility me "
+                "JARVIS auto-send On kijiye, tab main WhatsApp ke andar dhundh lunga.")
             reset()
         elif len(found) == 1:
             act(by_cid[found[0][1]])
