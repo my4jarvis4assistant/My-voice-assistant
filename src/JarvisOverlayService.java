@@ -53,6 +53,8 @@ public class JarvisOverlayService extends Service {
     public static final String ACTION_TALK = "org.myassistant.TALK";
     public static final String ACTION_WAKE_ON = "org.myassistant.WAKE_ON";
     public static final String ACTION_WAKE_OFF = "org.myassistant.WAKE_OFF";
+    public static final String ACTION_CMD = "org.myassistant.CMD";
+    static JarvisOverlayService instance = null;
     private static final String CHANNEL_ID = "jarvis_overlay";
     private static final int NOTIF_ID = 4711;
 
@@ -104,7 +106,17 @@ public class JarvisOverlayService extends Service {
     private boolean session = false;          // True = Jarvis abhi sun/bol raha hai (baatcheet chal rahi hai)
     private int idleCount = 0;                // lagataar kitni baar kuch sunai nahi diya
 
+    // --- messages / calls (inbox) ---
+    private JarvisInbox.Item iAsk = null;         // jis message ke jawab ke liye user se poocha hai
+    private boolean iOffer = false;               // "jawab de doon?" poocha hai
+
     // ----------------------------------------------------------- lifecycle --
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        instance = this;
+    }
+
     @Override
     public IBinder onBind(Intent intent) {
         return null;
@@ -140,6 +152,16 @@ public class JarvisOverlayService extends Service {
                 }
                 return START_STICKY;
             }
+            if (ACTION_CMD.equals(action)) {
+                String said = intent.getStringExtra("text");
+                beginSession();
+                if (said != null && said.trim().length() > 0) {
+                    handleCommand(said.trim());
+                } else {
+                    startListening();
+                }
+                return wakeEnabled ? START_STICKY : START_NOT_STICKY;
+            }
             talk();
         } catch (Exception e) {
             toastError("Jarvis shuru nahi ho paya: " + e);
@@ -151,6 +173,11 @@ public class JarvisOverlayService extends Service {
 
     /** Panel dikhao aur sunna shuru karo (button ya wake word se). */
     private void talk() {
+        beginSession();
+        startListening();
+    }
+
+    private void beginSession() {
         if (!session) {
             session = true;
             alive = true;
@@ -161,11 +188,13 @@ public class JarvisOverlayService extends Service {
             initTts();
             main.post(ticker);
         }
-        startListening();
     }
 
     @Override
     public void onDestroy() {
+        if (instance == this) {
+            instance = null;
+        }
         stopWake(true);
         cleanup();
         removeBubble();
@@ -300,7 +329,20 @@ public class JarvisOverlayService extends Service {
         pendingChoices = null;
         awaitingName = false;
         listenAfterSpeech = false;
+        iAsk = null;
+        iOffer = false;
         if (wakeEnabled) {
+            if (JarvisInbox.nextAsk(true) != null) {
+                main.postDelayed(new Runnable() {
+                    @Override
+                    public void run() {
+                        JarvisInbox.Item nx = JarvisInbox.nextAsk(true);
+                        if (nx != null && !session) {
+                            askAbout(JarvisOverlayService.this, nx);
+                        }
+                    }
+                }, 2500);
+            }
             setBubbleActive(false);
             try {
                 startAsForeground(false);
@@ -840,6 +882,9 @@ public class JarvisOverlayService extends Service {
             heardView.setText("\"" + text + "\"");
         }
         idleCount = 0;
+        if (!isDismiss(text) && handleInboxFlow(text)) {
+            return;
+        }
         if (!isDismiss(text) && handleSocialFlow(text)) {
             return;
         }
@@ -910,6 +955,177 @@ public class JarvisOverlayService extends Service {
         setStatus(text, MODE_IDLE);
         speak(JarvisBrain.speechText(text));
         scheduleClose(Math.max(5000L, text.length() * 90L));
+    }
+
+    // ----------------------------------------------- messages / calls flow --
+    /** Naye message ka jawab Jarvis nahi de paya: bolkar poochho ki kya bhejun. */
+    static void askAbout(final Context ctx, final JarvisInbox.Item it) {
+        final JarvisOverlayService svc = instance;
+        String who = JarvisContactMatch.speakable(it.sender.length() > 0 ? it.sender : it.chat);
+        final String say = who + " ne " + it.app + " par likha: " + JarvisBrain.speechText(it.text)
+                + ". Iska jawab main apne aap nahi de sakta. Kya bhejun?";
+        JarvisInbox.addAsk(it);
+        if (svc == null) {
+            it.voiced = true;
+            notifyAsk(ctx, who, it);
+            return;
+        }
+        svc.main.post(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    if (svc.session && svc.iAsk != null) {
+                        return;                         // pehle wala sawaal chal raha hai; baad me poochhenge
+                    }
+                    svc.startAsForeground(true);
+                    svc.beginSession();
+                    svc.iAsk = it;
+                    it.voiced = true;
+                    svc.replyAndListen(say, say);
+                } catch (Exception e) {
+                    notifyAsk(ctx, JarvisContactMatch.speakable(it.sender), it);
+                }
+            }
+        });
+    }
+
+    private static void notifyAsk(Context ctx, String who, JarvisInbox.Item it) {
+        try {
+            NotificationManager nm = (NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
+            Notification.Builder nb;
+            if (Build.VERSION.SDK_INT >= 26) {
+                nm.createNotificationChannel(new NotificationChannel("jarvis_ask", "Jarvis sawaal",
+                        NotificationManager.IMPORTANCE_HIGH));
+                nb = new Notification.Builder(ctx, "jarvis_ask");
+            } else {
+                nb = new Notification.Builder(ctx);
+            }
+            nb.setSmallIcon(android.R.drawable.ic_dialog_email)
+                    .setContentTitle(who + " ko kya bhejna hai?")
+                    .setContentText(it.text)
+                    .setAutoCancel(true);
+            nm.notify(4712, nb.build());
+        } catch (Exception ignored) {
+        }
+    }
+
+    private static boolean cancelWords(String text) {
+        List<String> w = JarvisContactMatch.words(text);
+        if (w.size() > 3) {
+            return false;
+        }
+        for (String t : w) {
+            if (t.equals("nahi") || t.equals("nhi") || t.equals("rehne") || t.equals("rahne") || t.equals("chhodo")
+                    || t.equals("chodo") || t.equals("cancel") || t.equals("skip") || t.equals("mat")
+                    || t.equals("ignore")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void nextAskOr(String doneText) {
+        JarvisInbox.Item nx = JarvisInbox.nextAsk();
+        if (nx != null) {
+            String who = JarvisContactMatch.speakable(nx.sender.length() > 0 ? nx.sender : nx.chat);
+            String say = (doneText.length() > 0 ? doneText + " " : "") + "Ab " + who + " ne " + nx.app
+                    + " par likha: " + JarvisBrain.speechText(nx.text) + ". Kya bhejun?";
+            iAsk = nx;
+            nx.voiced = true;
+            replyAndListen(say, say);
+        } else {
+            replyDone(doneText.length() > 0 ? doneText : "Theek hai.");
+        }
+    }
+
+    private boolean handleInboxFlow(final String text) {
+        if (iAsk != null) {
+            JarvisInbox.Item it = iAsk;
+            iAsk = null;
+            if (cancelWords(text)) {
+                JarvisInbox.dropAsk(it);
+                nextAskOr("Theek hai, jawab nahi bheja.");
+                return true;
+            }
+            String body = JarvisInbox.stripLead(text);
+            boolean ok = JarvisInbox.send(this, it, body);
+            nextAskOr(ok ? "Bhej diya: " + body : "Reply bhej nahi paya, shayad message hat chuka hai.");
+            return true;
+        }
+        if (iOffer) {
+            iOffer = false;
+            String yn = JarvisSocial.yesNo(text);
+            if ("yes".equals(yn)) {
+                replyToAll("", "");
+                return true;
+            }
+            if ("no".equals(yn)) {
+                replyDone("Theek hai.");
+                return true;
+            }
+        }
+        JarvisInbox.Cmd c = JarvisInbox.parse(text);
+        if (c == null) {
+            return false;
+        }
+        if (c.kind.equals("reply")) {
+            replyToAll(c.app, c.name);
+            return true;
+        }
+        if (c.kind.equals("sent")) {
+            reply(JarvisInbox.sentText(this, c.name));
+            return true;
+        }
+        if (!JarvisNotifAccess.enabled(this)) {
+            reply("Messages dekhne ke liye Jarvis app ki Settings me 'Notification access On karo' dabakar JARVIS On kijiye.");
+            return true;
+        }
+        String[] a = JarvisInbox.answer(this, c);
+        iOffer = a[1].length() > 0;
+        reply(a[0]);
+        return true;
+    }
+
+    private void replyToAll(final String app, final String name) {
+        final SharedPreferences p = prefs();
+        if (p.getString("gemini_key", "").trim().length() == 0) {
+            reply("Reply likhne ke liye Gemini key chahiye. Jarvis app ki Settings me key daaliye.");
+            return;
+        }
+        setStatus("Jawab likh raha hoon...", MODE_THINK);
+        final long myGen = ++gen;
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                final JarvisInbox.Outcome o = JarvisInbox.replyNow(JarvisOverlayService.this, app, name);
+                main.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (!alive || myGen != gen) {
+                            return;
+                        }
+                        StringBuilder sb = new StringBuilder();
+                        if (!o.sent.isEmpty()) {
+                            sb.append("Jawab bhej diya: ");
+                            for (int i = 0; i < o.sent.size(); i++) {
+                                JarvisInbox.Item it = o.sent.get(i);
+                                sb.append(i > 0 ? ", " : "").append(JarvisContactMatch.speakable(
+                                        it.sender.length() > 0 ? it.sender : it.chat)).append(" ko ")
+                                        .append(JarvisBrain.speechText(it.reply));
+                            }
+                            sb.append(". ");
+                        }
+                        if (o.skippedGroups > 0) {
+                            sb.append("Group ke message chhod diye. ");
+                        }
+                        if (o.sent.isEmpty() && o.asks.isEmpty()) {
+                            sb.append("Jawab dene layak koi naya message nahi mila.");
+                        }
+                        nextAskOr(sb.toString().trim());
+                    }
+                });
+            }
+        }).start();
     }
 
     // ------------------------------------------------------- WhatsApp flow --
