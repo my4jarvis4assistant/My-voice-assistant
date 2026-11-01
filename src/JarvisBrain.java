@@ -92,6 +92,71 @@ public class JarvisBrain {
         return r;
     }
 
+    public static String lastError = "";
+
+    /** Bina history/tools ke seedha text banao (message ka reply likhne ke liye). "" = nahi ban paya. */
+    public static String generate(String key, String model, String system, String user) {
+        lastError = "";
+        List<String> models = new ArrayList<String>();
+        if (model != null && model.length() > 0) {
+            models.add(model);
+        }
+        for (String m : FALLBACK) {
+            if (!models.contains(m)) {
+                models.add(m);
+            }
+        }
+        try {
+            for (String m : models) {
+                int[] status = new int[1];
+                String body = post(key, m, plainBody(m, system, user, true), status);
+                if (status[0] == 400 && body.toLowerCase(Locale.ENGLISH).contains("thinking")) {
+                    body = post(key, m, plainBody(m, system, user, false), status);
+                }
+                if (status[0] == 200) {
+                    Result r = new Result();
+                    parse(body, r);
+                    if (r.error == null && r.reply.length() > 0) {
+                        lastModel = m;
+                        return r.reply;
+                    }
+                    lastError = r.error == null ? "khali jawab" : r.error;
+                    return "";
+                }
+                lastError = "Gemini error " + status[0];
+                if (status[0] == 404 || status[0] == 429 || (status[0] == 400
+                        && body.toLowerCase(Locale.ENGLISH).contains("model"))) {
+                    continue;
+                }
+                return "";
+            }
+        } catch (Exception e) {
+            lastError = "internet/AI galti";
+        }
+        return "";
+    }
+
+    private static String plainBody(String model, String system, String user, boolean thinking)
+            throws Exception {
+        JSONObject root = new JSONObject();
+        root.put("systemInstruction", new JSONObject().put("parts",
+                new JSONArray().put(new JSONObject().put("text", system))));
+        root.put("contents", new JSONArray().put(new JSONObject().put("role", "user")
+                .put("parts", new JSONArray().put(new JSONObject().put("text", user)))));
+        JSONObject gen = new JSONObject();
+        gen.put("temperature", 0.7);
+        gen.put("maxOutputTokens", 300);
+        if (thinking) {
+            if (model.contains("gemini-3")) {
+                gen.put("thinkingConfig", new JSONObject().put("thinkingLevel", "minimal"));
+            } else if (model.contains("2.5")) {
+                gen.put("thinkingConfig", new JSONObject().put("thinkingBudget", 0));
+            }
+        }
+        root.put("generationConfig", gen);
+        return root.toString();
+    }
+
     public static synchronized void clearHistory() {
         HISTORY.clear();
     }
