@@ -1815,7 +1815,8 @@ def build_jarvis_ui(app):
              ("Sunne wali service", "JarvisOverlayService", "service"),
              ("Quick tile", "JarvisTileService", "service"),
              ("Alarm receiver", "JarvisAlarmReceiver", "receiver"),
-             ("WhatsApp auto-send", "JarvisAccessService", "service"))
+             ("WhatsApp auto-send", "JarvisAccessService", "service"),
+             ("Messages padhna", "JarvisNotifService", "service"))
 
     def check_parts():
         """Installed APK me Jarvis ke Java hisse (manifest me) hain ya nahi: [(naam, hai?)]."""
@@ -2047,6 +2048,62 @@ def build_jarvis_ui(app):
         row.bind(on_release=lambda w, f=fn: f())
         wake_ai_card.add_widget(row)
     content.add_widget(wake_ai_card)
+
+    # 4c) Messages / missed calls + auto-reply
+    inbox_card = make_card("Messages, Calls aur Auto-reply")
+
+    def _prefs():
+        return get_activity().getSharedPreferences("jarvis_prefs", 0)
+
+    def open_notif_access(*_):
+        try:
+            from jnius import autoclass
+            Intent = autoclass("android.content.Intent")
+            app.open_intent(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"))
+            toast("List me 'JARVIS messages' On kijiye (na dikhe to pehle App info me Allow restricted settings)")
+        except Exception as exc:
+            print("Notification access error:", exc)
+            toast("Settings > Notifications > Notification access me JARVIS On kijiye")
+
+    def inbox_status(*_):
+        try:
+            from jnius import autoclass
+            Secure = autoclass("android.provider.Settings$Secure")
+            val = str(Secure.getString(get_activity().getContentResolver(), "enabled_notification_listeners") or "")
+            on = "JarvisNotifService" in val
+            log = str(_prefs().getString("notif_log", "") or "")
+            mode = str(_prefs().getString("reply_mode", "off") or "off")
+            toast(("Messages padhna ON. " if on else "Messages padhna OFF - Notification access me JARVIS On kijiye. ")
+                  + ("Auto-reply: " + ("chalu" if mode == "auto" else "band") + ". ")
+                  + ("Aakhri: " + log.rsplit(" @", 1)[0] if log else "Abhi koi message nahi aaya."))
+        except Exception as exc:
+            print("Inbox status error:", exc)
+            toast("Halat padh nahi paya")
+
+    def on_reply_mode(value):
+        try:
+            _prefs().edit().putString("reply_mode", "auto" if value.startswith("Apne") else "off").apply()
+            toast("Auto-reply chalu: Gemini jawab likhkar bhejega, na aaye to aapse poochega"
+                  if value.startswith("Apne") else "Auto-reply band")
+        except Exception as exc:
+            print("Reply mode error:", exc)
+            toast("Save nahi ho paya")
+
+    try:
+        cur_mode = str(_prefs().getString("reply_mode", "off") or "off")
+    except Exception:
+        cur_mode = "off"
+    inbox_card.add_widget(make_label("Auto-reply (WhatsApp, Instagram, Messenger, Telegram)", 12, MUTED,
+                                     height=dp(22), lines=1))
+    inbox_card.add_widget(Segmented(["Band", "Apne aap bhejo"], "Apne aap bhejo" if cur_mode == "auto" else "Band",
+                                    on_reply_mode))
+    for label, fn in [("Messages padhne ke liye: Notification access On karo", open_notif_access),
+                      ("Messages: App info (Allow restricted settings)", open_app_info),
+                      ("Messages: halat dekho", inbox_status)]:
+        row = ActionRow(label)
+        row.bind(on_release=lambda w, f=fn: f())
+        inbox_card.add_widget(row)
+    content.add_widget(inbox_card)
 
     # 5) Privacy
     privacy_card = make_card("Data Privacy & Security")
@@ -2377,6 +2434,13 @@ def build_jarvis_ui(app):
                 gen = ai["gen"]
                 Clock.schedule_once(lambda dt: deliver(gen, True, quick), 0)
                 return
+        try_inbox = getattr(app, "_jarvis_try_inbox", None)
+        if try_inbox is not None:
+            try:
+                if try_inbox(cmd):                      # "kitne message aaye" / "jawab de do"
+                    return
+            except Exception as exc:
+                print("inbox flow error:", repr(exc))
         try_social = getattr(app, "_jarvis_try_social", None)
         if try_social is not None:
             try:
@@ -2535,4 +2599,9 @@ def build_jarvis_ui(app):
         jarvis_social.install_social(app)          # WhatsApp message / voice / video call
     except Exception as exc:
         print("install_social failed:", exc)
+    try:
+        import jarvis_inbox
+        jarvis_inbox.install_inbox(app)            # aaye messages / missed calls / auto-reply
+    except Exception as exc:
+        print("install_inbox failed:", exc)
     return root
