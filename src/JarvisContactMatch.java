@@ -178,15 +178,15 @@ public final class JarvisContactMatch {
         if (pq.equals(pc)) {
             return 0.9;
         }
-        if (pq.length() >= 3 && pc.startsWith(pq)) {
+        if (pq.length() == 3 && pc.startsWith(pq)) {
             return 0.82;
         }
-        if (pq.length() >= 4 && lev(pq, pc) <= 1) {
+        if (pq.length() >= 5 && pq.charAt(0) == pc.charAt(0) && lev(pq, pc) <= 1) {
             return 0.78;
         }
         int d = lev(q, c);
         double ratio = 1.0 - (double) d / Math.max(q.length(), c.length());
-        if (q.length() >= 4 && ratio >= 0.75) {
+        if (q.length() >= 4 && ratio >= 0.8) {
             return ratio * 0.85;
         }
         return 0;
@@ -264,26 +264,25 @@ public final class JarvisContactMatch {
     }
 
     /** Sabse achhe match (zyada se zyada max). Ek jaisa naam+number ek hi baar. */
-    /** Pura naam na mile to chhote tukde (bekaar shabd hatakar) se dhundho. */
+    /** Pura naam na mile to peeche ke shabd hatakar (par/per jaise bekaar shabd) pehle shabdon se dhundho.
+     *  Dheela (galat) match kabhi nahi: na mile to khaali list. */
     public static List<Scored> findFlexible(String spoken, List<Contact> contacts, int max) {
         List<String> t = words(spoken);
         for (int size = t.size(); size >= 1; size--) {
-            for (int i = 0; i + size <= t.size(); i++) {
-                StringBuilder sb = new StringBuilder();
-                for (int j = i; j < i + size; j++) {
-                    sb.append(sb.length() > 0 ? " " : "").append(t.get(j));
-                }
-                String cand = sb.toString();
-                if (size == 1 && cand.length() < 3) {
-                    continue;
-                }
-                List<Scored> r = find(cand, contacts, max, 0.7);
-                if (!r.isEmpty()) {
-                    return r;
-                }
+            StringBuilder sb = new StringBuilder();
+            for (int j = 0; j < size; j++) {
+                sb.append(sb.length() > 0 ? " " : "").append(t.get(j));
+            }
+            String cand = sb.toString();
+            if (size == 1 && cand.length() < 3) {
+                continue;
+            }
+            List<Scored> r = find(cand, contacts, max, 0.7);
+            if (!r.isEmpty()) {
+                return r;
             }
         }
-        return findLoose(spoken, contacts, max);
+        return new ArrayList<Scored>();
     }
 
     public static List<Scored> findLoose(String spoken, List<Contact> contacts, int max) {
