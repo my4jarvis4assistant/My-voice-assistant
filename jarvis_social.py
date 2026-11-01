@@ -170,25 +170,26 @@ def load_whatsapp_contacts(app):
             if not name:
                 continue
             p = people.setdefault(cid, {"name": str(name), "cid": cid, "ids": {}, "pkg": "com.whatsapp",
-                                        "mime": {}, "number": "", "wa": False})
+                                        "mime": {}, "number": "", "wa": False, "aliases": []})
             n = normalize_number(num)
             if n and not p["number"]:
                 p["number"] = n
     finally:
         cur.close()
-    cur = resolver.query(Data.CONTENT_URI, ["_id", "contact_id", "display_name", "mimetype"],
+    cur = resolver.query(Data.CONTENT_URI, ["_id", "contact_id", "display_name", "mimetype", "data1"],
                          "mimetype LIKE ?", [MIME_BASE + "%"], None)
     if cur is not None:
         try:
             while cur.moveToNext():
                 did, cid, name, mime = int(cur.getLong(0)), int(cur.getLong(1)), cur.getString(2), cur.getString(3)
+                jid = cur.getString(4)
                 if not mime:
                     continue
                 mime = str(mime)
                 business = ".w4b." in mime
                 kind = mime.rsplit("whatsapp.", 1)[-1].replace("w4b.", "")
                 p = people.setdefault(cid, {"name": str(name or ""), "cid": cid, "ids": {}, "pkg": "com.whatsapp",
-                                            "mime": {}, "number": "", "wa": False})
+                                            "mime": {}, "number": "", "wa": False, "aliases": []})
                 if p["wa"] and p["pkg"] == "com.whatsapp" and business:
                     continue                    # normal WhatsApp ko tarjeeh
                 if business and not p["wa"]:
@@ -196,8 +197,25 @@ def load_whatsapp_contacts(app):
                 p["wa"] = True
                 p["ids"][kind] = did
                 p["mime"][kind] = mime
+                if not p["number"] and jid and "@" in str(jid):      # 9198...@s.whatsapp.net
+                    p["number"] = normalize_number(str(jid).split("@")[0])
         finally:
             cur.close()
+    # Ek hi contact ke alag-alag naam (phone ka naam, WhatsApp wala naam...) sab yaad rakho
+    try:
+        RawC = autoclass("android.provider.ContactsContract$RawContacts")
+        cur = resolver.query(RawC.CONTENT_URI, ["contact_id", "display_name"], "deleted=0", None, None)
+        if cur is not None:
+            try:
+                while cur.moveToNext():
+                    cid, nm = int(cur.getLong(0)), cur.getString(1)
+                    p = people.get(cid)
+                    if p is not None and nm and str(nm) != p["name"] and str(nm) not in p["aliases"]:
+                        p["aliases"].append(str(nm))
+            finally:
+                cur.close()
+    except Exception as exc:
+        print("raw contacts error:", repr(exc))
     return [p for p in people.values() if p["name"]]
 
 
@@ -353,7 +371,11 @@ def install_social(app, loader=None, phone=None, call_launcher=None, chat_launch
             say("WhatsApp contacts padh nahi paya. Calling permission allow kijiye.")
             reset()
             return
-        pairs = [(p["name"], str(p["cid"])) for p in people]
+        pairs = []
+        for p in people:                         # har naam (phone ka + WhatsApp wala) se dhundho
+            pairs.append((p["name"], str(p["cid"])))
+            for al in p.get("aliases", []):
+                pairs.append((al, str(p["cid"])))
         by_cid = {str(p["cid"]): p for p in people}
         name = job["name"]
         if job["kind"] == "message" and job.get("ambiguous") and not job.get("body"):
@@ -368,6 +390,9 @@ def install_social(app, loader=None, phone=None, call_launcher=None, chat_launch
         if wa_found:
             found = wa_found                     # WhatsApp wale contacts ko tarjeeh
         found = found[:4]
+        by_cid = {c: dict(v) for c, v in by_cid.items()}
+        for n_, c_, _s in found:                 # jis naam se bola, wahi naam bolkar jawab do
+            by_cid[c_]["name"] = n_
         if not found:
             say(name + " naam ka contact nahi mila (" + str(len(people)) + " contacts me dekha). "
                 "Naam thoda saaf boliye ya contacts permission check kijiye.")
