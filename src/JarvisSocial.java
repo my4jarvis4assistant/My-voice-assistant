@@ -42,7 +42,8 @@ public final class JarvisSocial {
     static final Set<String> MSG = set("message", "msg", "messege", "massage", "messeg", "text", "sms", "bhejo",
             "bhej", "bhejna", "send", "likho", "likh", "bhejdo", "bhejiye", "bhejein", "bhejde");
     static final Set<String> MSG_NOUN = set("message", "msg", "messege", "massage", "text", "sms");
-    static final Set<String> NOISE = set("ek", "ko", "ka", "ki", "ke", "se", "par", "pe", "me", "mein", "to", "karo",
+    static final Set<String> NOISE = set("per", "pr", "pay", "pai", "upar", "ne", "tak", "waale", "karwao", "karao",
+            "lagwao", "bhejwao", "ek", "ko", "ka", "ki", "ke", "se", "par", "pe", "me", "mein", "to", "karo",
             "kro", "kar", "kare", "karna", "kariye", "kijiye", "kardo", "krdo", "do", "de", "dena", "dijiye", "mujhe",
             "mera", "meri", "jarvis", "hey", "hello", "hi", "please", "plz", "a", "the", "on", "via", "through", "for",
             "abhi", "zara", "jara", "wala", "wali", "contact", "naam", "number", "phone", "call", "calls", "lagao",
