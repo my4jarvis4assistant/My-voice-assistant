@@ -34,7 +34,8 @@ NOISE = {"ek", "ko", "ka", "ki", "ke", "se", "par", "pe", "me", "mein", "to", "k
          "jarvis", "hey", "hello", "hi", "please", "plz", "a", "the", "on", "via", "through", "for", "abhi",
          "zara", "jara", "wala", "wali", "contact", "naam", "number", "phone", "call", "calls", "lagao",
          "laga", "lagana", "dial", "kall", "caal", "cal", "milao", "can", "you", "will", "make", "now",
-         "voice", "audio", "normal", "kro", "krna", "kre", "kardena", "bol", "bolo", "keh", "kaho", "bhi"}
+         "voice", "audio", "normal", "kro", "krna", "kre", "kardena", "bol", "bolo", "keh", "kaho", "bhi",
+         "per", "pr", "pay", "pai", "upar", "ne", "tak", "waale", "karwao", "karao", "lagwao", "bhejwao"}
 SKIP_WORDS = APP_WORDS | VIDEO_WORDS | MSG_WORDS | NOISE
 
 _MARKER = re.compile(
@@ -112,6 +113,20 @@ def parse_social(utterance):
         name_tokens = list(tail_tokens)       # contact milne par naam/message alag honge
     return {"kind": kind, "app": app or "whatsapp", "app_said": bool(app), "video": video,
             "name": " ".join(name_tokens), "body": body, "ambiguous": ambiguous}
+
+
+def search_name(name, pairs, n=4):
+    """Pura naam na mile to bacha-kucha shabd hatakar (par/per/ko jaise bekaar shabd) chhote tukde se dhundho."""
+    toks = jc.words(name)
+    for size in range(len(toks), 0, -1):
+        for i in range(0, len(toks) - size + 1):
+            cand = " ".join(toks[i:i + size])
+            if size == 1 and len(cand) < 3:
+                continue
+            r = jc.find(cand, pairs, n)
+            if r:
+                return r
+    return jc.find_loose(name, pairs, n)
 
 
 def split_name_body(tokens, contacts):
@@ -385,7 +400,7 @@ def install_social(app, loader=None, phone=None, call_launcher=None, chat_launch
             st["await_name"] = True
             say("Kisko?", relisten=True)
             return
-        found = jc.find_loose(name, pairs, 6)
+        found = search_name(name, pairs, 6)
         wa_found = [f for f in found if by_cid[f[1]].get("wa", True)]
         if wa_found:
             found = wa_found                     # WhatsApp wale contacts ko tarjeeh
