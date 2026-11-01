@@ -46,7 +46,7 @@ public final class JarvisContactMatch {
             "kro", "karo", "kar", "karna", "kariye", "kijiye", "karein", "krna", "kre", "kare", "kardo", "kardena",
             "do", "de", "dena", "dijiye", "diye", "dial", "phone", "fone", "mobile", "number", "mujhe",
             "mera", "meri", "mere", "hume", "humko", "contact", "naam", "wale", "wali", "wala", "ek", "zara",
-            "jara", "abhi", "now", "to", "tu", "pe", "par", "on", "me", "mein", "karke", "phir", "can", "you",
+            "jara", "abhi", "now", "to", "tu", "pe", "par", "per", "pr", "on", "me", "mein", "karke", "phir", "can", "you",
             "could", "will", "make", "a", "the", "call", "calls", "kall", "caal", "kaal", "cal", "milao",
             "milana", "lagao", "laga", "lagana", "lagado", "lagade", "lagadena", "baat", "karni", "karwa",
             "karwao", "krdo", "krde", "kr", "bol", "bolo", "bulao", "bula"));
@@ -264,6 +264,28 @@ public final class JarvisContactMatch {
     }
 
     /** Sabse achhe match (zyada se zyada max). Ek jaisa naam+number ek hi baar. */
+    /** Pura naam na mile to chhote tukde (bekaar shabd hatakar) se dhundho. */
+    public static List<Scored> findFlexible(String spoken, List<Contact> contacts, int max) {
+        List<String> t = words(spoken);
+        for (int size = t.size(); size >= 1; size--) {
+            for (int i = 0; i + size <= t.size(); i++) {
+                StringBuilder sb = new StringBuilder();
+                for (int j = i; j < i + size; j++) {
+                    sb.append(sb.length() > 0 ? " " : "").append(t.get(j));
+                }
+                String cand = sb.toString();
+                if (size == 1 && cand.length() < 3) {
+                    continue;
+                }
+                List<Scored> r = find(cand, contacts, max, 0.7);
+                if (!r.isEmpty()) {
+                    return r;
+                }
+            }
+        }
+        return findLoose(spoken, contacts, max);
+    }
+
     public static List<Scored> findLoose(String spoken, List<Contact> contacts, int max) {
         List<Scored> r = find(spoken, contacts, max, 0.7);
         return r.isEmpty() ? find(spoken, contacts, max, 0.5) : r;
