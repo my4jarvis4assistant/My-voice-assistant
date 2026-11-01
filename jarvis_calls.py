@@ -17,7 +17,7 @@ FILLER = {
     "kro", "karo", "kar", "karna", "kariye", "kijiye", "karein", "krna", "kre", "kare", "kardo", "kardena",
     "do", "de", "dena", "dijiye", "diye", "dial", "phone", "fone", "mobile", "number", "mujhe",
     "mera", "meri", "mere", "hume", "humko", "contact", "naam", "wale", "wali", "wala", "ek", "zara",
-    "jara", "abhi", "now", "to", "tu", "pe", "par", "on", "me", "mein", "karke", "phir", "can", "you",
+    "jara", "abhi", "now", "to", "tu", "pe", "par", "per", "pr", "on", "me", "mein", "karke", "phir", "can", "you",
     "could", "will", "make", "a", "the", "call", "calls", "kall", "caal", "kaal", "cal", "milao",
     "milana", "lagao", "laga", "lagana", "lagado", "lagade", "lagadena", "baat", "karni", "karwa",
     "karwao", "krdo", "krde", "kr", "bol", "bolo", "bulao", "bula"}
