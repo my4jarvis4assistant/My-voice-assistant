@@ -194,6 +194,12 @@ public class JarvisOverlayService extends Service {
             alive = true;
             closing = false;
             idleCount = 0;
+            new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    contactNames();           // naam pehle se taiyaar: sunne me madad (galat suna na jaye)
+                }
+            }).start();
             stopWake(false);              // mic ek hi cheez use kar sakti hai
             ensureBubble();
             setBubbleActive(true);
@@ -807,7 +813,25 @@ public class JarvisOverlayService extends Service {
             i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
             i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-IN");
             i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "en-IN");
-            i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1);
+            i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5);
+            if (Build.VERSION.SDK_INT >= 33) {
+                try {
+                    ArrayList<String> bias = new ArrayList<String>();
+                    for (JarvisContactMatch.Contact c : contactNames()) {
+                        if (bias.size() >= 150) {
+                            break;
+                        }
+                        String nm = c.name.replaceAll("\\(.*?\\)", "").trim();
+                        if (nm.length() > 1 && !bias.contains(nm)) {
+                            bias.add(nm);
+                        }
+                    }
+                    if (!bias.isEmpty()) {
+                        i.putStringArrayListExtra("android.speech.extra.BIASING_STRINGS", bias);
+                    }
+                } catch (Throwable ignored) {
+                }
+            }
             i.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
             recognizer.startListening(i);
         } catch (Exception e) {
@@ -879,7 +903,7 @@ public class JarvisOverlayService extends Service {
                 onError(SpeechRecognizer.ERROR_NO_MATCH);
                 return;
             }
-            handleCommand(list.get(0));
+            handleCommand(pickBest(list));
         }
 
         @Override
@@ -894,6 +918,61 @@ public class JarvisOverlayService extends Service {
         public void onEvent(int eventType, Bundle params) {
         }
     };
+
+    // ------------------------------------------------------- galat suna hua theek karna --
+    private List<JarvisContactMatch.Contact> nameCache = null;
+    private long nameCacheAt = 0;
+
+    private List<JarvisContactMatch.Contact> contactNames() {
+        long now = System.currentTimeMillis();
+        if (nameCache != null && now - nameCacheAt < 120000) {
+            return nameCache;
+        }
+        List<JarvisContactMatch.Contact> out = new ArrayList<JarvisContactMatch.Contact>();
+        try {
+            if (granted("android.permission.READ_CONTACTS")) {
+                for (JarvisWhatsApp.Person p : JarvisWhatsApp.load(this)) {
+                    out.add(new JarvisContactMatch.Contact(p.name, String.valueOf(p.cid)));
+                    for (String al : p.aliases) {
+                        out.add(new JarvisContactMatch.Contact(al, String.valueOf(p.cid)));
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        nameCache = out;
+        nameCacheAt = now;
+        return out;
+    }
+
+    /** Recognizer ke kai options me se wo chuno jisme asli contact ka naam aur kaam samajh aaye. */
+    private String pickBest(List<String> list) {
+        String first = list.get(0);
+        if (list.size() < 2 || flowPending()) {
+            return first;
+        }
+        try {
+            List<JarvisContactMatch.Contact> names = contactNames();
+            for (String alt : list) {
+                JarvisSocial.Job j = JarvisSocial.parse(alt);
+                if (j != null && j.name != null && j.name.trim().length() > 0 && !names.isEmpty()
+                        && !JarvisContactMatch.find(j.name, names, 1).isEmpty()) {
+                    return alt;
+                }
+                String callName = null;
+                try {
+                    callName = JarvisContactMatch.parseCallRequest(alt);
+                } catch (Throwable ignored) {
+                }
+                if (callName != null && callName.trim().length() > 0 && !names.isEmpty()
+                        && !JarvisContactMatch.find(callName, names, 1).isEmpty()) {
+                    return alt;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return first;
+    }
 
     // -------------------------------------------------------------- command --
     private boolean flowPending() {
@@ -1335,6 +1414,33 @@ public class JarvisOverlayService extends Service {
         }
     }
 
+    /** Message likhne ke baad 8 second me dekho Send dab gaya ya nahi; na dabe to saaf bolo kyon. */
+    private void watchSend() {
+        main.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    if (!JarvisWhatsApp.accessibilityOn(JarvisOverlayService.this)) {
+                        speak("Message likh diya hai par Send nahi dab paya, kyunki Accessibility me JARVIS auto-send band hai. "
+                                + "Use On kijiye.");
+                        try {
+                            Intent i = new Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS);
+                            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                            startActivity(i);
+                        } catch (Exception ignored) {
+                        }
+                        return;
+                    }
+                    String log = prefs().getString("access_log", "");
+                    if (!log.contains("Send dab") && !log.contains("Send tap") && prefs().getLong("access_send_until", 0) > 0) {
+                        speak("Message likh diya par Send nahi dab paya. " + log.replaceAll(" @\\d+$", ""));
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+        }, 8000);
+    }
+
     private void watchUi(final String name) {
         main.postDelayed(new Runnable() {
             @Override
@@ -1405,6 +1511,7 @@ public class JarvisOverlayService extends Service {
                 replyDone(shown + " ka number nahi mila.");
             } else {
                 JarvisWhatsApp.chat(this, job.person, number, job.body);
+                watchSend();
                 replyDone(JarvisWhatsApp.accessibilityOn(this)
                         ? shown + " ko message bhej raha hoon."
                         : "Chat khol di hai. Bas Send dabaiye. Apne aap bhejne ke liye Accessibility me JARVIS auto-send On kijiye.");
