@@ -196,8 +196,52 @@ public class JarvisVoskWake {
         }
     }
 
-    private static boolean isWake(String t) {
-        return t.contains("jarvis") || t.contains("jar vis");
+    /**
+     * Sakht jaanch: poora bola hua sirf "jarvis" / "hey jarvis" / "hello jarvis" ho (aur koi shabd nahi, [unk] bhi nahi),
+     * sahi lambai ka ho, awaaz utni tez ho (door ki baat-cheet, TV, Instagram ki awaaz na chale)
+     * aur Vosk ko pakka yakeen ho. Koi aur app music/video chala rahi ho to jaanch aur sakht.
+     */
+    private boolean isWake(String json, double peakRms) {
+        try {
+            JSONObject o = new JSONObject(json);
+            String t = o.optString("text", "").trim().toLowerCase();
+            if (!(t.equals("jarvis") || t.equals("hey jarvis") || t.equals("hello jarvis"))) {
+                return false;
+            }
+            boolean media = false;
+            try {
+                android.media.AudioManager am = (android.media.AudioManager) ctx.getSystemService(Context.AUDIO_SERVICE);
+                media = am != null && am.isMusicActive();
+            } catch (Exception ignored) {
+            }
+            double minConf = media ? 0.97 : 0.85;
+            double minRms = media ? 1800 : 900;
+            if (peakRms < minRms) {
+                return false;
+            }
+            org.json.JSONArray words = o.optJSONArray("result");
+            if (words == null || words.length() == 0 || words.length() > 2) {
+                return false;
+            }
+            double first = 1e9, last = 0;
+            for (int i = 0; i < words.length(); i++) {
+                JSONObject w = words.getJSONObject(i);
+                if (w.optDouble("conf", 0) < minConf) {
+                    return false;
+                }
+                first = Math.min(first, w.optDouble("start", 0));
+                last = Math.max(last, w.optDouble("end", 0));
+                if (w.optString("word", "").equals("jarvis")) {
+                    double d = w.optDouble("end", 0) - w.optDouble("start", 0);
+                    if (d < 0.30 || d > 1.3) {
+                        return false;                       // bahut chhota / bahut lamba = jarvis nahi
+                    }
+                }
+            }
+            return last - first <= 2.2;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private void loop() throws Throwable {
@@ -213,6 +257,10 @@ public class JarvisVoskWake {
         Method partial = recClass.getMethod("getPartialResult");
         Method result = recClass.getMethod("getResult");
         Method close = recClass.getMethod("close");
+        try {
+            recClass.getMethod("setWords", boolean.class).invoke(rec, true);     // har shabd ka bharosa/samay
+        } catch (Throwable ignored) {
+        }
 
         int minBuf = AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO,
                 AudioFormat.ENCODING_PCM_16BIT);
@@ -226,22 +274,30 @@ public class JarvisVoskWake {
             listener.onStatus("sun raha hai");
             short[] buf = new short[2000];
             boolean woke = false;
+            double peak = 0;
             while (running) {
                 int n = ar.read(buf, 0, buf.length);
                 if (n <= 0) {
                     Thread.sleep(20);
                     continue;
                 }
-                String t;
+                double sum = 0;
+                for (int i = 0; i < n; i++) {
+                    sum += (double) buf[i] * buf[i];
+                }
+                peak = Math.max(peak, Math.sqrt(sum / n));
                 try {
                     boolean fin = (Boolean) accept.invoke(rec, buf, n);
-                    t = fin ? text(result.invoke(rec), "text") : text(partial.invoke(rec), "partial");
+                    if (fin) {                              // sirf poora bola hua shabd dekho (aadhi sunai par nahi)
+                        String json = String.valueOf(result.invoke(rec));
+                        if (isWake(json, peak)) {
+                            woke = true;
+                            break;
+                        }
+                        peak = 0;
+                    }
                 } catch (InvocationTargetException ite) {
                     throw ite.getCause() != null ? ite.getCause() : ite;
-                }
-                if (isWake(t)) {
-                    woke = true;
-                    break;
                 }
             }
             if (woke) {
