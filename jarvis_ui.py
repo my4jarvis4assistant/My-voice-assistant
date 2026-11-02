@@ -2463,6 +2463,32 @@ def build_jarvis_ui(app):
             return original_process(command)
 
     app.set_status = set_status
+    pause_state = {"t": 0.0}
+
+    def pause_wake():
+        """App ke andar mic use hone se pehle Hey-Jarvis wala mic chhodo (warna dono ladte hain)."""
+        try:
+            if not getattr(app, "wake_enabled", False):
+                return
+            now = Clock.get_time()
+            if now - pause_state["t"] < 4.0:
+                return
+            pause_state["t"] = now
+            from jnius import autoclass
+            Intent = autoclass("android.content.Intent")
+            Build = autoclass("android.os.Build$VERSION")
+            ctx = get_context()
+            intent = Intent()
+            intent.setClassName(get_activity().getPackageName(),
+                                "org.myassistant.myvoiceassistant.JarvisOverlayService")
+            intent.setAction("org.myassistant.WAKE_PAUSE")
+            if int(Build.SDK_INT) >= 26:
+                ctx.startForegroundService(intent)
+            else:
+                ctx.startService(intent)
+        except Exception as exc:
+            print("pause_wake error:", exc)
+
     original_listen = getattr(app, "listen", None)
     if original_listen is not None:
         def listen(*args):
@@ -2478,6 +2504,7 @@ def build_jarvis_ui(app):
 
                     when_speech_done(go, 60.0)
                 return None
+            pause_wake()
             mute_beep()
             return original_listen(*args)
 
@@ -2486,6 +2513,7 @@ def build_jarvis_ui(app):
     original_listen_again = getattr(app, "listen_again", None)
     if original_listen_again is not None:
         def listen_again(*args):
+            pause_wake()
             mute_beep()
             return original_listen_again(*args)
 
