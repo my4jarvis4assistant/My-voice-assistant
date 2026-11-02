@@ -1523,7 +1523,51 @@ def build_jarvis_ui(app):
 
         threading.Thread(target=work, daemon=True).start()
 
-    for label, fn in [("Free voices apne aap bharo (key se)", fill_free_voices),
+    def add_hindi_voices(*_):
+        """1 Male + 1 Female free awaaz lagao (Hindi ke liye) aur Male ko chun lo."""
+        if eleven_mod is None:
+            toast("eleven.py nahi mili")
+            return
+        key = ek_input.text.strip() or app.eleven_key
+        if not key:
+            toast("Pehle ElevenLabs key daaliye")
+            return
+        if ek_input.text.strip():
+            save_eleven_key()
+        toast("Male aur Female awaaz dhundh raha hoon...")
+
+        def work():
+            try:
+                male, female = eleven_mod.pick_hindi_voices(key)
+                err = "" if (male or female) else "Is key par koi free voice nahi mili"
+            except Exception as exc:
+                male, female, err = None, None, str(exc)
+
+            def done(dt):
+                if err:
+                    toast(err[:90])
+                    return
+                put = [("Jarvis Male", male), ("Jarvis Female", female)]
+                put = [(lbl, v) for lbl, v in put if v]
+                for i, (lbl, v) in enumerate(put):
+                    slot_inputs[i][0].text = lbl
+                    slot_inputs[i][1].text = v[1]
+                save_eleven_voices()
+                try:
+                    for c in chips:
+                        if c.name == put[0][0]:
+                            choose_voice(c)
+                            break
+                except Exception as exc:
+                    print("choose hindi voice error:", exc)
+                toast("Jarvis Male + Female jud gayi. Test karke dekhiye")
+
+            Clock.schedule_once(done, 0)
+
+        threading.Thread(target=work, daemon=True).start()
+
+    for label, fn in [("Hindi ke liye Male + Female awaaz jodo (free)", add_hindi_voices),
+                      ("Free voices apne aap bharo (key se)", fill_free_voices),
                       ("Voices save karo", save_eleven_voices),
                       ("Chuni hui awaaz test karo", test_eleven)]:
         row = ActionRow(label)
@@ -2382,7 +2426,8 @@ def build_jarvis_ui(app):
                         tts0.stop()                     # phone ki awaaz chup
                 except Exception:
                     pass
-                speaker.speak(app.eleven_key, vid, str(text), on_error=fail)
+                speaker.speak(app.eleven_key, vid, str(text), on_error=fail,
+                              hindi_key=getattr(app, "gemini_key", "") or None)
                 used_eleven = True
             except Exception as exc:
                 print("eleven speak error:", exc)
