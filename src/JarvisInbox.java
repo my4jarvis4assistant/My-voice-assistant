@@ -578,7 +578,7 @@ public final class JarvisInbox {
         }
         user.append("Sender: ").append(it.sender).append(" (").append(it.app).append(")\n");
         user.append("Naya message: ").append(it.text);
-        String out = JarvisBrain.generate(key, p.getString("ai_model", ""), SYSTEM, user.toString());
+        String out = JarvisBrain.generate(key, p.getString("ai_model", ""), SYSTEM, user.toString(), true);
         if (out == null) {
             return null;
         }
@@ -653,7 +653,7 @@ public final class JarvisInbox {
             @Override
             public void run() {
                 try {
-                    Thread.sleep(4000);                  // agar 2-3 message peeche peeche aayein to ek hi reply
+                    Thread.sleep(500);                   // peeche-peeche aaye message ek saath (bas aadha second)
                     Item last = null;
                     StringBuilder all = new StringBuilder();
                     synchronized (JarvisInbox.class) {
@@ -693,7 +693,6 @@ public final class JarvisInbox {
                         JarvisOverlayService.askAbout(app, last);
                         return;
                     }
-                    Thread.sleep(1200 + (long) (Math.random() * 1800));
                     if (!send(app, last, r)) {
                         synchronized (JarvisInbox.class) {
                             for (Item it : ITEMS) {
