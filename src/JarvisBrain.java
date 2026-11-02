@@ -96,9 +96,21 @@ public class JarvisBrain {
 
     /** Bina history/tools ke seedha text banao (message ka reply likhne ke liye). "" = nahi ban paya. */
     public static String generate(String key, String model, String system, String user) {
+        return generate(key, model, system, user, false);
+    }
+
+    private static final String[] FAST = {"gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.0-flash"};
+
+    /** fast = sabse tez model pehle, chhota jawab, kam intezaar (auto-reply ke liye: 1-2 second). */
+    public static String generate(String key, String model, String system, String user, boolean fast) {
         lastError = "";
         List<String> models = new ArrayList<String>();
-        if (model != null && model.length() > 0) {
+        if (fast) {
+            for (String m : FAST) {
+                models.add(m);
+            }
+        }
+        if (model != null && model.length() > 0 && !models.contains(model)) {
             models.add(model);
         }
         for (String m : FALLBACK) {
@@ -109,9 +121,9 @@ public class JarvisBrain {
         try {
             for (String m : models) {
                 int[] status = new int[1];
-                String body = post(key, m, plainBody(m, system, user, true), status);
+                String body = post(key, m, plainBody(m, system, user, true, fast), status, fast ? 9000 : 45000);
                 if (status[0] == 400 && body.toLowerCase(Locale.ENGLISH).contains("thinking")) {
-                    body = post(key, m, plainBody(m, system, user, false), status);
+                    body = post(key, m, plainBody(m, system, user, false, fast), status, fast ? 9000 : 45000);
                 }
                 if (status[0] == 200) {
                     Result r = new Result();
@@ -136,7 +148,7 @@ public class JarvisBrain {
         return "";
     }
 
-    private static String plainBody(String model, String system, String user, boolean thinking)
+    private static String plainBody(String model, String system, String user, boolean thinking, boolean fast)
             throws Exception {
         JSONObject root = new JSONObject();
         root.put("systemInstruction", new JSONObject().put("parts",
@@ -145,7 +157,7 @@ public class JarvisBrain {
                 .put("parts", new JSONArray().put(new JSONObject().put("text", user)))));
         JSONObject gen = new JSONObject();
         gen.put("temperature", 0.7);
-        gen.put("maxOutputTokens", 300);
+        gen.put("maxOutputTokens", fast ? 120 : 300);
         if (thinking) {
             if (model.contains("gemini-3")) {
                 gen.put("thinkingConfig", new JSONObject().put("thinkingLevel", "minimal"));
@@ -272,12 +284,17 @@ public class JarvisBrain {
 
     // ----------------------------------------------------------------- http --
     private static String post(String key, String model, String json, int[] status) throws IOException {
+        return post(key, model, json, status, 45000);
+    }
+
+    private static String post(String key, String model, String json, int[] status, int readTimeout)
+            throws IOException {
         HttpURLConnection conn = (HttpURLConnection) new URL(BASE + "/models/" + model
                 + ":generateContent").openConnection();
         try {
             conn.setRequestMethod("POST");
-            conn.setConnectTimeout(15000);
-            conn.setReadTimeout(45000);
+            conn.setConnectTimeout(readTimeout < 45000 ? 6000 : 15000);
+            conn.setReadTimeout(readTimeout);
             conn.setDoOutput(true);
             conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
             conn.setRequestProperty("x-goog-api-key", key.trim());
