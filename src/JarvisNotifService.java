@@ -27,6 +27,17 @@ public class JarvisNotifService extends NotificationListenerService {
     }
 
     @Override
+    public void onListenerDisconnected() {
+        JarvisInbox.log(this, "notification access toot gaya, dobara jod raha hoon");
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= 24) {
+                requestRebind(new android.content.ComponentName(this, JarvisNotifService.class));
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    @Override
     public void onNotificationPosted(StatusBarNotification sbn) {
         try {
             handle(sbn, false);
@@ -149,6 +160,9 @@ public class JarvisNotifService extends NotificationListenerService {
                 String mt = str(b.getCharSequence("text"));
                 String sender = str(b.getCharSequence("sender"));
                 if (mt.length() == 0 || t <= last) {
+                    if (mt.length() > 0 && !seed) {
+                        JarvisInbox.log(this, "purana samajh kar chhoda: " + cutTxt(mt));
+                    }
                     continue;
                 }
                 maxT = Math.max(maxT, t);
@@ -171,6 +185,10 @@ public class JarvisNotifService extends NotificationListenerService {
             }
             record(key, pkg, label, title, chat, text, sbn.getPostTime(), group, seed, fresh);
         }
+    }
+
+    private static String cutTxt(String t) {
+        return t.length() > 18 ? t.substring(0, 18) : t;
     }
 
     private static boolean isMe(String s) {
