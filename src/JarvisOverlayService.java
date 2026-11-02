@@ -158,6 +158,7 @@ public class JarvisOverlayService extends Service {
                 // app ke orb se bol rahe ho: mic app ko do, thodi der baad wake word apne aap wapas
                 if (wakeEnabled && !session) {
                     stopWake(false);
+                    wakePausedUntil = System.currentTimeMillis() + 25000;
                     main.removeCallbacks(resumeWake);
                     main.postDelayed(resumeWake, 25000);
                 }
@@ -275,12 +276,43 @@ public class JarvisOverlayService extends Service {
                 @Override
                 public void onStatus(String status) {
                     setWakeStatus(status);
+                    if (status != null && status.startsWith("error")) {
+                        main.post(new Runnable() {
+                            @Override
+                            public void run() {
+                                wakeRunning = false;     // thread mar gaya: watchdog dobara chalu karega
+                            }
+                        });
+                    }
                 }
             });
         }
         vosk.start();
         wakeRunning = true;
+        main.removeCallbacks(wakeWatch);
+        main.postDelayed(wakeWatch, 12000);
     }
+
+    private long wakePausedUntil = 0;
+
+    /** Har 12 second: Hey-Jarvis wala sunna band ho gaya ho (mic busy, error...) to dobara chalu karo. */
+    private final Runnable wakeWatch = new Runnable() {
+        @Override
+        public void run() {
+            try {
+                if (wakeEnabled && !session && System.currentTimeMillis() > wakePausedUntil) {
+                    if (vosk == null || !vosk.isRunning()) {
+                        wakeRunning = false;
+                        startWake();
+                    }
+                }
+            } catch (Throwable ignored) {
+            }
+            if (wakeEnabled) {
+                main.postDelayed(this, 12000);
+            }
+        }
+    };
 
     /** delete=true: poori tarah band; false: sirf mic chhodne ke liye roko. */
     private void stopWake(boolean delete) {
@@ -1447,7 +1479,9 @@ public class JarvisOverlayService extends Service {
             public void run() {
                 try {
                     String res = prefs().getString("ui_result", "");
-                    if (res.contains("nahi")) {
+                    if (res.length() == 0 && prefs().getString("ui_task", "").length() > 0) {
+                        speak("WhatsApp me kaam abhi poora nahi hua. " + prefs().getString("access_log", ""));
+                    } else if (res.contains("nahi")) {
                         speak(res.contains("naam") ? JarvisContactMatch.speakable(name)
                                 + " naam ka contact WhatsApp me nahi mila." : res);
                     }
