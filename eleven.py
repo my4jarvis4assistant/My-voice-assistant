@@ -126,7 +126,7 @@ def _read_all(stream, charset):
         sc.close()
 
 
-def _java_request(method, url, headers, body):
+def _java_request(method, url, headers, body, binary=False):
     """Java HttpURLConnection se: (code, data_bytes). pyjnius me byte-array nahi bana sakte, isliye
     awaaz ko Base64InputStream se text bana kar padhte hain (Scanner), phir Python me decode karte hain.
     Koi apni Java class nahi chahiye (background thread me app ki class milti nahi)."""
@@ -161,7 +161,13 @@ def _java_request(method, url, headers, body):
                 err.close()
             return code, text.encode("utf-8")
         stream = cast("java.io.InputStream", conn.getInputStream())
-        b64 = B64Stream(stream, Base64.NO_WRAP)
+        if not binary:                                        # JSON/text jawab: seedha padho
+            sc = Scanner(stream, "UTF-8")
+            sc.useDelimiter("\\A")
+            text = str(sc.next()) if sc.hasNext() else ""
+            stream.close()
+            return code, text.encode("utf-8")
+        b64 = cast("java.io.InputStream", B64Stream(stream, Base64.NO_WRAP))
         sc = Scanner(b64, "US-ASCII")
         sc.useDelimiter("\\A")
         text = str(sc.next()) if sc.hasNext() else ""
@@ -175,7 +181,7 @@ def _java_request(method, url, headers, body):
 
 
 def _download_java(url, headers, body, path):
-    code, data = _java_request("POST", url, headers, body)
+    code, data = _java_request("POST", url, headers, body, binary=True)
     if code >= 400:
         return code, data.decode("utf-8", "replace")
     with open(path, "wb") as fh:
