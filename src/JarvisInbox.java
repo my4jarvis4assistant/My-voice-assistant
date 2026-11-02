@@ -668,6 +668,7 @@ public final class JarvisInbox {
                         }
                     }
                     if (last == null) {
+                        log(app, "auto-reply: message padhne se pehle hat gaya");
                         return;
                     }
                     Item probe = new Item();
@@ -681,6 +682,7 @@ public final class JarvisInbox {
                     probe.text = all.toString();
                     String r = compose(app, probe);
                     if (r == null) {
+                        log(app, "Gemini jawab nahi de paya (" + JarvisBrain.lastError + "), aapse poochh raha hoon");
                         synchronized (JarvisInbox.class) {
                             for (Item it : ITEMS) {
                                 if (it.key.equals(key) && it.kind.equals("msg") && !it.read && !it.replied) {
@@ -730,9 +732,15 @@ public final class JarvisInbox {
     static void onNew(Context c, Item it) {
         try {
             if (!"auto".equals(prefs(c).getString("reply_mode", "off"))) {
+                log(c, "auto-reply band hai (Settings me 'Apne aap bhejo' chuniye)");
                 return;
             }
-            if (!it.kind.equals("msg") || !it.canReply || it.group || !autoApp(it.pkg)) {
+            if (!it.kind.equals("msg") || it.group || !autoApp(it.pkg)) {
+                log(c, "auto-reply nahi: group/SMS (" + it.app + ")");
+                return;
+            }
+            if (!it.canReply) {
+                log(c, "auto-reply nahi: " + it.app + " ke notification me Reply ka button nahi tha");
                 return;
             }
             // ek sender ko ghante me 500 se zyada nahi (sirf bot-loop se bachne ki bahut badi hadd)
@@ -746,6 +754,7 @@ public final class JarvisInbox {
                 }
             }
             if (recent >= 500) {
+                log(c, "auto-reply roka: ek ghante me bahut zyada");
                 return;
             }
             autoKey(c, it.key);
@@ -864,7 +873,18 @@ public final class JarvisInbox {
 
     static void log(Context c, String s) {
         try {
-            prefs(c).edit().putString("notif_log", s + " @" + System.currentTimeMillis() / 1000).apply();
+            SharedPreferences p = prefs(c);
+            String hist = p.getString("notif_hist", "");
+            String[] parts = hist.length() == 0 ? new String[0] : hist.split(" \\| ");
+            StringBuilder sb = new StringBuilder();
+            int from = Math.max(0, parts.length - 5);
+            for (int i = from; i < parts.length; i++) {
+                sb.append(parts[i]).append(" | ");
+            }
+            sb.append(new java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.ENGLISH)
+                    .format(new java.util.Date())).append(" ").append(s);
+            p.edit().putString("notif_log", s + " @" + System.currentTimeMillis() / 1000)
+                    .putString("notif_hist", sb.toString()).apply();
         } catch (Exception ignored) {
         }
     }
