@@ -99,6 +99,51 @@ public class JarvisBrain {
         return generate(key, model, system, user, false);
     }
 
+    private static final java.util.Map<String, String> HINDI_CACHE = new java.util.HashMap<String, String>();
+    private static final String HINDI_SYSTEM = "Tum Hinglish (Roman me likhi Hindi) ko Devanagari Hindi me badalte ho "
+            + "taaki text-to-speech asli Indian Hindi jaisa bole. Matlab aur shabd bilkul na badlo, sirf lipi badlo. "
+            + "English shabd (WhatsApp, message, call, Instagram) Devanagari me likho (jaise व्हाट्सएप, मैसेज). "
+            + "Naam Devanagari me likho. Sankhya/time jaise 5 baje ko '5 बजे' likho. "
+            + "Agar poora text sirf English sentence hai to use bilkul waisa hi lautao. "
+            + "Sirf badla hua text do, koi samjhaish ya quote nahi.";
+
+    public static boolean hasDevanagari(String t) {
+        for (int i = 0; i < t.length(); i++) {
+            char c = t.charAt(i);
+            if (c >= 0x0900 && c <= 0x097f) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Hinglish -> Devanagari (Indian lehje ke liye). Na ban paye to null (matlab jaisa tha waisa bolo). */
+    public static String devanagari(String key, String text) {
+        if (key == null || key.trim().length() == 0 || text == null || text.trim().length() == 0) {
+            return null;
+        }
+        if (hasDevanagari(text)) {
+            return text;
+        }
+        synchronized (HINDI_CACHE) {
+            String c = HINDI_CACHE.get(text);
+            if (c != null) {
+                return c.length() == 0 ? null : c;
+            }
+        }
+        String out = generate(key, "", HINDI_SYSTEM, text, true);
+        String res = (out != null && out.trim().length() > 0 && hasDevanagari(out)) ? out.trim() : "";
+        if (out != null && out.trim().length() > 0) {
+            synchronized (HINDI_CACHE) {
+                if (HINDI_CACHE.size() > 200) {
+                    HINDI_CACHE.clear();
+                }
+                HINDI_CACHE.put(text, res);
+            }
+        }
+        return res.length() == 0 ? null : res;
+    }
+
     private static final String[] FAST = {"gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.0-flash"};
 
     /** fast = sabse tez model pehle, chhota jawab, kam intezaar (auto-reply ke liye: 1-2 second). */
@@ -157,7 +202,7 @@ public class JarvisBrain {
                 .put("parts", new JSONArray().put(new JSONObject().put("text", user)))));
         JSONObject gen = new JSONObject();
         gen.put("temperature", 0.7);
-        gen.put("maxOutputTokens", fast ? 120 : 300);
+        gen.put("maxOutputTokens", fast ? Math.min(700, Math.max(120, user.length() * 2)) : 300);
         if (thinking) {
             if (model.contains("gemini-3")) {
                 gen.put("thinkingConfig", new JSONObject().put("thinkingLevel", "minimal"));
