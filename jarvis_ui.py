@@ -2115,7 +2115,7 @@ def build_jarvis_ui(app):
             Secure = autoclass("android.provider.Settings$Secure")
             val = str(Secure.getString(get_activity().getContentResolver(), "enabled_notification_listeners") or "")
             on = "JarvisNotifService" in val
-            log = str(_prefs().getString("notif_log", "") or "")
+            log = str(_prefs().getString("notif_hist", "") or "") or str(_prefs().getString("notif_log", "") or "")
             mode = str(_prefs().getString("reply_mode", "off") or "off")
             toast(("Messages padhna ON. " if on else "Messages padhna OFF - Notification access me JARVIS On kijiye. ")
                   + ("Auto-reply: " + ("chalu" if mode == "auto" else "band") + ". ")
