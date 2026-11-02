@@ -48,12 +48,71 @@ def _error_message(code, body):
     return "ElevenLabs error %s" % code
 
 
-def build_request(key, voice_id, text):
+def build_request(key, voice_id, text, lang=None):
     url = API + voice_id.strip() + "?output_format=mp3_44100_64"
     headers = {"xi-api-key": key.strip(), "Content-Type": "application/json",
                "Accept": "audio/mpeg"}
-    body = json.dumps({"text": text, "model_id": MODEL}).encode("utf-8")
+    payload = {"text": text, "model_id": MODEL}
+    if lang:
+        payload["language_code"] = lang          # "hi": Hindi ke hisaab se bolo (Indian lehja)
+    body = json.dumps(payload).encode("utf-8")
     return url, headers, body
+
+
+# ---------------------------------------------------------------- Hindi (Devanagari) ----
+_HINDI_CACHE = {}
+GEMINI = "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent"
+HINDI_SYSTEM = ("Tum Hinglish (Roman me likhi Hindi) ko Devanagari Hindi me badalte ho taaki text-to-speech "
+                "asli Indian Hindi jaisa bole. Matlab aur shabd bilkul na badlo, sirf lipi badlo. "
+                "English shabd (WhatsApp, message, call, Instagram, naam) Devanagari me likho (jaise व्हाट्सएप, मैसेज). "
+                "Naam ko Devanagari me likho. Sankhya/time jaise 5 baje ko '5 बजे' likho. "
+                "Agar poora text sirf English sentence hai to use bilkul waisa hi lautao. "
+                "Sirf badla hua text do, koi samjhaish ya quote nahi.")
+
+
+def has_devanagari(text):
+    return any("\u0900" <= ch <= "\u097f" for ch in str(text))
+
+
+def to_hindi(gemini_key, text, requester=None, timeout_models=("gemini-2.5-flash-lite", "gemini-2.5-flash")):
+    """(text, lang): Hinglish ko Devanagari me badalkar ("hi"). Kuch bhi gadbad ho to (text, None) = jaisa tha waisa."""
+    text = " ".join(str(text).split())
+    if not gemini_key or not gemini_key.strip() or not text:
+        return text, None
+    if has_devanagari(text):
+        return text, "hi"
+    if text in _HINDI_CACHE:
+        return _HINDI_CACHE[text]
+    if requester is None:
+        try:
+            import jnius  # noqa: F401
+            requester = _java_request
+        except Exception:
+            requester = _urllib_request
+    body = json.dumps({
+        "systemInstruction": {"parts": [{"text": HINDI_SYSTEM}]},
+        "contents": [{"role": "user", "parts": [{"text": text}]}],
+        "generationConfig": {"temperature": 0.2, "maxOutputTokens": 700,
+                             "thinkingConfig": {"thinkingBudget": 0}},
+    }).encode("utf-8")
+    for model in timeout_models:
+        try:
+            headers = {"x-goog-api-key": gemini_key.strip(), "Content-Type": "application/json"}
+            code, data = requester("POST", GEMINI % model, headers, body)
+            raw = data.decode("utf-8", "replace") if isinstance(data, bytes) else str(data)
+            if code != 200:
+                continue
+            parts = json.loads(raw)["candidates"][0]["content"]["parts"]
+            out = "".join(p.get("text", "") for p in parts).strip()
+            if out:
+                res = (out, "hi" if has_devanagari(out) else None)
+                if len(_HINDI_CACHE) > 200:
+                    _HINDI_CACHE.clear()
+                _HINDI_CACHE[text] = res
+                return res
+        except Exception:
+            continue
+    return text, None
 
 
 def _read_all(stream, charset):
@@ -124,8 +183,8 @@ def _download_java(url, headers, body, path):
     return code, len(data)
 
 
-def list_free_voices(key, limit=7, requester=None):
-    """Account ki 'premade' (free plan par chalne wali) awaazein: [(naam, voice_id)]."""
+def _premade_full(key, requester=None):
+    """Account ki 'premade' awaazein, poori jaankari ke saath (naam, voice_id, labels)."""
     if not key or not key.strip():
         raise ElevenError("ElevenLabs key nahi hai")
     headers = {"xi-api-key": key.strip(), "Accept": "application/json"}
@@ -154,8 +213,34 @@ def list_free_voices(key, limit=7, requester=None):
         name = str(v.get("name", "")).split(" - ")[0].strip()
         vid = str(v.get("voice_id", "")).strip()
         if name and vid:
-            out.append((name, vid))
-    return out[:limit]
+            out.append((name, vid, v.get("labels") or {}))
+    return out
+
+
+def list_free_voices(key, limit=7, requester=None):
+    """Account ki 'premade' (free plan par chalne wali) awaazein: [(naam, voice_id)]."""
+    return [(n, v) for n, v, _l in _premade_full(key, requester)][:limit]
+
+
+MALE_PREF = ("Brian", "Roger", "George", "Daniel", "Eric", "Chris", "Callum", "Charlie", "Will", "Bill", "Liam")
+FEMALE_PREF = ("Sarah", "Laura", "Alice", "Matilda", "Jessica", "Lily")
+
+
+def pick_hindi_voices(key, requester=None):
+    """((naam, id) Male, (naam, id) Female) - free (premade) awaazon me se Hindi ke liye achhe."""
+    full = _premade_full(key, requester)
+
+    def pick(prefs, gender):
+        by = {n.lower(): (n, v) for n, v, _l in full}
+        for p in prefs:
+            if p.lower() in by:
+                return by[p.lower()]
+        for n, v, lab in full:
+            if str(lab.get("gender", "")).lower() == gender:
+                return (n, v)
+        return None
+
+    return pick(MALE_PREF, "male"), pick(FEMALE_PREF, "female")
 
 
 def _urllib_request(method, url, headers, body):
@@ -183,7 +268,7 @@ def _download_urllib(url, headers, body, path):
         return exc.code, exc.read().decode("utf-8", "replace")
 
 
-def synthesize(key, voice_id, text, path, downloader=None):
+def synthesize(key, voice_id, text, path, downloader=None, lang=None):
     """Awaaz ki mp3 `path` par likho. Galti par ElevenError."""
     if not key or not key.strip():
         raise ElevenError("ElevenLabs key nahi hai")
@@ -192,7 +277,7 @@ def synthesize(key, voice_id, text, path, downloader=None):
     text = trim_text(text)
     if not text:
         raise ElevenError("khali text")
-    url, headers, body = build_request(key, voice_id, text)
+    url, headers, body = build_request(key, voice_id, text, lang)
     if downloader is None:
         try:
             import jnius  # noqa: F401
@@ -231,7 +316,7 @@ class ElevenSpeaker:
             self._stop_flag["stop"] = True
         self._busy = False
 
-    def speak(self, key, voice_id, text, on_error=None, on_done=None):
+    def speak(self, key, voice_id, text, on_error=None, on_done=None, hindi_key=None):
         with self._lock:
             self._gen += 1
             gen = self._gen
@@ -244,7 +329,14 @@ class ElevenSpeaker:
             path = os.path.join(self.cache_dir, "jarvis_eleven_%d.mp3" % gen)
             ok = False
             try:
-                self._synth(key, voice_id, text, path)
+                lang = None
+                say = text
+                if hindi_key:
+                    say, lang = to_hindi(hindi_key, text)       # Hinglish -> Devanagari: Indian lehja
+                if lang:
+                    self._synth(key, voice_id, say, path, lang=lang)
+                else:
+                    self._synth(key, voice_id, say, path)
                 if gen == self._gen and not flag["stop"]:
                     self._player(path, flag)
                 ok = True
