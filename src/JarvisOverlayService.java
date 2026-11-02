@@ -54,6 +54,7 @@ public class JarvisOverlayService extends Service {
     public static final String ACTION_WAKE_ON = "org.myassistant.WAKE_ON";
     public static final String ACTION_WAKE_OFF = "org.myassistant.WAKE_OFF";
     public static final String ACTION_CMD = "org.myassistant.CMD";
+    public static final String ACTION_WAKE_PAUSE = "org.myassistant.WAKE_PAUSE";
     static JarvisOverlayService instance = null;
     private static final String CHANNEL_ID = "jarvis_overlay";
     private static final int NOTIF_ID = 4711;
@@ -104,6 +105,7 @@ public class JarvisOverlayService extends Service {
     // --- floating bubble (hamesha dikhta hai; sleep = dhundhla, active = chamakta) ---
     private WindowManager.LayoutParams bubbleLp = null;
     private boolean session = false;          // True = Jarvis abhi sun/bol raha hai (baatcheet chal rahi hai)
+    private boolean closing = false;           // True = user ne "jao/band" kaha: bolkar so jao
     private int idleCount = 0;                // lagataar kitni baar kuch sunai nahi diya
 
     // --- messages / calls (inbox) ---
@@ -152,6 +154,15 @@ public class JarvisOverlayService extends Service {
                 }
                 return START_STICKY;
             }
+            if (ACTION_WAKE_PAUSE.equals(action)) {
+                // app ke orb se bol rahe ho: mic app ko do, thodi der baad wake word apne aap wapas
+                if (wakeEnabled && !session) {
+                    stopWake(false);
+                    main.removeCallbacks(resumeWake);
+                    main.postDelayed(resumeWake, 25000);
+                }
+                return START_STICKY;
+            }
             if (ACTION_CMD.equals(action)) {
                 String said = intent.getStringExtra("text");
                 beginSession();
@@ -181,6 +192,7 @@ public class JarvisOverlayService extends Service {
         if (!session) {
             session = true;
             alive = true;
+            closing = false;
             idleCount = 0;
             stopWake(false);              // mic ek hi cheez use kar sakti hai
             ensureBubble();
@@ -215,6 +227,15 @@ public class JarvisOverlayService extends Service {
         }
         return t;
     }
+
+    private final Runnable resumeWake = new Runnable() {
+        @Override
+        public void run() {
+            if (!session && wakeEnabled) {
+                startWake();
+            }
+        }
+    };
 
     private void startWake() {
         if (!wakeEnabled || wakeRunning) {
@@ -643,7 +664,11 @@ public class JarvisOverlayService extends Service {
             listenAfterSpeech = false;
             startListening();
         } else if (alive) {
-            scheduleClose(700);
+            if (closing) {
+                scheduleClose(700);
+            } else {
+                startListening();             // active rahe: chup-chaap sunta rahe jab tak aap na bolo
+            }
         }
     }
 
@@ -825,20 +850,15 @@ public class JarvisOverlayService extends Service {
             }
             if (error == SpeechRecognizer.ERROR_NO_MATCH
                     || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
-                idleCount++;
-                if (idleCount < 3) {
-                    main.postDelayed(new Runnable() {
-                        @Override
-                        public void run() {
-                            if (alive && session) {
-                                startListening();
-                            }
+                // kuch nahi bola: chup-chaap dobara sunte raho (so mat jao, kuch bolo mat)
+                main.postDelayed(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (alive && session) {
+                            startListening();
                         }
-                    }, 300);
-                    return;
-                }
-                setStatus("Kuch sunai nahi diya. Jarvis so gaya.", MODE_IDLE);
-                scheduleClose(1500);
+                    }
+                }, 250);
                 return;
             } else if (error == SpeechRecognizer.ERROR_NETWORK
                     || error == SpeechRecognizer.ERROR_NETWORK_TIMEOUT) {
@@ -876,7 +896,36 @@ public class JarvisOverlayService extends Service {
     };
 
     // -------------------------------------------------------------- command --
+    private boolean flowPending() {
+        return sConfirm || sChoices != null || sAwaitBody || sAwaitName || iAsk != null || iOffer
+                || pendingChoices != null || awaitingName;
+    }
+
+    /** Koi aur app (Instagram/YouTube...) awaaz chala rahi ho to bina "Jarvis" bole sunai diya hua kaam nahi karna. */
+    private boolean mediaNoise(String text) {
+        try {
+            android.media.AudioManager am = (android.media.AudioManager) getSystemService(Context.AUDIO_SERVICE);
+            if (am != null && am.isMusicActive() && !flowPending()
+                    && !JarvisContactMatch.words(text).contains("jarvis")) {
+                return true;
+            }
+        } catch (Exception ignored) {
+        }
+        return false;
+    }
+
     private void handleCommand(final String text) {
+        if (mediaNoise(text) && !isDismiss(text)) {
+            main.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    if (alive && session) {
+                        startListening();
+                    }
+                }
+            }, 250);
+            return;
+        }
         final long myGen = ++gen;
         if (heardView != null) {
             heardView.setText("\"" + text + "\"");
@@ -892,6 +941,7 @@ public class JarvisOverlayService extends Service {
             pendingChoices = null;
             awaitingName = false;
             listenAfterSpeech = false;
+            closing = true;
             String bye = "Theek hai. Jab zaroorat ho, Jarvis bolkar bula lena.";
             setStatus(bye, MODE_IDLE);
             speak(bye);
@@ -951,10 +1001,9 @@ public class JarvisOverlayService extends Service {
     /** Kaam ho gaya (call/message laga): bolo aur baatcheet band, bubble so jaye. */
     private void replyDone(String text) {
         cancelClose();
-        listenAfterSpeech = false;
+        listenAfterSpeech = true;             // kaam ke baad bhi active raho, chup-chaap agla kaam suno
         setStatus(text, MODE_IDLE);
         speak(JarvisBrain.speechText(text));
-        scheduleClose(Math.max(5000L, text.length() * 90L));
     }
 
     // ----------------------------------------------- messages / calls flow --
