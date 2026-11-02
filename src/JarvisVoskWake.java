@@ -79,6 +79,10 @@ public class JarvisVoskWake {
         thread.start();
     }
 
+    public boolean isRunning() {
+        return running && thread != null && thread.isAlive();
+    }
+
     /** Mic chhodne ke baad hi lautata hai (SpeechRecognizer ko mic chahiye). */
     public synchronized void stop() {
         stopRequested = true;
@@ -214,8 +218,8 @@ public class JarvisVoskWake {
                 media = am != null && am.isMusicActive();
             } catch (Exception ignored) {
             }
-            double minConf = media ? 0.97 : 0.85;
-            double minRms = media ? 1800 : 900;
+            double minConf = media ? 0.93 : 0.75;
+            double minRms = media ? 1400 : 450;
             if (peakRms < minRms) {
                 return false;
             }
@@ -233,12 +237,12 @@ public class JarvisVoskWake {
                 last = Math.max(last, w.optDouble("end", 0));
                 if (w.optString("word", "").equals("jarvis")) {
                     double d = w.optDouble("end", 0) - w.optDouble("start", 0);
-                    if (d < 0.30 || d > 1.3) {
+                    if (d < 0.25 || d > 1.6) {
                         return false;                       // bahut chhota / bahut lamba = jarvis nahi
                     }
                 }
             }
-            return last - first <= 2.2;
+            return last - first <= 2.8;
         } catch (Exception e) {
             return false;
         }
