@@ -399,7 +399,12 @@ public class JarvisAccessService extends AccessibilityService {
                 } else {
                     AccessibilityNodeInfo send = find(root);
                     if (send == null) {
-                        log("Send button nahi mila (try " + tries + ")");
+                        if (tries >= 5 && tapBesideEntry(root)) {
+                            done = true;
+                            log("Send tap kiya (text-box ke bagal)");
+                        } else {
+                            log("Send button nahi mila (try " + tries + ")");
+                        }
                     } else if (click(send)) {
                         done = true;
                         log("Send dab gaya");
@@ -466,6 +471,29 @@ public class JarvisAccessService extends AccessibilityService {
             cur = cur.getParent();
         }
         return false;
+    }
+
+    /** Send ka button dhundh na paye to: message likha ho to text-box ke theek dayein bagal (Send ki jagah) tap. */
+    private boolean tapBesideEntry(AccessibilityNodeInfo root) {
+        if (Build.VERSION.SDK_INT < 24) {
+            return false;
+        }
+        try {
+            AccessibilityNodeInfo entry = byId(root, "entry");
+            if (entry == null || entry.getText() == null || entry.getText().toString().trim().length() == 0) {
+                return false;
+            }
+            Rect r = new Rect();
+            entry.getBoundsInScreen(r);
+            int w = getResources().getDisplayMetrics().widthPixels;
+            Path p = new Path();
+            p.moveTo(w - w * 0.075f, r.centerY());
+            GestureDescription.Builder b = new GestureDescription.Builder();
+            b.addStroke(new GestureDescription.StrokeDescription(p, 0, 60));
+            return dispatchGesture(b.build(), null, null);
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     /** ACTION_CLICK na chale to button ke beech me ungli se tap. */
