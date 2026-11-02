@@ -88,6 +88,9 @@ public class JarvisEleven {
      * Awaaz ki mp3 `path` par likho. Sab theek ho to "" lautata hai, warna galti ka sandesh.
      * (Python bhi isi ko bulata hai, kyunki pyjnius se binary data padhna mushkil hai.)
      */
+    /** Gemini key: ho to Hinglish ko Devanagari me badalkar "hi" bhejte hain (Indian Hindi lehja). */
+    static volatile String hindiKey = "";
+
     public static String download(String key, String voiceId, String text, String path) {
         try {
             String t = trim(text == null ? "" : text);
@@ -95,8 +98,21 @@ public class JarvisEleven {
                 return "khali text";
             }
             JSONObject body = new JSONObject();
-            body.put("text", t);
+            String say = t;
+            String lang = null;
+            String hk = hindiKey;
+            if (hk != null && hk.trim().length() > 0) {
+                String dv = JarvisBrain.devanagari(hk, t);
+                if (dv != null) {
+                    say = trim(dv);
+                    lang = "hi";
+                }
+            }
+            body.put("text", say);
             body.put("model_id", MODEL);
+            if (lang != null) {
+                body.put("language_code", lang);
+            }
             HttpURLConnection conn = (HttpURLConnection) new URL(API + voiceId.trim()
                     + "?output_format=mp3_44100_64").openConnection();
             try {
@@ -144,6 +160,7 @@ public class JarvisEleven {
     public void speak(final Context ctx, final String key, final String voiceId, final String text,
                       final Callback cb) {
         final int my = ++token;
+        hindiKey = ctx.getSharedPreferences("jarvis_prefs", 0).getString("gemini_key", "");
         busy = true;
         releasePlayer();
         new Thread(new Runnable() {
