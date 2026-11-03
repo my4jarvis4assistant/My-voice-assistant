@@ -1034,6 +1034,56 @@ public class JarvisAccessService extends AccessibilityService {
         }
     }
 
+    // ---- Screen samajhna: dikh rahe text ko padh kar do (password wale box chhod kar) ----
+    private void collectText(AccessibilityNodeInfo n, StringBuilder sb, int cap, int[] count, String[] last, int depth) {
+        if (n == null || depth > 45 || count[0] > MAX_NODES || sb.length() >= cap) {
+            return;
+        }
+        count[0]++;
+        if (n.isVisibleToUser() && !n.isPassword()) {
+            CharSequence t = n.getText();
+            CharSequence d = n.getContentDescription();
+            String s = "";
+            if (t != null && t.toString().trim().length() > 0) {
+                s = t.toString().trim();
+            } else if (d != null && d.toString().trim().length() > 0) {
+                s = d.toString().trim();
+            }
+            if (s.length() > 0 && !s.equals(last[0])) {
+                sb.append(s).append('\n');
+                last[0] = s;
+            }
+        }
+        for (int i = 0; i < n.getChildCount(); i++) {
+            collectText(n.getChild(i), sb, cap, count, last, depth + 1);
+        }
+    }
+
+    /** Abhi jo app khula hai uski screen ka text (cap akshar tak). "" = kuch nahi mila. */
+    public String screenText(int cap) {
+        try {
+            AccessibilityNodeInfo r = activeRoot();
+            if (r == null) {
+                return "";
+            }
+            StringBuilder sb = new StringBuilder();
+            collectText(r, sb, cap, new int[]{0}, new String[]{""}, 0);
+            String out = sb.toString().trim();
+            return out.length() > cap ? out.substring(0, cap) : out;
+        } catch (Throwable t) {
+            return "";
+        }
+    }
+
+    public String screenApp() {
+        try {
+            AccessibilityNodeInfo r = activeRoot();
+            return r == null || r.getPackageName() == null ? "" : r.getPackageName().toString();
+        } catch (Throwable t) {
+            return "";
+        }
+    }
+
     @Override
     public void onInterrupt() {
     }
