@@ -47,19 +47,50 @@ public class JarvisAccessService extends AccessibilityService {
         }
     };
 
+    static volatile JarvisAccessService instance = null;
+
+    /** Control ka kaam der se (baad me) fail ho to bolne ke liye (JarvisOverlayService lagati hai). */
+    public interface Say {
+        void say(String msg);
+    }
+
+    static volatile Say sayHook = null;
+
     @Override
     protected void onServiceConnected() {
         super.onServiceConnected();
+        instance = this;
         prefs = getSharedPreferences("jarvis_prefs", 0);
         prefs.registerOnSharedPreferenceChangeListener(listener);
         log("service chalu");
+        beat.run();
         if (armed()) {
             startPolling();
         }
     }
 
+    /** Har 4 second "main zinda hoon" likhti hai, taaki Jarvis jaan sake ki service sach me chal rahi hai. */
+    private final Runnable beat = new Runnable() {
+        @Override
+        public void run() {
+            try {
+                getSharedPreferences("jarvis_prefs", 0).edit()
+                        .putLong("access_alive", System.currentTimeMillis()).apply();
+            } catch (Exception ignored) {
+            }
+            handler.postDelayed(this, 4000);
+        }
+    };
+
+    @Override
+    public boolean onUnbind(android.content.Intent intent) {
+        instance = null;
+        return super.onUnbind(intent);
+    }
+
     @Override
     public void onDestroy() {
+        instance = null;
         try {
             if (prefs != null) {
                 prefs.unregisterOnSharedPreferenceChangeListener(listener);
@@ -538,6 +569,467 @@ public class JarvisAccessService extends AccessibilityService {
             b.addStroke(new GestureDescription.StrokeDescription(p, 0, 60));
             return dispatchGesture(b.build(), null, null);
         } catch (Exception e) {
+            return false;
+        }
+    }
+
+
+    // ======================================================================= Voice-Access jaisa control ==
+    private static final class Entry {
+        AccessibilityNodeInfo node;
+        String label;
+        double w;           // label ka bharosa (viewId ka kam)
+    }
+
+    private static final int MAX_NODES = 2500;
+
+    private AccessibilityNodeInfo activeRoot() {
+        AccessibilityNodeInfo r = getRootInActiveWindow();
+        if (r != null && !getPackageName().contentEquals(r.getPackageName() == null ? "" : r.getPackageName())) {
+            return r;
+        }
+        try {
+            List<android.view.accessibility.AccessibilityWindowInfo> ws = getWindows();
+            AccessibilityNodeInfo best = null;
+            int layer = -1;
+            for (android.view.accessibility.AccessibilityWindowInfo w : ws) {
+                AccessibilityNodeInfo wr = w.getRoot();
+                if (wr == null || getPackageName().contentEquals(wr.getPackageName() == null ? "" : wr.getPackageName())) {
+                    continue;
+                }
+                if (w.getType() == android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION
+                        && w.getLayer() > layer) {
+                    layer = w.getLayer();
+                    best = wr;
+                }
+            }
+            if (best != null) {
+                return best;
+            }
+        } catch (Throwable ignored) {
+        }
+        return r;
+    }
+
+    private void gather(AccessibilityNodeInfo n, List<Entry> out, int[] count, int depth) {
+        if (n == null || depth > 45 || count[0] > MAX_NODES) {
+            return;
+        }
+        count[0]++;
+        if (n.isVisibleToUser()) {
+            CharSequence t = n.getText();
+            CharSequence d = n.getContentDescription();
+            CharSequence h = Build.VERSION.SDK_INT >= 26 ? n.getHintText() : null;
+            if (t != null && t.length() > 0 && !n.isPassword()) {
+                add(out, n, t.toString(), 1.0);
+            }
+            if (d != null && d.length() > 0) {
+                add(out, n, d.toString(), 1.0);
+            }
+            if (h != null && h.length() > 0) {
+                add(out, n, h.toString(), 0.97);
+            }
+            String vid = n.getViewIdResourceName();
+            if (vid != null && vid.contains("/")) {
+                add(out, n, vid.substring(vid.indexOf('/') + 1).replace('_', ' '), 0.85);
+            }
+        }
+        for (int i = 0; i < n.getChildCount(); i++) {
+            gather(n.getChild(i), out, count, depth + 1);
+        }
+    }
+
+    private void add(List<Entry> out, AccessibilityNodeInfo n, String label, double w) {
+        Entry e = new Entry();
+        e.node = n;
+        e.label = label;
+        e.w = w;
+        out.add(e);
+    }
+
+    private List<Entry> screen() {
+        List<Entry> out = new ArrayList<Entry>();
+        AccessibilityNodeInfo r = activeRoot();
+        if (r != null) {
+            gather(r, out, new int[]{0}, 0);
+        }
+        return out;
+    }
+
+    private boolean clickable(AccessibilityNodeInfo n) {
+        AccessibilityNodeInfo c = n;
+        for (int i = 0; i < 6 && c != null; i++) {
+            if (c.isClickable()) {
+                return true;
+            }
+            c = c.getParent();
+        }
+        return false;
+    }
+
+    /** Bole hue naam se sabse milta screen ka hissa (None = nahi mila). */
+    private AccessibilityNodeInfo findTarget(String target, double min) {
+        AccessibilityNodeInfo best = null;
+        double bs = 0;
+        int bt = Integer.MAX_VALUE, bl = Integer.MAX_VALUE;
+        for (Entry e : screen()) {
+            double sc = JarvisControl.match(target, e.label) * e.w;
+            if (sc < min) {
+                continue;
+            }
+            if (clickable(e.node)) {
+                sc += 0.015;
+            }
+            Rect r = new Rect();
+            e.node.getBoundsInScreen(r);
+            if (sc > bs + 0.0001 || (Math.abs(sc - bs) <= 0.0001 && (r.top < bt || (r.top == bt && r.left < bl)))) {
+                bs = sc;
+                best = e.node;
+                bt = r.top;
+                bl = r.left;
+            }
+        }
+        return best;
+    }
+
+    private boolean doClick(AccessibilityNodeInfo n, boolean longPress) {
+        AccessibilityNodeInfo c = n;
+        for (int i = 0; i < 6 && c != null; i++) {
+            if (longPress ? c.isLongClickable() : c.isClickable()) {
+                if (c.performAction(longPress ? AccessibilityNodeInfo.ACTION_LONG_CLICK
+                        : AccessibilityNodeInfo.ACTION_CLICK)) {
+                    return true;
+                }
+            }
+            c = c.getParent();
+        }
+        return gestureAt(n, longPress ? 700 : 60);
+    }
+
+    private boolean gestureAt(AccessibilityNodeInfo n, int ms) {
+        if (Build.VERSION.SDK_INT < 24) {
+            return false;
+        }
+        try {
+            Rect r = new Rect();
+            n.getBoundsInScreen(r);
+            if (r.width() <= 0 || r.height() <= 0) {
+                return false;
+            }
+            Path p = new Path();
+            p.moveTo(r.centerX(), r.centerY());
+            GestureDescription.Builder b = new GestureDescription.Builder();
+            b.addStroke(new GestureDescription.StrokeDescription(p, 0, ms));
+            return dispatchGesture(b.build(), null, null);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private boolean swipe(float x1, float y1, float x2, float y2) {
+        if (Build.VERSION.SDK_INT < 24) {
+            return false;
+        }
+        try {
+            Path p = new Path();
+            p.moveTo(x1, y1);
+            p.lineTo(x2, y2);
+            GestureDescription.Builder b = new GestureDescription.Builder();
+            b.addStroke(new GestureDescription.StrokeDescription(p, 0, 320));
+            return dispatchGesture(b.build(), null, null);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private AccessibilityNodeInfo scrollable(AccessibilityNodeInfo n, int depth, AccessibilityNodeInfo[] best, long[] area) {
+        if (n == null || depth > 40) {
+            return null;
+        }
+        if (n.isScrollable() && n.isVisibleToUser()) {
+            Rect r = new Rect();
+            n.getBoundsInScreen(r);
+            long a = (long) r.width() * r.height();
+            if (a > area[0]) {
+                area[0] = a;
+                best[0] = n;
+            }
+        }
+        for (int i = 0; i < n.getChildCount(); i++) {
+            scrollable(n.getChild(i), depth + 1, best, area);
+        }
+        return best[0];
+    }
+
+    private void scrollOnce(String dir) {
+        int w = getResources().getDisplayMetrics().widthPixels;
+        int h = getResources().getDisplayMetrics().heightPixels;
+        boolean vertical = dir.equals("up") || dir.equals("down");
+        if (vertical) {
+            AccessibilityNodeInfo r = activeRoot();
+            AccessibilityNodeInfo sc = r == null ? null : scrollable(r, 0, new AccessibilityNodeInfo[1], new long[1]);
+            if (sc != null && sc.performAction(dir.equals("down") ? AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
+                    : AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD)) {
+                return;
+            }
+            if (dir.equals("down")) {
+                swipe(w / 2f, h * 0.72f, w / 2f, h * 0.28f);
+            } else {
+                swipe(w / 2f, h * 0.28f, w / 2f, h * 0.72f);
+            }
+        } else if (dir.equals("left")) {
+            swipe(w * 0.8f, h / 2f, w * 0.2f, h / 2f);
+        } else {
+            swipe(w * 0.2f, h / 2f, w * 0.8f, h / 2f);
+        }
+    }
+
+    private void editables(AccessibilityNodeInfo n, List<AccessibilityNodeInfo> out, int depth) {
+        if (n == null || depth > 45 || out.size() > 30) {
+            return;
+        }
+        if (n.isEditable() && n.isVisibleToUser()) {
+            out.add(n);
+        }
+        for (int i = 0; i < n.getChildCount(); i++) {
+            editables(n.getChild(i), out, depth + 1);
+        }
+    }
+
+    private String hintOf(AccessibilityNodeInfo n) {
+        StringBuilder sb = new StringBuilder();
+        if (Build.VERSION.SDK_INT >= 26 && n.getHintText() != null) {
+            sb.append(n.getHintText()).append(' ');
+        }
+        if (n.getContentDescription() != null) {
+            sb.append(n.getContentDescription()).append(' ');
+        }
+        if (n.getText() != null && (Build.VERSION.SDK_INT < 26 || n.isShowingHintText())) {
+            sb.append(n.getText());
+        }
+        String vid = n.getViewIdResourceName();
+        if (vid != null && vid.contains("/")) {
+            sb.append(' ').append(vid.substring(vid.indexOf('/') + 1).replace('_', ' '));
+        }
+        return sb.toString();
+    }
+
+    /** Text likhne ki jagah chuno: naam se, ya jis par cursor hai, ya "message" likha ho, warna pehli. */
+    private AccessibilityNodeInfo pickEditable(String hintTarget) {
+        AccessibilityNodeInfo r = activeRoot();
+        if (r == null) {
+            return null;
+        }
+        List<AccessibilityNodeInfo> list = new ArrayList<AccessibilityNodeInfo>();
+        editables(r, list, 0);
+        if (list.isEmpty()) {
+            return null;
+        }
+        if (hintTarget != null && hintTarget.length() > 0) {
+            AccessibilityNodeInfo b = null;
+            double bs = 0;
+            for (AccessibilityNodeInfo e : list) {
+                double sc = JarvisControl.match(hintTarget, hintOf(e));
+                if (sc > bs) {
+                    bs = sc;
+                    b = e;
+                }
+            }
+            if (b != null && bs >= 0.8) {
+                return b;
+            }
+        }
+        AccessibilityNodeInfo f = r.findFocus(AccessibilityNodeInfo.FOCUS_INPUT);
+        if (f != null && f.isEditable()) {
+            return f;
+        }
+        for (AccessibilityNodeInfo e : list) {
+            String h = hintOf(e).toLowerCase(java.util.Locale.ENGLISH);
+            if (h.contains("message") || h.contains("type") || h.contains("write") || h.contains("reply")
+                    || h.contains("comment")) {
+                return e;
+            }
+        }
+        return list.get(0);
+    }
+
+    private boolean typeInto(AccessibilityNodeInfo e, String text) {
+        String base = "";
+        CharSequence cur = e.getText();
+        boolean hint = Build.VERSION.SDK_INT >= 26 && e.isShowingHintText();
+        if (cur != null && !hint) {
+            base = cur.toString();
+        }
+        String nw = base.length() == 0 ? text : (base.endsWith(" ") ? base + text : base + " " + text);
+        Bundle b = new Bundle();
+        b.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, nw);
+        e.performAction(AccessibilityNodeInfo.ACTION_FOCUS);
+        return e.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, b);
+    }
+
+    private boolean imeEnter(AccessibilityNodeInfo e) {
+        if (Build.VERSION.SDK_INT < 30 || e == null) {
+            return false;
+        }
+        try {
+            return e.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.getId());
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    private void tellLater(final String msg) {
+        Say s = sayHook;
+        if (s != null) {
+            s.say(msg);
+        }
+    }
+
+    /** Type karna (kabhi pehle ek chat/naam dabakar). Dobara-dobara koshish karke, phir bolkar batata hai. */
+    private void typeFlow(final String target, final String text, boolean fieldName) {
+        if (text.length() == 0) {
+            tellLater("Kya likhna hai? Jaise: type karo, aur phir jo likhna ho.");
+            return;
+        }
+        if (fieldName || target.length() == 0) {
+            AccessibilityNodeInfo e = pickEditable(target);
+            if (e == null) {
+                tellLater("Likhne ki jagah nahi dikhi. Pehle text box par click boliye.");
+            } else if (!typeInto(e, text)) {
+                tellLater("Yahan likh nahi paya.");
+            }
+            return;
+        }
+        // "PRIME AKJ ko message type karo ...": pehle us chat par jao
+        AccessibilityNodeInfo t = findTarget(target, 0.85);
+        AccessibilityNodeInfo e0 = pickEditable("");
+        int h = getResources().getDisplayMetrics().heightPixels;
+        boolean titleOnly = false;
+        if (t != null) {
+            Rect r = new Rect();
+            t.getBoundsInScreen(r);
+            titleOnly = r.top < h * 0.2;
+        }
+        if (t == null || (titleOnly && e0 != null)) {
+            if (e0 != null) {
+                if (!typeInto(e0, text)) {
+                    tellLater("Yahan likh nahi paya.");
+                }
+            } else {
+                tellLater(target + " screen par nahi dikha.");
+            }
+            return;
+        }
+        doClick(t, false);
+        waitAndType(text, 0);
+    }
+
+    private void waitAndType(final String text, final int attempt) {
+        handler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                AccessibilityNodeInfo e = pickEditable("message");
+                if (e != null) {
+                    if (!typeInto(e, text)) {
+                        tellLater("Yahan likh nahi paya.");
+                    }
+                } else if (attempt < 8) {
+                    waitAndType(text, attempt + 1);
+                } else {
+                    tellLater("Chat khul nahi payi, isliye likh nahi paya.");
+                }
+            }
+        }, attempt == 0 ? 1200 : 450);
+    }
+
+    private boolean sendNow() {
+        AccessibilityNodeInfo s = null;
+        double bs = 0;
+        for (Entry e : screen()) {
+            double sc = Math.max(JarvisControl.match("send", e.label), JarvisControl.match("भेजें", e.label)) * e.w;
+            if (sc >= 0.9 && sc > bs) {
+                bs = sc;
+                s = e.node;
+            }
+        }
+        if (s != null && doClick(s, false)) {
+            return true;
+        }
+        AccessibilityNodeInfo f = pickEditable("");
+        return imeEnter(f);
+    }
+
+    /** Ek control-kaam chalao. "" = ho gaya (chup-chap), warna bolne layak sandesh. */
+    public String exec(JarvisControl.Cmd c) {
+        try {
+            switch (c.kind) {
+                case JarvisControl.BACK:
+                    performGlobalAction(GLOBAL_ACTION_BACK);
+                    return "";
+                case JarvisControl.HOME:
+                    performGlobalAction(GLOBAL_ACTION_HOME);
+                    return "";
+                case JarvisControl.RECENTS:
+                    performGlobalAction(GLOBAL_ACTION_RECENTS);
+                    return "";
+                case JarvisControl.NOTIFS:
+                    performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS);
+                    return "";
+                case JarvisControl.QUICK:
+                    performGlobalAction(GLOBAL_ACTION_QUICK_SETTINGS);
+                    return "";
+                case JarvisControl.SCROLL:
+                case JarvisControl.SWIPE: {
+                    final String d = c.dir;
+                    int n = Math.max(1, c.count);
+                    for (int i = 0; i < n; i++) {
+                        handler.postDelayed(new Runnable() {
+                            @Override
+                            public void run() {
+                                scrollOnce(d);
+                            }
+                        }, i * 450L);
+                    }
+                    return "";
+                }
+                case JarvisControl.CLICK:
+                case JarvisControl.LONG: {
+                    AccessibilityNodeInfo t = findTarget(c.target, 0.8);
+                    if (t == null) {
+                        return c.target + " screen par nahi dikha.";
+                    }
+                    return doClick(t, c.kind == JarvisControl.LONG) ? "" : c.target + " dab nahi paya.";
+                }
+                case JarvisControl.TYPE:
+                    typeFlow(c.target, c.text, c.qual);
+                    return "";
+                case JarvisControl.SEND:
+                    return sendNow() ? "" : "Send ka button nahi mila.";
+                case JarvisControl.ENTER:
+                    return imeEnter(pickEditable("")) ? "" : "Enter nahi dab paya.";
+                case JarvisControl.CLEAR: {
+                    AccessibilityNodeInfo e = pickEditable("");
+                    if (e == null) {
+                        return "Saaf karne ke liye text box nahi dikha.";
+                    }
+                    Bundle b = new Bundle();
+                    b.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, "");
+                    return e.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, b) ? "" : "Saaf nahi kar paya.";
+                }
+                default:
+                    return "Ye kaam abhi nahi aata.";
+            }
+        } catch (Throwable t) {
+            log("control error: " + t.getClass().getSimpleName());
+            return "Ye kaam nahi ho paya.";
+        }
+    }
+
+    /** Screen par is naam ka kuch hai? (OPEN: app kholna hai ya screen ka hissa dabana hai, tay karne ke liye) */
+    public boolean screenHas(String target) {
+        try {
+            return findTarget(target, 0.85) != null;
+        } catch (Throwable t) {
             return false;
         }
     }
