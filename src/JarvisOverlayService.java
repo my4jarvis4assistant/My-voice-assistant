@@ -1007,6 +1007,97 @@ public class JarvisOverlayService extends Service {
     }
 
     // -------------------------------------------------------------- command --
+    // ---------------------------------------------------------- yaaddasht --
+    private boolean handleMemory(String text) {
+        final JarvisMemory.Cmd c;
+        try {
+            c = JarvisMemory.parse(text);
+        } catch (Throwable t) {
+            return false;
+        }
+        if (c.kind == JarvisMemory.NONE) {
+            return false;
+        }
+        String say;
+        switch (c.kind) {
+            case JarvisMemory.REMEMBER:
+                if (c.fact.length() < 3) {
+                    say = "Kya yaad rakhun? Bolo, yaad rakho ki... aur baat batao.";
+                } else if (JarvisMemory.add(this, c.fact)) {
+                    say = "Theek hai, yaad rakh liya.";
+                } else {
+                    say = "Ye mujhe pehle se yaad hai.";
+                }
+                break;
+            case JarvisMemory.RECALL:
+                say = JarvisMemory.speak(this);
+                break;
+            case JarvisMemory.FORGET_ALL:
+                JarvisMemory.clear(this);
+                say = "Maine sab kuch bhula diya.";
+                break;
+            default:
+                String gone = JarvisMemory.forget(this, c.fact);
+                say = gone.length() > 0 ? "Theek hai, wo baat bhula di." : "Aisi koi baat mujhe yaad nahi mili.";
+                break;
+        }
+        reply(say);
+        return true;
+    }
+
+    // ------------------------------------------------------ screen samajhna --
+    private boolean handleScreen(final String text) {
+        if (!JarvisScreen.isAsk(text)) {
+            return false;
+        }
+        final SharedPreferences p = prefs();
+        final String key = p.getString("gemini_key", "");
+        if (key.trim().length() == 0) {
+            reply("Gemini key set nahi hai. Jarvis app ki Settings me key daaliye.");
+            return true;
+        }
+        JarvisAccessService svc = JarvisAccessService.instance;
+        if (svc == null) {
+            reply("Screen padhne ke liye Accessibility me JARVIS auto-send On karna hoga.");
+            try {
+                Intent i = new Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS);
+                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(i);
+            } catch (Exception ignored) {
+            }
+            return true;
+        }
+        final String screenTxt = svc.screenText(6000);
+        final String app = svc.screenApp();
+        if (screenTxt.trim().length() < 12) {
+            reply("Is screen par mujhe padhne layak text nahi dikha.");
+            return true;
+        }
+        final long myGen = gen;
+        final String mem = JarvisMemory.block(this);
+        setStatus("Screen padh raha hoon...", MODE_THINK);
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                final String out = JarvisScreen.answer(key, mem, app, screenTxt, text);
+                main.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (!alive || myGen != gen) {
+                            return;
+                        }
+                        if (out == null || out.trim().length() == 0) {
+                            reply("Abhi screen ka jawab nahi bana paya. Dobara try karo.");
+                        } else {
+                            reply(out.trim());
+                        }
+                    }
+                });
+            }
+        }).start();
+        return true;
+    }
+
     /** Voice-Access jaisa: click / scroll / type / send / back... Chup-chaap karta hai aur sunta rehta hai. */
     private boolean handleControl(String text) {
         final JarvisControl.Cmd c;
@@ -1137,6 +1228,12 @@ public class JarvisOverlayService extends Service {
         if (!isDismiss(text) && handleInboxFlow(text)) {
             return;
         }
+        if (!isDismiss(text) && !flowPending() && handleMemory(text)) {
+            return;
+        }
+        if (!isDismiss(text) && !flowPending() && handleScreen(text)) {
+            return;
+        }
         if (!isDismiss(text) && !flowPending() && handleControl(text)) {
             return;
         }
@@ -1168,6 +1265,7 @@ public class JarvisOverlayService extends Service {
             reply("Gemini key set nahi hai ya AI band hai. Jarvis app ki Settings me key daaliye.");
             return;
         }
+        JarvisBrain.memory = JarvisMemory.block(this);
         setStatus("Soch raha hoon...", MODE_THINK);
         new Thread(new Runnable() {
             @Override
