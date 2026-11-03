@@ -31,6 +31,8 @@ public class JarvisBrain {
             "gemini-2.0-flash"};
     private static final List<String[]> HISTORY = new ArrayList<String[]>();
     public static String lastModel = "";
+    /** Yaaddasht ka text (JarvisMemory.block). Har baat-cheet ke system prompt me judta hai. */
+    public static volatile String memory = "";
 
     // ------------------------------------------------------------------ ask --
     public static synchronized Result ask(String key, String model, String verbosity, String text) {
@@ -283,7 +285,7 @@ public class JarvisBrain {
                 + "to uske liye function call karo, lamba jawab mat do. Alarm ke liye 24 ghante ka "
                 + "samay nikaalo (subah 4:50 = hour 4 minute 50, shaam 5 baje = hour 17). Baaki sawal ya "
                 + "baat-cheet ka seedha jawab do. Pata na ho to saaf bol do, andaza mat lagao. "
-                + "Abhi ka samay: " + now + ".";
+                + "Abhi ka samay: " + now + "." + memory;
     }
 
     private static JSONObject prop(String type, String desc) throws Exception {
