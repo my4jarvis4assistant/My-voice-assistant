@@ -2486,6 +2486,13 @@ def build_jarvis_ui(app):
                     return
             except Exception as exc:
                 print("inbox flow error:", repr(exc))
+        try_control = getattr(app, "_jarvis_try_control", None)
+        if try_control is not None:
+            try:
+                if try_control(cmd):                    # "click karo", "scroll down", "type karo", "send kar do"
+                    return
+            except Exception as exc:
+                print("control flow error:", repr(exc))
         try_social = getattr(app, "_jarvis_try_social", None)
         if try_social is not None:
             try:
@@ -2677,4 +2684,9 @@ def build_jarvis_ui(app):
         jarvis_inbox.install_inbox(app)            # aaye messages / missed calls / auto-reply
     except Exception as exc:
         print("install_inbox failed:", exc)
+    try:
+        import jarvis_control
+        jarvis_control.install_control(app)        # click / scroll / type / send / back (Voice-Access jaisa)
+    except Exception as exc:
+        print("install_control failed:", exc)
     return root
