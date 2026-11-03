@@ -202,6 +202,15 @@ public final class JarvisWhatsApp {
         ctx.startActivity(i);
     }
 
+    /** Service On hai AUR sach me chal rahi hai (pichhle 20 second me dhadkan mili). */
+    public static boolean accessReady(Context ctx) {
+        if (!accessibilityOn(ctx)) {
+            return false;
+        }
+        long t = ctx.getSharedPreferences("jarvis_prefs", 0).getLong("access_alive", 0);
+        return System.currentTimeMillis() - t < 20000;
+    }
+
     public static boolean accessibilityOn(Context ctx) {
         try {
             String v = android.provider.Settings.Secure.getString(ctx.getContentResolver(),
