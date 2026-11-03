@@ -1007,6 +1007,98 @@ public class JarvisOverlayService extends Service {
     }
 
     // -------------------------------------------------------------- command --
+    /** Voice-Access jaisa: click / scroll / type / send / back... Chup-chaap karta hai aur sunta rehta hai. */
+    private boolean handleControl(String text) {
+        final JarvisControl.Cmd c;
+        try {
+            c = JarvisControl.parse(text);
+        } catch (Throwable t) {
+            return false;
+        }
+        if (c == null) {
+            return false;
+        }
+        JarvisAccessService svc = JarvisAccessService.instance;
+        if (svc == null) {
+            replyAndListen("Ye kaam karne ke liye Accessibility me JARVIS auto-send On karna hoga.",
+                    "Ye kaam karne ke liye Accessibility me JARVIS auto-send On karna hoga.");
+            try {
+                Intent i = new Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS);
+                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(i);
+            } catch (Exception ignored) {
+            }
+            return true;
+        }
+        JarvisAccessService.sayHook = new JarvisAccessService.Say() {
+            @Override
+            public void say(final String msg) {
+                main.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (alive && session) {
+                            replyAndListen(msg, msg);
+                        }
+                    }
+                });
+            }
+        };
+        String out = "";
+        if (c.kind == JarvisControl.OPEN) {
+            out = controlOpen(svc, c);
+            if (out == null) {
+                return false;
+            }
+        } else {
+            out = svc.exec(c);
+        }
+        if (out == null || out.length() == 0) {
+            if (heardView != null) {
+                heardView.setText("\"" + text + "\"");
+            }
+            listenSoon();                           // chup-chaap, agla tukda suno
+        } else {
+            replyAndListen(out, out);
+        }
+        return true;
+    }
+
+    private void listenSoon() {
+        main.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                if (alive && session) {
+                    startListening();
+                }
+            }
+        }, 350);
+    }
+
+    /** "instagram kholo" = app kholo. "message wale option me jao" = screen ka hissa dabao. */
+    private String controlOpen(JarvisAccessService svc, JarvisControl.Cmd c) {
+        if (!c.qual) {
+            String w = c.target.toLowerCase(Locale.ENGLISH).trim();
+            PackageManager pm = getPackageManager();
+            Intent mainIntent = new Intent(Intent.ACTION_MAIN);
+            mainIntent.addCategory(Intent.CATEGORY_LAUNCHER);
+            for (ResolveInfo ri : pm.queryIntentActivities(mainIntent, 0)) {
+                String label = String.valueOf(ri.loadLabel(pm)).toLowerCase(Locale.ENGLISH);
+                if (label.equals(w) || (w.length() >= 3 && label.startsWith(w)) || (label.length() >= 3 && w.startsWith(label))) {
+                    String r = openApp(c.target);
+                    return r.contains("nahi") ? r : "";
+                }
+            }
+            if (!svc.screenHas(c.target)) {
+                String r = openApp(c.target);
+                return r.contains("nahi mila") ? null : "";       // kuch nahi mila: baaki tareeke se samjho
+            }
+        }
+        JarvisControl.Cmd k = new JarvisControl.Cmd();
+        k.kind = JarvisControl.CLICK;
+        k.target = c.target;
+        return svc.exec(k);
+    }
+
     private boolean flowPending() {
         return sConfirm || sChoices != null || sAwaitBody || sAwaitName || iAsk != null || iOffer
                 || pendingChoices != null || awaitingName;
@@ -1043,6 +1135,9 @@ public class JarvisOverlayService extends Service {
         }
         idleCount = 0;
         if (!isDismiss(text) && handleInboxFlow(text)) {
+            return;
+        }
+        if (!isDismiss(text) && !flowPending() && handleControl(text)) {
             return;
         }
         if (!isDismiss(text) && handleSocialFlow(text)) {
@@ -1421,6 +1516,10 @@ public class JarvisOverlayService extends Service {
         }
         if (found.isEmpty()) {
             if (JarvisWhatsApp.accessibilityOn(this)) {
+                if (!accessOkOrWarn()) {
+                    socialReset();
+                    return;
+                }
                 // phone contacts me nahi: WhatsApp me jis naam se save hai, wahan dhundho
                 JarvisWhatsApp.Person ui = new JarvisWhatsApp.Person();
                 ui.name = name;
@@ -1447,6 +1546,23 @@ public class JarvisOverlayService extends Service {
     }
 
     /** Message likhne ke baad 8 second me dekho Send dab gaya ya nahi; na dabe to saaf bolo kyon. */
+    /** Accessibility chal nahi rahi ho to saaf bolo aur uski screen kholo. true = theek hai. */
+    private boolean accessOkOrWarn() {
+        if (JarvisWhatsApp.accessReady(this)) {
+            return true;
+        }
+        boolean on = JarvisWhatsApp.accessibilityOn(this);
+        speak(on ? "Accessibility service ruki hui hai. Settings me JARVIS auto-send ko Off karke dobara On kijiye."
+                : "Accessibility me JARVIS auto-send band hai. Use On kijiye.");
+        try {
+            Intent i = new Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS);
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(i);
+        } catch (Exception ignored) {
+        }
+        return false;
+    }
+
     private void watchSend() {
         main.postDelayed(new Runnable() {
             @Override
@@ -1481,6 +1597,9 @@ public class JarvisOverlayService extends Service {
                     String res = prefs().getString("ui_result", "");
                     if (res.length() == 0 && prefs().getString("ui_task", "").length() > 0) {
                         speak("WhatsApp me kaam abhi poora nahi hua. " + prefs().getString("access_log", ""));
+                    } else if (res.length() > 0 && !res.contains("bhej diya") && !res.contains("laga raha")
+                            && !res.contains("nahi")) {
+                        speak("WhatsApp me kaam poora nahi hua: " + res);
                     } else if (res.contains("nahi")) {
                         speak(res.contains("naam") ? JarvisContactMatch.speakable(name)
                                 + " naam ka contact WhatsApp me nahi mila." : res);
@@ -1545,6 +1664,11 @@ public class JarvisOverlayService extends Service {
                 replyDone(shown + " ka number nahi mila.");
             } else {
                 JarvisWhatsApp.chat(this, job.person, number, job.body);
+                if (!JarvisWhatsApp.accessReady(this)) {
+                    accessOkOrWarn();
+                    socialReset();
+                    return;
+                }
                 watchSend();
                 replyDone(JarvisWhatsApp.accessibilityOn(this)
                         ? shown + " ko message bhej raha hoon."
