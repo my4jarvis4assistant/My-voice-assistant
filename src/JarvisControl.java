@@ -282,7 +282,7 @@ public final class JarvisControl {
     /** Python/anya jagah se: kya ye control ka kaam hai? */
     public static boolean isControl(String utterance) {
         try {
-            return parse(utterance) != null;
+            return parse(utterance) != null || JarvisScreen.isAsk(utterance) || JarvisMemory.isMemory(utterance);
         } catch (Throwable t) {
             return false;
         }
