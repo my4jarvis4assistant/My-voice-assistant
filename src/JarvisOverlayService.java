@@ -1045,6 +1045,65 @@ public class JarvisOverlayService extends Service {
         return true;
     }
 
+    // ------------------------------------------------ style / tone / busy --
+    private boolean handleStyle(String text) {
+        final JarvisStyle.Cmd c;
+        try {
+            c = JarvisStyle.parse(text);
+        } catch (Throwable t) {
+            return false;
+        }
+        if (c.kind == JarvisStyle.NONE) {
+            return false;
+        }
+        String say;
+        switch (c.kind) {
+            case JarvisStyle.BUSY_ON: {
+                JarvisStyle.busyOn(this, c.text, c.minutes);
+                String dur = c.minutes % 60 == 0 ? (c.minutes / 60) + " ghante" : c.minutes + " minute";
+                say = "Busy mode chalu. Ab jo bhi message aayega usme bata dunga ki aap "
+                        + (c.text.length() > 0 ? c.text + " ke karan " : "") + "busy ho. " + dur
+                        + " baad ye apne aap band ho jayega.";
+                break;
+            }
+            case JarvisStyle.BUSY_OFF:
+                JarvisStyle.busyOff(this);
+                say = "Busy mode band. Ab pehle jaise reply dunga.";
+                break;
+            case JarvisStyle.STATUS: {
+                String r = JarvisStyle.busyReason(this);
+                say = r == null ? "Busy mode abhi band hai."
+                        : "Busy mode chalu hai, " + JarvisStyle.busyLeftMinutes(this) + " minute aur.";
+                break;
+            }
+            case JarvisStyle.STYLE_ADD:
+                if (c.text.length() < 3) {
+                    say = "Apni style ka koi namuna bolo, jaise: meri style yaad rakho, kya bhai sab badhiya.";
+                } else {
+                    JarvisStyle.learn(this, c.text);
+                    say = "Theek hai, aapki style seekh li. Ab tak " + JarvisStyle.sampleCount(this)
+                            + " namune yaad hain.";
+                }
+                break;
+            case JarvisStyle.STYLE_CLEAR:
+                JarvisStyle.clearStyle(this);
+                say = "Aapki style ke saare namune hata diye.";
+                break;
+            case JarvisStyle.TONE_SET:
+                JarvisStyle.setTone(this, c.name, c.text);
+                say = c.name.equals("*")
+                        ? "Theek hai, baaki sab ko " + c.text + " reply dunga."
+                        : "Theek hai, " + JarvisContactMatch.speakable(c.name) + " ko " + c.text + " reply dunga.";
+                break;
+            default:
+                JarvisStyle.clearTones(this);
+                say = "Saare tone hata diye.";
+                break;
+        }
+        reply(say);
+        return true;
+    }
+
     // ------------------------------------------------------ screen samajhna --
     private boolean handleScreen(final String text) {
         if (!JarvisScreen.isAsk(text)) {
@@ -1231,6 +1290,9 @@ public class JarvisOverlayService extends Service {
         if (!isDismiss(text) && !flowPending() && handleMemory(text)) {
             return;
         }
+        if (!isDismiss(text) && !flowPending() && handleStyle(text)) {
+            return;
+        }
         if (!isDismiss(text) && !flowPending() && handleScreen(text)) {
             return;
         }
@@ -1402,6 +1464,9 @@ public class JarvisOverlayService extends Service {
             }
             String body = JarvisInbox.stripLead(text);
             boolean ok = JarvisInbox.send(this, it, body);
+            if (ok) {
+                JarvisStyle.learn(this, body);
+            }
             nextAskOr(ok ? "Bhej diya: " + body : "Reply bhej nahi paya, shayad message hat chuka hai.");
             return true;
         }
@@ -1749,6 +1814,7 @@ public class JarvisOverlayService extends Service {
     private void socialSend() {
         JarvisSocial.Job job = sJob;
         String shown = JarvisContactMatch.speakable(job.person.name);
+        JarvisStyle.learn(this, job.body);
         try {
             if (job.person.ui) {
                 JarvisWhatsApp.uiTask(this, "message", job.person.name, job.body);
