@@ -578,7 +578,9 @@ public final class JarvisInbox {
         }
         user.append("Sender: ").append(it.sender).append(" (").append(it.app).append(")\n");
         user.append("Naya message: ").append(it.text);
-        String out = JarvisBrain.generate(key, p.getString("ai_model", ""), SYSTEM, user.toString(), true);
+        String who = it.sender.length() > 0 ? it.sender : it.chat;
+        String out = JarvisBrain.generate(key, p.getString("ai_model", ""), SYSTEM + JarvisStyle.block(c, who),
+                user.toString(), true);
         if (out == null) {
             return null;
         }
