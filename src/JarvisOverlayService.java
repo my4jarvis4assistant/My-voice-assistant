@@ -104,6 +104,9 @@ public class JarvisOverlayService extends Service {
 
     // --- floating bubble (hamesha dikhta hai; sleep = dhundhla, active = chamakta) ---
     private WindowManager.LayoutParams bubbleLp = null;
+    private int rtStage = 0;                  // routine banate waqt: 1 = naam poochha, 2 = kaam sun raha hoon
+    private String rtName = "";
+    private final List<String> rtActions = new ArrayList<String>();
     private boolean session = false;          // True = Jarvis abhi sun/bol raha hai (baatcheet chal rahi hai)
     private boolean closing = false;           // True = user ne "jao/band" kaha: bolkar so jao
     private int idleCount = 0;                // lagataar kitni baar kuch sunai nahi diya
@@ -133,6 +136,7 @@ public class JarvisOverlayService extends Service {
                 action = prefs().getBoolean("wake_enabled", false) ? ACTION_WAKE_ON : ACTION_WAKE_OFF;
             }
             startAsForeground(ACTION_TALK.equals(action) || session);
+            JarvisBriefing.schedule(this);                  // roz wali briefing ka agla alarm (band ho to kuch nahi)
             if (ACTION_WAKE_OFF.equals(action)) {
                 wakeEnabled = false;
                 prefs().edit().putBoolean("wake_enabled", false).apply();
@@ -1007,6 +1011,328 @@ public class JarvisOverlayService extends Service {
     }
 
     // -------------------------------------------------------------- command --
+    // ======================================== briefing / mausam / routines / driving ==
+    /** Driving mode me: kuch bolkar bata do (koi sawaal nahi). Service band ho to chup. */
+    static void announceDrive(final Context ctx, final String say) {
+        final JarvisOverlayService svc = instance;
+        if (svc == null) {
+            return;
+        }
+        svc.main.post(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    if (svc.session && svc.flowPending()) {
+                        return;
+                    }
+                    svc.startAsForeground(true);
+                    svc.beginSession();
+                    svc.replyAndListen(say, say);
+                } catch (Exception ignored) {
+                }
+            }
+        });
+    }
+
+    private static String noDot(String s) {
+        String t = s == null ? "" : s.trim();
+        while (t.endsWith(".")) {
+            t = t.substring(0, t.length() - 1).trim();
+        }
+        return t;
+    }
+
+    private boolean handleDaily(String text) {
+        final JarvisRoutine.Cmd c;
+        try {
+            c = JarvisRoutine.parse(text);
+        } catch (Throwable t) {
+            return false;
+        }
+        if (c.kind == JarvisRoutine.NONE) {
+            String run = null;
+            try {
+                run = JarvisRoutine.findRun(this, text);
+            } catch (Throwable ignored) {
+            }
+            if (run == null) {
+                return false;
+            }
+            runRoutine(run);
+            return true;
+        }
+        final Context app = getApplicationContext();
+        switch (c.kind) {
+            case JarvisRoutine.BRIEF:
+                startBriefing("");
+                return true;
+            case JarvisRoutine.WEATHER: {
+                if (c.text.length() == 0 && JarvisBriefing.city(this).length() == 0) {
+                    reply("Mausam ke liye pehle bolo: mera shehar, aur shehar ka naam, hai. Ya bolo, Patna ka mausam batao.");
+                    return true;
+                }
+                final long myGen = gen;
+                setStatus("Mausam dekh raha hoon...", MODE_THINK);
+                new Thread(new Runnable() {
+                    @Override
+                    public void run() {
+                        final String w = JarvisBriefing.weather(app, c.text);
+                        main.post(new Runnable() {
+                            @Override
+                            public void run() {
+                                if (!alive || myGen != gen) {
+                                    return;
+                                }
+                                if (w.equals("NOCITY")) {
+                                    reply("Ye shehar mujhe mila nahi. Naam dobara batao.");
+                                } else if (w.length() == 0) {
+                                    reply("Mausam abhi nahi mil paya. Internet check karke dobara poochho.");
+                                } else {
+                                    reply(w);
+                                }
+                            }
+                        });
+                    }
+                }).start();
+                return true;
+            }
+            case JarvisRoutine.SET_CITY: {
+                final String city = c.text;
+                JarvisBriefing.setCity(this, city);
+                final long myGen = gen;
+                setStatus("Shehar dekh raha hoon...", MODE_THINK);
+                new Thread(new Runnable() {
+                    @Override
+                    public void run() {
+                        final String w = JarvisBriefing.weather(app, "");
+                        main.post(new Runnable() {
+                            @Override
+                            public void run() {
+                                if (!alive || myGen != gen) {
+                                    return;
+                                }
+                                if (w.equals("NOCITY")) {
+                                    JarvisBriefing.setCity(app, "");
+                                    reply("Ye shehar mujhe mila nahi. Naam dobara batao.");
+                                } else {
+                                    reply("Theek hai, shehar " + city + " set kar diya. " + (w.length() > 0 ? w : ""));
+                                }
+                            }
+                        });
+                    }
+                }).start();
+                return true;
+            }
+            case JarvisRoutine.SCHED_ON:
+                JarvisBriefing.setSchedule(this, c.minutes);
+                reply("Theek hai, roz " + JarvisBriefing.shownTime(c.minutes) + " par briefing sunaunga. "
+                        + "Ye chalne ke liye Jarvis ko Autostart aur battery me No restrictions dena zaroori hai.");
+                return true;
+            case JarvisRoutine.SCHED_OFF:
+                JarvisBriefing.cancelSchedule(this);
+                reply("Roz wali briefing band kar di.");
+                return true;
+            case JarvisRoutine.CREATE:
+                rtActions.clear();
+                if (c.text.length() > 0) {
+                    rtName = c.text;
+                    rtStage = 2;
+                    reply("Theek hai, routine " + c.text + ". Pehla kaam batao, jaise: dnd on, ya volume 20 percent, ya "
+                            + "Spotify kholo, ya subah 6 baje alarm, ya briefing sunao.");
+                } else {
+                    rtStage = 1;
+                    reply("Routine ka naam kya rakhun? Jaise good night ya gym.");
+                }
+                return true;
+            case JarvisRoutine.LIST: {
+                StringBuilder sb = new StringBuilder("Aapki routines hain: ");
+                List<String> ns = JarvisRoutine.names(this);
+                for (int i = 0; i < ns.size(); i++) {
+                    sb.append(i > 0 ? ", " : "").append(ns.get(i));
+                }
+                sb.append(". Chalane ke liye bas naam bolo.");
+                reply(sb.toString());
+                return true;
+            }
+            case JarvisRoutine.DELETE:
+                reply(JarvisRoutine.delete(this, c.text) ? "Routine " + c.text + " hata di."
+                        : "Aisi koi routine nahi mili, ya wo default hai.");
+                return true;
+            case JarvisRoutine.DRIVE_ON:
+                JarvisRoutine.setDriving(this, c.minutes);
+                reply("Driving mode chalu. Ab naye message aur missed call main bolkar bata dunga, aur aap bolkar jawab "
+                        + "de sakte ho. " + (c.minutes % 60 == 0 ? (c.minutes / 60) + " ghante" : c.minutes + " minute")
+                        + " baad ye apne aap band ho jayega. Dhyan se chalaiye.");
+                return true;
+            default:
+                JarvisRoutine.clearDriving(this);
+                reply("Driving mode band. Gaadi se utarne ke liye shukriya, safe rahiye.");
+                return true;
+        }
+    }
+
+    private boolean handleRoutineFlow(String text) {
+        if (rtStage == 1) {
+            if (cancelWords(text)) {
+                rtStage = 0;
+                rtActions.clear();
+                reply("Theek hai, routine nahi banayi.");
+                return true;
+            }
+            String n = JarvisRoutine.norm(text);
+            if (n.length() < 2 || n.split(" ").length > 4) {
+                reply("Naam chhota sa batao, jaise good night ya gym.");
+                return true;
+            }
+            rtName = n;
+            rtStage = 2;
+            reply("Routine " + n + ". Pehla kaam batao, jaise: dnd on, ya volume 20 percent, ya Spotify kholo, ya subah 6 "
+                    + "baje alarm, ya briefing sunao.");
+            return true;
+        }
+        if (rtStage == 2) {
+            if (JarvisRoutine.isEnd(text)) {
+                rtStage = 0;
+                if (rtActions.isEmpty()) {
+                    reply("Koi kaam nahi bataya, isliye routine nahi bani.");
+                } else {
+                    JarvisRoutine.save(this, rtName, rtActions);
+                    reply("Routine " + rtName + " ban gayi, " + rtActions.size() + " kaam ke saath. Chalane ke liye bolo: "
+                            + rtName + ".");
+                }
+                rtActions.clear();
+                return true;
+            }
+            JarvisRoutine.Action a = JarvisRoutine.parseAction(text);
+            if (a == null) {
+                if (cancelWords(text)) {
+                    rtStage = 0;
+                    rtActions.clear();
+                    reply("Theek hai, routine nahi banayi.");
+                    return true;
+                }
+                reply("Ye kaam mujhe samajh nahi aaya. Aise bolo: dnd on, volume 20 percent, Spotify kholo, subah 6 baje "
+                        + "alarm, torch band, ya briefing sunao. Ya bas bolo.");
+                return true;
+            }
+            rtActions.add(text.trim());
+            reply("Theek hai, " + rtActions.size() + " kaam ho gaye. Aur kuch? Nahi to bas bolo.");
+            return true;
+        }
+        rtStage = 0;
+        return false;
+    }
+
+    private String execAction(JarvisRoutine.Action a) {
+        try {
+            if ("vol".equals(a.type)) {
+                AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+                int max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+                am.setStreamVolume(AudioManager.STREAM_MUSIC, Math.round(max * a.n / 100f), 0);
+                return "volume " + a.n + " percent";
+            } else if ("dnd".equals(a.type)) {
+                if (Build.VERSION.SDK_INT < 23) {
+                    return "DND is phone par nahi chalta";
+                }
+                NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                if (!nm.isNotificationPolicyAccessGranted()) {
+                    try {
+                        Intent i = new Intent(android.provider.Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS);
+                        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        startActivity(i);
+                    } catch (Exception ignored) {
+                    }
+                    return "DND ke liye permission chahiye, settings khol di hai, Jarvis ko allow karo";
+                }
+                nm.setInterruptionFilter(a.n == 1 ? NotificationManager.INTERRUPTION_FILTER_ALARMS
+                        : NotificationManager.INTERRUPTION_FILTER_ALL);
+                return a.n == 1 ? "DND on, sirf alarm bajenge" : "DND off";
+            } else if ("torch".equals(a.type)) {
+                return noDot(flashlight(a.n == 1));
+            } else if ("alarm".equals(a.type)) {
+                return noDot(setAlarm(a.n / 60, a.n % 60));
+            } else if ("open".equals(a.type)) {
+                return noDot(openApp(a.arg));
+            } else if ("busy".equals(a.type)) {
+                if (a.n > 0) {
+                    JarvisStyle.busyOn(this, a.arg, a.n);
+                    return "busy mode on";
+                }
+                JarvisStyle.busyOff(this);
+                return "busy mode off";
+            } else if ("drive".equals(a.type)) {
+                if (a.n == 1) {
+                    JarvisRoutine.setDriving(this, 240);
+                    return "driving mode on";
+                }
+                JarvisRoutine.clearDriving(this);
+                return "driving mode off";
+            }
+        } catch (Exception e) {
+            return "ek kaam nahi ho paya";
+        }
+        return "";
+    }
+
+    private void runRoutine(String name) {
+        List<String> acts = JarvisRoutine.get(this, name);
+        if (acts == null || acts.isEmpty()) {
+            reply("Ye routine khaali hai.");
+            return;
+        }
+        StringBuilder done = new StringBuilder();
+        boolean brief = false;
+        List<JarvisRoutine.Action> opens = new ArrayList<JarvisRoutine.Action>();
+        for (String ph : acts) {
+            JarvisRoutine.Action a = JarvisRoutine.parseAction(ph);
+            if (a == null) {
+                done.append(ph).append(" samajh nahi aaya. ");
+            } else if ("brief".equals(a.type)) {
+                brief = true;
+            } else if ("open".equals(a.type)) {
+                opens.add(a);
+            } else {
+                String r = execAction(a);
+                if (r.length() > 0) {
+                    done.append(r).append(". ");
+                }
+            }
+        }
+        for (JarvisRoutine.Action a : opens) {
+            String r = execAction(a);
+            if (r.length() > 0) {
+                done.append(r).append(". ");
+            }
+        }
+        String head = "Routine " + name + " chalu. " + done;
+        if (brief) {
+            startBriefing(head);
+        } else {
+            reply(head.trim());
+        }
+    }
+
+    private void startBriefing(final String prefix) {
+        final long myGen = gen;
+        final Context app = getApplicationContext();
+        setStatus("Briefing bana raha hoon...", MODE_THINK);
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                final String t = JarvisBriefing.compose(app);
+                main.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (!alive || myGen != gen) {
+                            return;
+                        }
+                        reply((prefix.length() > 0 ? prefix + " " : "") + t);
+                    }
+                });
+            }
+        }).start();
+    }
+
     // ---------------------------------------------------------- yaaddasht --
     private boolean handleMemory(String text) {
         final JarvisMemory.Cmd c;
@@ -1250,7 +1576,7 @@ public class JarvisOverlayService extends Service {
     }
 
     private boolean flowPending() {
-        return sConfirm || sChoices != null || sAwaitBody || sAwaitName || iAsk != null || iOffer
+        return rtStage != 0 || sConfirm || sChoices != null || sAwaitBody || sAwaitName || iAsk != null || iOffer
                 || pendingChoices != null || awaitingName;
     }
 
@@ -1284,6 +1610,9 @@ public class JarvisOverlayService extends Service {
             heardView.setText("\"" + text + "\"");
         }
         idleCount = 0;
+        if (rtStage != 0 && handleRoutineFlow(text)) {
+            return;
+        }
         if (!isDismiss(text) && handleInboxFlow(text)) {
             return;
         }
@@ -1291,6 +1620,9 @@ public class JarvisOverlayService extends Service {
             return;
         }
         if (!isDismiss(text) && !flowPending() && handleStyle(text)) {
+            return;
+        }
+        if (!isDismiss(text) && !flowPending() && handleDaily(text)) {
             return;
         }
         if (!isDismiss(text) && !flowPending() && handleScreen(text)) {
@@ -1375,10 +1707,15 @@ public class JarvisOverlayService extends Service {
     // ----------------------------------------------- messages / calls flow --
     /** Naye message ka jawab Jarvis nahi de paya: bolkar poochho ki kya bhejun. */
     static void askAbout(final Context ctx, final JarvisInbox.Item it) {
+        askAbout(ctx, it, false);
+    }
+
+    /** plain = true: driving mode (bas padhkar poochho "kya jawab bhejun"). */
+    static void askAbout(final Context ctx, final JarvisInbox.Item it, final boolean plain) {
         final JarvisOverlayService svc = instance;
         String who = JarvisContactMatch.speakable(it.sender.length() > 0 ? it.sender : it.chat);
         final String say = who + " ne " + it.app + " par likha: " + JarvisBrain.speechText(it.text)
-                + ". Iska jawab main apne aap nahi de sakta. Kya bhejun?";
+                + (plain ? ". Kya jawab bhejun?" : ". Iska jawab main apne aap nahi de sakta. Kya bhejun?");
         JarvisInbox.addAsk(it);
         if (svc == null) {
             it.voiced = true;
