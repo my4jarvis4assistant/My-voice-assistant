@@ -708,6 +708,10 @@ public final class JarvisInbox {
                         log(app, "reply bhej nahi paya (" + last.app + ")");
                     } else {
                         log(app, "auto-reply bheja: " + last.sender);
+                        if (JarvisRoutine.driving(app)) {
+                            JarvisOverlayService.announceDrive(app, who(last) + " ne " + last.app + " par likha: "
+                                    + cut(probe.text, 140) + ". Maine jawab bheja: " + cut(r, 140));
+                        }
                     }
                 } catch (Exception ignored) {
                 } finally {
@@ -733,6 +737,21 @@ public final class JarvisInbox {
     /** Naya message aaya: auto mode ho to jawab ki taiyari. */
     static void onNew(Context c, Item it) {
         try {
+            if (JarvisRoutine.driving(c)) {
+                if (it.kind.equals("call")) {
+                    JarvisOverlayService.announceDrive(c, who(it) + " ka " + it.app + " par missed call aaya.");
+                    return;
+                }
+                if (it.kind.equals("msg") && !it.group && !"auto".equals(prefs(c).getString("reply_mode", "off"))) {
+                    if (it.canReply && autoApp(it.pkg)) {
+                        JarvisOverlayService.askAbout(c, it, true);
+                    } else {
+                        JarvisOverlayService.announceDrive(c, who(it) + " ne " + it.app + " par likha: "
+                                + cut(it.text, 140) + ".");
+                    }
+                    return;
+                }
+            }
             if (!"auto".equals(prefs(c).getString("reply_mode", "off"))) {
                 log(c, "auto-reply band hai (Settings me 'Apne aap bhejo' chuniye)");
                 return;
