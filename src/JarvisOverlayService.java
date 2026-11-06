@@ -1372,7 +1372,7 @@ public class JarvisOverlayService extends Service {
         });
     }
 
-    private boolean handleCallFlow(String text) {
+    private boolean handleScreenCallFlow(String text) {
         if (System.currentTimeMillis() - cCallAt > 60000L) {
             cCall = null;                                  // call kab ka khatam ho chuka
             return false;
@@ -1724,7 +1724,7 @@ public class JarvisOverlayService extends Service {
             heardView.setText("\"" + text + "\"");
         }
         idleCount = 0;
-        if (cCall != null && handleCallFlow(text)) {
+        if (cCall != null && handleScreenCallFlow(text)) {
             return;
         }
         if (rtStage != 0 && handleRoutineFlow(text)) {
