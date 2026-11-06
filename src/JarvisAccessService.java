@@ -1026,6 +1026,16 @@ public class JarvisAccessService extends AccessibilityService {
     }
 
     /** Screen par is naam ka kuch hai? (OPEN: app kholna hai ya screen ka hissa dabana hai, tay karne ke liye) */
+    /** Screen par is naam ka button ho to dabao (min = naam milne ka bharosa, 0 se 1). */
+    public boolean clickLabel(String target, double min) {
+        try {
+            AccessibilityNodeInfo t = findTarget(target, min);
+            return t != null && doClick(t, false);
+        } catch (Throwable e) {
+            return false;
+        }
+    }
+
     public boolean screenHas(String target) {
         try {
             return findTarget(target, 0.85) != null;
