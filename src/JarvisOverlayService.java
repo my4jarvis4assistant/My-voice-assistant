@@ -104,6 +104,21 @@ public class JarvisOverlayService extends Service {
 
     // --- floating bubble (hamesha dikhta hai; sleep = dhundhla, active = chamakta) ---
     private WindowManager.LayoutParams bubbleLp = null;
+    // call assistant: WhatsApp call Jarvis ne uthaya hai aur baat chal rahi hai
+    private boolean caActive = false;
+    private String caName = "";
+    private int caTurns = 0;
+    private int caSilent = 0;
+    private final StringBuilder caSaid = new StringBuilder();     // caller ne kya kaha
+    private final StringBuilder caHist = new StringBuilder();     // dono taraf ki baat (Gemini ke liye)
+    private final Runnable caTimeout = new Runnable() {
+        @Override
+        public void run() {
+            if (caActive) {
+                finishAssist("Main Shakshm ko aapka sandesh de dunga. Dhanyavaad, namaste.");
+            }
+        }
+    };
     private String cCall = null;              // call screening: jis call ke baare me jawab ka intezaar hai
     private long cCallAt = 0;
     private int rtStage = 0;                  // routine banate waqt: 1 = naam poochha, 2 = kaam sun raha hoon
@@ -910,6 +925,29 @@ public class JarvisOverlayService extends Service {
             if (!alive) {
                 return;
             }
+            if (caActive) {
+                if (error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
+                    caSilent++;
+                    if (caSilent >= 3) {
+                        JarvisInbox.log(JarvisOverlayService.this, "call assistant: caller ki awaaz nahi suni");
+                        finishAssist("Mujhe aapki awaaz nahi aa rahi. Main Shakshm ko aapka call bata dunga. Dhanyavaad.");
+                    } else {
+                        main.postDelayed(new Runnable() {
+                            @Override
+                            public void run() {
+                                if (alive && caActive) {
+                                    startListening();
+                                }
+                            }
+                        }, 250);
+                    }
+                } else {
+                    JarvisInbox.log(JarvisOverlayService.this, "call assistant: mic error " + error);
+                    finishAssist("Abhi meri taraf se awaaz sunne me dikkat hai. Main Shakshm ko aapka call bata dunga. "
+                            + "Dhanyavaad.");
+                }
+                return;
+            }
             if (error == SpeechRecognizer.ERROR_NO_MATCH
                     || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
                 // kuch nahi bola: chup-chaap dobara sunte raho (so mat jao, kuch bolo mat)
@@ -1447,6 +1485,181 @@ public class JarvisOverlayService extends Service {
         }
     }
 
+    // ================================================ call assistant (WhatsApp call) ==
+    static boolean running() {
+        return instance != null;
+    }
+
+    /** Call ring ho raha hai: kuch der (aap khud utha lo to theek) baad Jarvis utha leta hai. */
+    static void assistRing(final Context ctx, final String key, final String name) {
+        final JarvisOverlayService svc = instance;
+        if (svc == null) {
+            return;
+        }
+        svc.main.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    if (!key.equals(JarvisCallAssist.pendingKey) || svc.caActive) {
+                        return;                           // aapne utha liya ya call kat gaya
+                    }
+                    JarvisCallAssist.pendingKey = "";
+                    if (!JarvisCallAssist.answer()) {
+                        JarvisInbox.log(ctx, "call assistant: call utha nahi paya");
+                        return;
+                    }
+                    svc.assistStart(name);
+                } catch (Exception ignored) {
+                }
+            }
+        }, 9000);
+    }
+
+    /** Video call: kaat diya, ab WhatsApp me chhota sa message bhejo. */
+    static void assistVideoMessage(final Context ctx, final String name) {
+        try {
+            String st = JarvisCallAssist.statusText(ctx);
+            JarvisWhatsApp.uiTask(ctx, "message", name, "Namaste, main Jarvis hu, Shakshm Jha ka AI assistant. Shakshm abhi "
+                    + st + ", video call nahi utha sakte. Free hote hi aapko call karenge.");
+        } catch (Exception e) {
+            JarvisInbox.log(ctx, "call assistant: video ka message nahi gaya");
+        }
+    }
+
+    private void assistStart(final String name) {
+        startAsForeground(true);
+        beginSession();
+        caActive = true;
+        caName = name;
+        caTurns = 0;
+        caSilent = 0;
+        caSaid.setLength(0);
+        caHist.setLength(0);
+        listenAfterSpeech = false;
+        try {
+            ((AudioManager) getSystemService(Context.AUDIO_SERVICE)).setSpeakerphoneOn(true);
+        } catch (Throwable ignored) {
+        }
+        main.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                if (caActive) {
+                    boolean ok = JarvisCallAssist.speakerOn();
+                    JarvisInbox.log(JarvisOverlayService.this, "call assistant: speaker button " + (ok ? "dabaya" : "nahi mila"));
+                }
+            }
+        }, 1800);
+        final String greet = "Namaste, main Jarvis hoon, Shakshm Jha ka AI assistant. Shakshm abhi "
+                + JarvisCallAssist.statusText(this) + ". Aap bataiye, kya kaam tha? Main unhe bata dunga.";
+        main.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                if (caActive) {
+                    caHist.append("Jarvis: ").append(greet).append("\n");
+                    replyAndListen(greet, greet);
+                }
+            }
+        }, 2800);
+        main.removeCallbacks(caTimeout);
+        main.postDelayed(caTimeout, 150000);
+    }
+
+    private void handleAssistTurn(final String text) {
+        final String t = text == null ? "" : text.trim();
+        if (t.length() == 0) {
+            return;
+        }
+        caSilent = 0;
+        caTurns++;
+        caSaid.append(t).append(". ");
+        caHist.append("Caller: ").append(t).append("\n");
+        final String key = prefs().getString("gemini_key", "");
+        if (JarvisCallWords.isGoodbye(t) || caTurns >= 6 || key.trim().length() == 0) {
+            finishAssist("Theek hai, main Shakshm ko aapka sandesh de dunga. Dhanyavaad, namaste.");
+            return;
+        }
+        setStatus("Soch raha hoon...", MODE_THINK);
+        final String model = prefs().getString("ai_model", "");
+        final String system = "Tum JARVIS ho, Shakshm Jha ka AI assistant. Abhi WhatsApp call par "
+                + JarvisContactMatch.speakable(caName) + " se baat kar rahe ho, kyunki Shakshm " + JarvisCallAssist.statusText(this)
+                + ". Tum pehle hi bata chuke ho ki tum AI assistant ho. Caller ke sawal par bas itna batao ki Shakshm abhi "
+                + "busy hain aur free hote hi unse baat karenge; caller ka sandesh dhyan se suno aur kaho ki Shakshm ko bata "
+                + "doge. Shakshm ki koi nijee jaankari (location, address, paise, number, password, OTP, plan) kabhi mat "
+                + "batao, wada, samay ya faisla unke naam par mat karo. Jawab sirf ek ya do chhote vaakya, Hinglish, "
+                + "bolkar sunane layak (emoji ya symbols nahi).";
+        final String user = "Ab tak ki baat:\n" + caHist + "\nAb Jarvis ka agla jawab (sirf jawab likho):";
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                final String out = JarvisBrain.generate(key, model, system, user, true);
+                main.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (!alive || !caActive) {
+                            return;
+                        }
+                        if (out == null || out.trim().length() == 0) {
+                            finishAssist("Maaf kijiye, abhi dikkat aa rahi hai. Main Shakshm ko aapka sandesh de dunga. "
+                                    + "Dhanyavaad.");
+                        } else {
+                            String o = out.trim();
+                            caHist.append("Jarvis: ").append(o).append("\n");
+                            replyAndListen(o, JarvisBrain.speechText(o));
+                        }
+                    }
+                });
+            }
+        }).start();
+    }
+
+    private void finishAssist(String say) {
+        if (!caActive) {
+            return;
+        }
+        caActive = false;
+        main.removeCallbacks(caTimeout);
+        final String name = caName;
+        final String said = caSaid.toString().trim();
+        cancelClose();
+        listenAfterSpeech = false;
+        setStatus(say, MODE_IDLE);
+        speak(JarvisBrain.speechText(say));
+        JarvisCallAssist.addLog(this, name, said);
+        main.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                boolean ok = JarvisCallAssist.hangup();
+                JarvisInbox.log(JarvisOverlayService.this, "call assistant: call kaata " + (ok ? "(ho gaya)" : "(nahi kat paya)"));
+                try {
+                    ((AudioManager) getSystemService(Context.AUDIO_SERVICE)).setSpeakerphoneOn(false);
+                } catch (Throwable ignored) {
+                }
+            }
+        }, Math.max(3500L, say.length() * 100L));
+    }
+
+    private boolean handleAssistCmd(String text) {
+        JarvisCallWords.Assist a = JarvisCallWords.parseAssist(text);
+        if (a.kind == 0) {
+            return false;
+        }
+        if (a.kind == 3) {
+            reply(JarvisCallAssist.speakLog(this));
+            return true;
+        }
+        if (a.kind == 2) {
+            JarvisCallAssist.setEnabled(this, false, "");
+            reply("Call assistant band. Ab WhatsApp call main nahi uthaunga.");
+            return true;
+        }
+        JarvisCallAssist.setEnabled(this, true, a.status);
+        String st = JarvisCallAssist.statusText(this);
+        reply("Call assistant chalu. WhatsApp voice call aane par kuch der baad main utha lunga aur bolunga ki Shakshm abhi "
+                + st + ". Video call kaat kar message bhej dunga. Ye abhi experimental hai, aur Accessibility "
+                + "aur Jarvis ka chalta rehna zaroori hai.");
+        return true;
+    }
+
     // ---------------------------------------------------------- yaaddasht --
     private boolean handleMemory(String text) {
         final JarvisMemory.Cmd c;
@@ -1690,7 +1903,7 @@ public class JarvisOverlayService extends Service {
     }
 
     private boolean flowPending() {
-        return cCall != null || rtStage != 0 || sConfirm || sChoices != null || sAwaitBody || sAwaitName || iAsk != null || iOffer
+        return caActive || cCall != null || rtStage != 0 || sConfirm || sChoices != null || sAwaitBody || sAwaitName || iAsk != null || iOffer
                 || pendingChoices != null || awaitingName;
     }
 
@@ -1708,6 +1921,10 @@ public class JarvisOverlayService extends Service {
     }
 
     private void handleCommand(final String text) {
+        if (caActive) {
+            handleAssistTurn(text);               // call par caller bol raha hai
+            return;
+        }
         if (mediaNoise(text) && !isDismiss(text)) {
             main.postDelayed(new Runnable() {
                 @Override
@@ -1743,6 +1960,9 @@ public class JarvisOverlayService extends Service {
             return;
         }
         if (!isDismiss(text) && !flowPending() && handleMoney(text)) {
+            return;
+        }
+        if (!isDismiss(text) && !flowPending() && handleAssistCmd(text)) {
             return;
         }
         if (!isDismiss(text) && !flowPending() && handleScreen(text)) {
