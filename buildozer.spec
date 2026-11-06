@@ -7,14 +7,14 @@ package.domain = org.myassistant
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,java,xml
 
-version = 0.72
+version = 0.81
 
 requirements = python3,kivy,pyjnius
 
 orientation = portrait
 fullscreen = 0
 
-android.permissions = android.permission.RECORD_AUDIO,com.android.alarm.permission.SET_ALARM,android.permission.POST_NOTIFICATIONS,android.permission.VIBRATE,android.permission.SCHEDULE_EXACT_ALARM,android.permission.INTERNET,android.permission.SYSTEM_ALERT_WINDOW,android.permission.FOREGROUND_SERVICE,android.permission.FOREGROUND_SERVICE_MICROPHONE,android.permission.QUERY_ALL_PACKAGES,android.permission.READ_CONTACTS,android.permission.CALL_PHONE
+android.permissions = android.permission.RECORD_AUDIO,com.android.alarm.permission.SET_ALARM,android.permission.POST_NOTIFICATIONS,android.permission.VIBRATE,android.permission.SCHEDULE_EXACT_ALARM,android.permission.INTERNET,android.permission.SYSTEM_ALERT_WINDOW,android.permission.FOREGROUND_SERVICE,android.permission.FOREGROUND_SERVICE_MICROPHONE,android.permission.QUERY_ALL_PACKAGES,android.permission.READ_CONTACTS,android.permission.CALL_PHONE,android.permission.ACCESS_NOTIFICATION_POLICY,android.permission.SEND_SMS
 
 android.api = 33
 android.minapi = 21
