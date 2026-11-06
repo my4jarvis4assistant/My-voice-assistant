@@ -284,7 +284,8 @@ public final class JarvisControl {
         try {
             return parse(utterance) != null || JarvisScreen.isAsk(utterance) || JarvisMemory.isMemory(utterance)
                     || JarvisStyle.isStyle(utterance) || JarvisRoutine.isCmd(utterance)
-                    || JarvisSpend.isCmd(utterance) || JarvisCallWords.parseToggle(utterance) >= 0;
+                    || JarvisSpend.isCmd(utterance) || JarvisCallWords.parseToggle(utterance) >= 0
+                    || JarvisCallWords.parseAssist(utterance).kind != 0;
         } catch (Throwable t) {
             return false;
         }
