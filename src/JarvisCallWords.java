@@ -98,4 +98,55 @@ public final class JarvisCallWords {
         String d = t.replaceAll("[^0-9+]", "");
         return d.replaceAll("[^0-9]", "").length() >= 7 ? d : null;
     }
+
+    // ------------------------------------------------ call assistant (WhatsApp call Jarvis uthaye) --
+    public static final class Assist {
+        public int kind = 0;          // 1 = chalu, 2 = band, 3 = pichli baat-cheet ka hisaab
+        public String status = "";    // "main gym me hu"
+    }
+
+    public static Assist parseAssist(String utterance) {
+        Assist a = new Assist();
+        String w = norm(utterance);
+        if (w.length() < 6) {
+            return a;
+        }
+        boolean named = w.matches(".*\\bcall\\s+assistant\\b.*");
+        boolean sub = w.matches(".*\\b(?:mere\\s+badle|meri\\s+jagah|mere\\s+liye)\\b.*\\bcalls?\\b.*"
+                + "\\b(?:utha|uthana|uthalo|uthao|receive|sunna|baat)\\w*.*")
+                || w.matches(".*\\bwhatsapp\\s+calls?\\b.*\\b(?:utha|uthana|uthao|receive)\\w*.*\\b(?:mere|meri)\\b.*");
+        boolean log = (named && w.matches(".*\\b(?:summary|kya|log|history|batao|baat)\\b.*")
+                && !w.matches(".*\\b(?:on|chalu|off|band|start|shuru)\\b.*"))
+                || w.matches(".*\\bjarvis\\s+ne\\b.*\\b(?:call|baat)\\b.*\\b(?:kya|kisse|kis\\s+se)\\b.*");
+        if (log) {
+            a.kind = 3;
+            return a;
+        }
+        if (!named && !sub) {
+            return a;
+        }
+        a.kind = w.matches(".*\\b(?:off|band|mat|stop|nahi|nhi|hata|disable)\\b.*") ? 2 : 1;
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile(
+                "(?:bolna|bolo|batana|batao|bol\\s+dena|keh\\s+dena|kehna|kahna)\\s+(?:ki\\s+)?(.+)$").matcher(w);
+        if (a.kind == 1 && m.find()) {
+            a.status = m.group(1).trim();
+        }
+        return a;
+    }
+
+    public static boolean isGoodbye(String utterance) {
+        String w = norm(utterance);
+        return w.matches(".*\\b(?:bye|alvida|rakhta\\s+hu|rakhti\\s+hu|dhanyavaad|dhanyawad|thank\\s+you|thanks|shukriya|"
+                + "chalo\\s+phir|theek\\s+hai\\s+bata\\s+dena|okay\\s+bye|ok\\s+bye)\\b.*");
+    }
+
+    /** "main gym me hu" -> "unka gym me hain" (Jarvis teesre insaan me bolta hai). */
+    public static String thirdPerson(String status) {
+        String t = " " + norm(status) + " ";
+        t = t.replace(" main ", " ").replace(" mai ", " ").replace(" mein ", " mein ");
+        t = t.replace(" mera ", " unka ").replace(" meri ", " unki ").replace(" mere ", " unke ")
+                .replace(" mujhe ", " unhe ").replace(" hu ", " hain ").replace(" hun ", " hain ")
+                .replace(" hoon ", " hain ").replace(" raha hu ", " raha hain ");
+        return t.trim().replaceAll("\\s+", " ");
+    }
 }
