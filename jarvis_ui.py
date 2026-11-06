@@ -2041,8 +2041,9 @@ def build_jarvis_ui(app):
         try:
             from android.permissions import request_permissions
             request_permissions(["android.permission.READ_CONTACTS",
-                                 "android.permission.CALL_PHONE"])
-            toast("Contacts aur Call ki permission Allow kijiye")
+                                 "android.permission.CALL_PHONE",
+                                 "android.permission.SEND_SMS"])
+            toast("Contacts, Call aur SMS ki permission Allow kijiye")
         except Exception as exc:
             print("Calling permission error:", exc)
             toast("Phone Settings > Apps > Jarvis > Permissions me Contacts aur Phone allow kijiye")
