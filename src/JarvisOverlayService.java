@@ -104,6 +104,8 @@ public class JarvisOverlayService extends Service {
 
     // --- floating bubble (hamesha dikhta hai; sleep = dhundhla, active = chamakta) ---
     private WindowManager.LayoutParams bubbleLp = null;
+    private String cCall = null;              // call screening: jis call ke baare me jawab ka intezaar hai
+    private long cCallAt = 0;
     private int rtStage = 0;                  // routine banate waqt: 1 = naam poochha, 2 = kaam sun raha hoon
     private String rtName = "";
     private final List<String> rtActions = new ArrayList<String>();
@@ -1333,6 +1335,118 @@ public class JarvisOverlayService extends Service {
         }).start();
     }
 
+    // ============================================ call screening / paise ka hisaab ==
+    /** Anjaan call ring ho raha hai: bolkar poochho. Service band ho to chup. */
+    static void callAsk(final Context ctx, final String key, final String say) {
+        final JarvisOverlayService svc = instance;
+        if (svc == null) {
+            return;
+        }
+        svc.main.post(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    svc.startAsForeground(true);
+                    svc.beginSession();
+                    svc.cCall = key;
+                    svc.cCallAt = System.currentTimeMillis();
+                    svc.replyAndListen(say, say);
+                } catch (Exception ignored) {
+                }
+            }
+        });
+    }
+
+    static void callEnded(final String key) {
+        final JarvisOverlayService svc = instance;
+        if (svc == null) {
+            return;
+        }
+        svc.main.post(new Runnable() {
+            @Override
+            public void run() {
+                if (key.equals(svc.cCall)) {
+                    svc.cCall = null;
+                }
+            }
+        });
+    }
+
+    private boolean handleCallFlow(String text) {
+        if (System.currentTimeMillis() - cCallAt > 60000L) {
+            cCall = null;                                  // call kab ka khatam ho chuka
+            return false;
+        }
+        String k = JarvisCallWords.replyKind(text);
+        if (k == null) {
+            reply("Kaat doon, busy bolkar message bhej doon, ya utha lo?");
+            cCallAt = System.currentTimeMillis();
+            return true;
+        }
+        cCall = null;
+        if (JarvisCallWords.IGNORE.equals(k)) {
+            reply("Theek hai, chhod diya.");
+        } else if (JarvisCallWords.ANSWER.equals(k)) {
+            reply(JarvisCallScreen.answer() ? "Utha raha hoon." : "Call utha nahi paya, aap khud utha lo.");
+        } else if (JarvisCallWords.REJECT.equals(k)) {
+            reply(JarvisCallScreen.decline() ? "Call kaat diya." : "Call kaat nahi paya, aap khud kaat do.");
+        } else {
+            boolean cut = JarvisCallScreen.decline();
+            String busy = JarvisStyle.busyReason(this);
+            int r = JarvisCallScreen.sendBusySms(this, "Main abhi busy hu"
+                    + (busy != null && busy.length() > 0 ? " (" + busy + ")" : "") + ", thodi der me baat karta hu.");
+            String say = cut ? "Call kaat diya. " : "Call kaat nahi paya. ";
+            if (r == 0) {
+                say += "Busy ka message bhej diya.";
+            } else if (r == 1) {
+                say += "SMS bhejne ki permission nahi hai. Jarvis app me Allow calling wala button dabakar SMS allow karo.";
+            } else if (r == 2) {
+                say += "Number nahi mila, isliye message nahi bheja.";
+            } else {
+                say += "Message nahi ja paya.";
+            }
+            reply(say);
+        }
+        return true;
+    }
+
+    private boolean handleMoney(String text) {
+        int tg = JarvisCallWords.parseToggle(text);
+        if (tg >= 0) {
+            JarvisCallScreen.setEnabled(this, tg == 1);
+            reply(tg == 1 ? "Call screening chalu. Anjaan number se call aayega to bolkar bataunga, aur aap kaat sakte ho, "
+                    + "busy message bhej sakte ho ya utha sakte ho. Busy message ke liye SMS permission zaroori hai."
+                    : "Call screening band.");
+            return true;
+        }
+        final JarvisSpend.Cmd c;
+        try {
+            c = JarvisSpend.parse(text);
+        } catch (Throwable t) {
+            return false;
+        }
+        switch (c.kind) {
+            case JarvisSpend.NONE:
+                return false;
+            case JarvisSpend.CLEAR:
+                JarvisSpend.clear(this);
+                reply("Kharch ka saara hisaab hata diya.");
+                return true;
+            case JarvisSpend.TRACK_ON:
+                JarvisSpend.setTracking(this, true);
+                reply("Theek hai, bank SMS aur UPI ke notification se kharch note karta rahunga.");
+                return true;
+            case JarvisSpend.TRACK_OFF:
+                JarvisSpend.setTracking(this, false);
+                reply("Kharch note karna band kar diya.");
+                return true;
+            default:
+                reply(JarvisSpend.answer(JarvisSpend.all(this), c, System.currentTimeMillis())
+                        + (JarvisSpend.tracking(this) ? "" : " Kharch note karna abhi band hai."));
+                return true;
+        }
+    }
+
     // ---------------------------------------------------------- yaaddasht --
     private boolean handleMemory(String text) {
         final JarvisMemory.Cmd c;
@@ -1576,7 +1690,7 @@ public class JarvisOverlayService extends Service {
     }
 
     private boolean flowPending() {
-        return rtStage != 0 || sConfirm || sChoices != null || sAwaitBody || sAwaitName || iAsk != null || iOffer
+        return cCall != null || rtStage != 0 || sConfirm || sChoices != null || sAwaitBody || sAwaitName || iAsk != null || iOffer
                 || pendingChoices != null || awaitingName;
     }
 
@@ -1610,6 +1724,9 @@ public class JarvisOverlayService extends Service {
             heardView.setText("\"" + text + "\"");
         }
         idleCount = 0;
+        if (cCall != null && handleCallFlow(text)) {
+            return;
+        }
         if (rtStage != 0 && handleRoutineFlow(text)) {
             return;
         }
@@ -1623,6 +1740,9 @@ public class JarvisOverlayService extends Service {
             return;
         }
         if (!isDismiss(text) && !flowPending() && handleDaily(text)) {
+            return;
+        }
+        if (!isDismiss(text) && !flowPending() && handleMoney(text)) {
             return;
         }
         if (!isDismiss(text) && !flowPending() && handleScreen(text)) {
