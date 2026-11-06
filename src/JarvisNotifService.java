@@ -53,6 +53,9 @@ public class JarvisNotifService extends NotificationListenerService {
                     || JarvisInbox.isDialer(sbn.getPackageName()))) {
                 JarvisInbox.markReadByKey(this, sbn.getKey());
             }
+            if (sbn != null && JarvisInbox.isDialer(sbn.getPackageName())) {
+                JarvisCallScreen.ended(sbn.getKey());
+            }
         } catch (Throwable ignored) {
         }
     }
@@ -68,6 +71,12 @@ public class JarvisNotifService extends NotificationListenerService {
         String pkg = sbn.getPackageName();
         if (getPackageName().equals(pkg)) {
             return;
+        }
+        if (!seed) {
+            try {
+                monitor(sbn);
+            } catch (Throwable ignored) {
+            }
         }
         String label = JarvisInbox.appLabel(pkg);
         boolean dialer = JarvisInbox.isDialer(pkg);
@@ -184,6 +193,43 @@ public class JarvisNotifService extends NotificationListenerService {
                 return;
             }
             record(key, pkg, label, title, chat, text, sbn.getPostTime(), group, seed, fresh);
+        }
+    }
+
+    /** Paise ki khabar (bank SMS / UPI) aur incoming call (call screening) pakdo. */
+    private void monitor(StatusBarNotification sbn) {
+        Notification n = sbn.getNotification();
+        if (n == null || n.extras == null) {
+            return;
+        }
+        Bundle ex = n.extras;
+        String pkg = sbn.getPackageName();
+        String title = str(ex.getCharSequence(Notification.EXTRA_TITLE));
+        String text = str(ex.getCharSequence(Notification.EXTRA_TEXT));
+        String big = str(ex.getCharSequence(Notification.EXTRA_BIG_TEXT));
+        if (big.length() > text.length()) {
+            text = big;
+        }
+        boolean isCall = "call".equals(n.category);
+        if (!isCall && (n.flags & Notification.FLAG_GROUP_SUMMARY) == 0) {
+            JarvisSpend.onNotification(this, pkg, title, text, sbn.getPostTime());
+        }
+        if (isCall && JarvisInbox.isDialer(pkg) && n.actions != null) {
+            Notification.Action ans = null, dec = null;
+            for (Notification.Action a : n.actions) {
+                if (a == null || a.title == null) {
+                    continue;
+                }
+                String t = a.title.toString().toLowerCase();
+                if (t.matches(".*(decline|reject|dismiss|cut|कट|अस्वीकार).*")) {
+                    dec = a;
+                } else if (t.matches(".*(answer|accept|receive|pick|उत्तर|उठा|स्वीकार).*")) {
+                    ans = a;
+                }
+            }
+            if (ans != null && dec != null) {
+                JarvisCallScreen.onIncoming(this, sbn.getKey(), title, text, ans, dec);
+            }
         }
     }
 
