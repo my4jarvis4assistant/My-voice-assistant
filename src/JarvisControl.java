@@ -283,7 +283,8 @@ public final class JarvisControl {
     public static boolean isControl(String utterance) {
         try {
             return parse(utterance) != null || JarvisScreen.isAsk(utterance) || JarvisMemory.isMemory(utterance)
-                    || JarvisStyle.isStyle(utterance) || JarvisRoutine.isCmd(utterance);
+                    || JarvisStyle.isStyle(utterance) || JarvisRoutine.isCmd(utterance)
+                    || JarvisSpend.isCmd(utterance) || JarvisCallWords.parseToggle(utterance) >= 0;
         } catch (Throwable t) {
             return false;
         }
