@@ -56,9 +56,6 @@ public class JarvisNotifService extends NotificationListenerService {
             if (sbn != null && JarvisInbox.isDialer(sbn.getPackageName())) {
                 JarvisCallScreen.ended(sbn.getKey());
             }
-            if (sbn != null && sbn.getPackageName() != null && sbn.getPackageName().startsWith("com.whatsapp")) {
-                JarvisCallAssist.ended(sbn.getKey());
-            }
         } catch (Throwable ignored) {
         }
     }
@@ -216,28 +213,6 @@ public class JarvisNotifService extends NotificationListenerService {
         boolean isCall = "call".equals(n.category);
         if (!isCall && (n.flags & Notification.FLAG_GROUP_SUMMARY) == 0) {
             JarvisSpend.onNotification(this, pkg, title, text, sbn.getPostTime());
-        }
-        if (isCall && ("com.whatsapp".equals(pkg) || "com.whatsapp.w4b".equals(pkg)) && n.actions != null) {
-            Notification.Action ans = null, dec = null, hang = null;
-            for (Notification.Action a : n.actions) {
-                if (a == null || a.title == null) {
-                    continue;
-                }
-                String t = a.title.toString().toLowerCase();
-                if (t.matches(".*(hang\\s*up|end\\s*call|end).*")) {
-                    hang = a;
-                } else if (t.matches(".*(decline|reject|dismiss|cut|कट|अस्वीकार).*")) {
-                    dec = a;
-                } else if (t.matches(".*(answer|accept|receive|pick|उत्तर|उठा|स्वीकार).*")) {
-                    ans = a;
-                }
-            }
-            if (hang != null) {
-                JarvisCallAssist.hangupAct = hang;
-            }
-            if (ans != null && dec != null) {
-                JarvisCallAssist.onIncoming(this, sbn.getKey(), title, text, ans, dec);
-            }
         }
         if (isCall && JarvisInbox.isDialer(pkg) && n.actions != null) {
             Notification.Action ans = null, dec = null;
