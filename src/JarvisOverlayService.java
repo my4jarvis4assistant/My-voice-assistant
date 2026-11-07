@@ -76,6 +76,19 @@ public class JarvisOverlayService extends Service {
     private boolean ttsReady = false;
     private String pendingSpeech = null;
     private boolean speaking = false;
+    private int speakGen = 0;                 // har nayi bolti/sunti shuruaat par badhta hai: purane callback bekaar
+    private String lastCmdText = "";
+    private long lastCmdAt = 0;
+    private int recErr = 0;                   // mic ke lagataar galat error: kuch baar chup-chaap dobara koshish
+    private final Runnable listenFallback = new Runnable() {
+        @Override
+        public void run() {
+            if (listenAfterSpeech && alive) {
+                listenAfterSpeech = false;
+                startListening();
+            }
+        }
+    };
     private boolean beepMuted = false;
     private int mode = MODE_IDLE;
     private float level = 0f;
@@ -101,24 +114,12 @@ public class JarvisOverlayService extends Service {
     private boolean sAwaitBody = false;
     private boolean sConfirm = false;
     private boolean sAwaitName = false;
+    private String sRaw = "";                 // aapne jo kaha tha (Jarvis ne jo likha usse alag)
+    private boolean sExact = false;           // "jaisa bola waisa hi bhejo": Jarvis kuch na badle
+    private boolean sBusy = false;            // Gemini message likh raha hai
 
     // --- floating bubble (hamesha dikhta hai; sleep = dhundhla, active = chamakta) ---
     private WindowManager.LayoutParams bubbleLp = null;
-    // call assistant: WhatsApp call Jarvis ne uthaya hai aur baat chal rahi hai
-    private boolean caActive = false;
-    private String caName = "";
-    private int caTurns = 0;
-    private int caSilent = 0;
-    private final StringBuilder caSaid = new StringBuilder();     // caller ne kya kaha
-    private final StringBuilder caHist = new StringBuilder();     // dono taraf ki baat (Gemini ke liye)
-    private final Runnable caTimeout = new Runnable() {
-        @Override
-        public void run() {
-            if (caActive) {
-                finishAssist("Main Shakshm ko aapka sandesh de dunga. Dhanyavaad, namaste.");
-            }
-        }
-    };
     private String cCall = null;              // call screening: jis call ke baare me jawab ka intezaar hai
     private long cCallAt = 0;
     private int rtStage = 0;                  // routine banate waqt: 1 = naam poochha, 2 = kaam sun raha hoon
@@ -691,18 +692,12 @@ public class JarvisOverlayService extends Service {
 
                         @Override
                         public void onDone(String utteranceId) {
-                            speaking = false;
-                            main.post(new Runnable() {
-                                @Override
-                                public void run() {
-                                    afterSpeech();
-                                }
-                            });
+                            ttsFinished(utteranceId);
                         }
 
                         @Override
                         public void onError(String utteranceId) {
-                            speaking = false;
+                            ttsFinished(utteranceId);
                         }
                     });
                     ttsReady = true;
@@ -713,6 +708,20 @@ public class JarvisOverlayService extends Service {
                     }
                 } catch (Exception ignored) {
                 }
+            }
+        });
+    }
+
+    /** Sirf sabse nayi bolti ka khatam hona maano; purani (flush ho chuki) bolti ka signal ignore. */
+    private void ttsFinished(final String utteranceId) {
+        main.post(new Runnable() {
+            @Override
+            public void run() {
+                if (utteranceId == null || !utteranceId.equals("j" + speakGen)) {
+                    return;
+                }
+                speaking = false;
+                afterSpeech();
             }
         });
     }
@@ -733,6 +742,7 @@ public class JarvisOverlayService extends Service {
 
     /** ElevenLabs ki awaaz chuni ho to wahi, warna (ya galti par) phone ki awaaz. */
     private void speak(final String text) {
+        final int my = ++speakGen;
         SharedPreferences p = prefs();
         String ek = p.getString("eleven_key", "");
         String vid = p.getString("eleven_voice_id", "");
@@ -748,6 +758,9 @@ public class JarvisOverlayService extends Service {
             eleven.speak(this, ek, vid, text, new JarvisEleven.Callback() {
                 @Override
                 public void onDone(boolean ok, String error) {
+                    if (my != speakGen) {
+                        return;                      // beech me kuch aur bola/suna gaya: ye purani awaaz thi
+                    }
                     speaking = false;
                     if (!alive) {
                         return;
@@ -771,9 +784,15 @@ public class JarvisOverlayService extends Service {
             return;
         }
         muteBeep(false);
+        final String id = "j" + speakGen;
+        speaking = true;
         try {
-            tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "jarvis");
-        } catch (Exception ignored) {
+            int r = tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, id);
+            if (r != TextToSpeech.SUCCESS) {
+                ttsFinished(id);                 // bol hi nahi paya: phir bhi baatcheet aage badhe
+            }
+        } catch (Exception e) {
+            ttsFinished(id);
         }
     }
 
@@ -827,6 +846,8 @@ public class JarvisOverlayService extends Service {
 
     private void startListening() {
         cancelClose();
+        speakGen++;
+        main.removeCallbacks(listenFallback);
         gen++;
         try {
             if (tts != null) {
@@ -925,29 +946,6 @@ public class JarvisOverlayService extends Service {
             if (!alive) {
                 return;
             }
-            if (caActive) {
-                if (error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
-                    caSilent++;
-                    if (caSilent >= 3) {
-                        JarvisInbox.log(JarvisOverlayService.this, "call assistant: caller ki awaaz nahi suni");
-                        finishAssist("Mujhe aapki awaaz nahi aa rahi. Main Shakshm ko aapka call bata dunga. Dhanyavaad.");
-                    } else {
-                        main.postDelayed(new Runnable() {
-                            @Override
-                            public void run() {
-                                if (alive && caActive) {
-                                    startListening();
-                                }
-                            }
-                        }, 250);
-                    }
-                } else {
-                    JarvisInbox.log(JarvisOverlayService.this, "call assistant: mic error " + error);
-                    finishAssist("Abhi meri taraf se awaaz sunne me dikkat hai. Main Shakshm ko aapka call bata dunga. "
-                            + "Dhanyavaad.");
-                }
-                return;
-            }
             if (error == SpeechRecognizer.ERROR_NO_MATCH
                     || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
                 // kuch nahi bola: chup-chaap dobara sunte raho (so mat jao, kuch bolo mat)
@@ -963,8 +961,25 @@ public class JarvisOverlayService extends Service {
             } else if (error == SpeechRecognizer.ERROR_NETWORK
                     || error == SpeechRecognizer.ERROR_NETWORK_TIMEOUT) {
                 setStatus("Speech ke liye internet chahiye. Connection check kijiye.", MODE_IDLE);
-            } else if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) {
-                setStatus("Mic abhi busy hai. Dobara dabaiye.", MODE_IDLE);
+            } else if (recErr < 3 && error != SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) {
+                // BUSY / CLIENT / AUDIO / SERVER: recognizer naya banakar chup-chaap phir koshish (band mat ho)
+                recErr++;
+                try {
+                    if (recognizer != null) {
+                        recognizer.destroy();
+                    }
+                } catch (Exception ignored) {
+                }
+                recognizer = null;
+                main.postDelayed(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (alive && session) {
+                            startListening();
+                        }
+                    }
+                }, 600);
+                return;
             } else {
                 setStatus("Mic error (" + error + "). Dobara try kijiye.", MODE_IDLE);
             }
@@ -974,6 +989,7 @@ public class JarvisOverlayService extends Service {
         @Override
         public void onResults(Bundle results) {
             muteBeep(false);
+            recErr = 0;
             ArrayList<String> list = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
             if (list == null || list.isEmpty()) {
                 onError(SpeechRecognizer.ERROR_NO_MATCH);
@@ -1485,181 +1501,6 @@ public class JarvisOverlayService extends Service {
         }
     }
 
-    // ================================================ call assistant (WhatsApp call) ==
-    static boolean running() {
-        return instance != null;
-    }
-
-    /** Call ring ho raha hai: kuch der (aap khud utha lo to theek) baad Jarvis utha leta hai. */
-    static void assistRing(final Context ctx, final String key, final String name) {
-        final JarvisOverlayService svc = instance;
-        if (svc == null) {
-            return;
-        }
-        svc.main.postDelayed(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    if (!key.equals(JarvisCallAssist.pendingKey) || svc.caActive) {
-                        return;                           // aapne utha liya ya call kat gaya
-                    }
-                    JarvisCallAssist.pendingKey = "";
-                    if (!JarvisCallAssist.answer()) {
-                        JarvisInbox.log(ctx, "call assistant: call utha nahi paya");
-                        return;
-                    }
-                    svc.assistStart(name);
-                } catch (Exception ignored) {
-                }
-            }
-        }, 9000);
-    }
-
-    /** Video call: kaat diya, ab WhatsApp me chhota sa message bhejo. */
-    static void assistVideoMessage(final Context ctx, final String name) {
-        try {
-            String st = JarvisCallAssist.statusText(ctx);
-            JarvisWhatsApp.uiTask(ctx, "message", name, "Namaste, main Jarvis hu, Shakshm Jha ka AI assistant. Shakshm abhi "
-                    + st + ", video call nahi utha sakte. Free hote hi aapko call karenge.");
-        } catch (Exception e) {
-            JarvisInbox.log(ctx, "call assistant: video ka message nahi gaya");
-        }
-    }
-
-    private void assistStart(final String name) {
-        startAsForeground(true);
-        beginSession();
-        caActive = true;
-        caName = name;
-        caTurns = 0;
-        caSilent = 0;
-        caSaid.setLength(0);
-        caHist.setLength(0);
-        listenAfterSpeech = false;
-        try {
-            ((AudioManager) getSystemService(Context.AUDIO_SERVICE)).setSpeakerphoneOn(true);
-        } catch (Throwable ignored) {
-        }
-        main.postDelayed(new Runnable() {
-            @Override
-            public void run() {
-                if (caActive) {
-                    boolean ok = JarvisCallAssist.speakerOn();
-                    JarvisInbox.log(JarvisOverlayService.this, "call assistant: speaker button " + (ok ? "dabaya" : "nahi mila"));
-                }
-            }
-        }, 1800);
-        final String greet = "Namaste, main Jarvis hoon, Shakshm Jha ka AI assistant. Shakshm abhi "
-                + JarvisCallAssist.statusText(this) + ". Aap bataiye, kya kaam tha? Main unhe bata dunga.";
-        main.postDelayed(new Runnable() {
-            @Override
-            public void run() {
-                if (caActive) {
-                    caHist.append("Jarvis: ").append(greet).append("\n");
-                    replyAndListen(greet, greet);
-                }
-            }
-        }, 2800);
-        main.removeCallbacks(caTimeout);
-        main.postDelayed(caTimeout, 150000);
-    }
-
-    private void handleAssistTurn(final String text) {
-        final String t = text == null ? "" : text.trim();
-        if (t.length() == 0) {
-            return;
-        }
-        caSilent = 0;
-        caTurns++;
-        caSaid.append(t).append(". ");
-        caHist.append("Caller: ").append(t).append("\n");
-        final String key = prefs().getString("gemini_key", "");
-        if (JarvisCallWords.isGoodbye(t) || caTurns >= 6 || key.trim().length() == 0) {
-            finishAssist("Theek hai, main Shakshm ko aapka sandesh de dunga. Dhanyavaad, namaste.");
-            return;
-        }
-        setStatus("Soch raha hoon...", MODE_THINK);
-        final String model = prefs().getString("ai_model", "");
-        final String system = "Tum JARVIS ho, Shakshm Jha ka AI assistant. Abhi WhatsApp call par "
-                + JarvisContactMatch.speakable(caName) + " se baat kar rahe ho, kyunki Shakshm " + JarvisCallAssist.statusText(this)
-                + ". Tum pehle hi bata chuke ho ki tum AI assistant ho. Caller ke sawal par bas itna batao ki Shakshm abhi "
-                + "busy hain aur free hote hi unse baat karenge; caller ka sandesh dhyan se suno aur kaho ki Shakshm ko bata "
-                + "doge. Shakshm ki koi nijee jaankari (location, address, paise, number, password, OTP, plan) kabhi mat "
-                + "batao, wada, samay ya faisla unke naam par mat karo. Jawab sirf ek ya do chhote vaakya, Hinglish, "
-                + "bolkar sunane layak (emoji ya symbols nahi).";
-        final String user = "Ab tak ki baat:\n" + caHist + "\nAb Jarvis ka agla jawab (sirf jawab likho):";
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                final String out = JarvisBrain.generate(key, model, system, user, true);
-                main.post(new Runnable() {
-                    @Override
-                    public void run() {
-                        if (!alive || !caActive) {
-                            return;
-                        }
-                        if (out == null || out.trim().length() == 0) {
-                            finishAssist("Maaf kijiye, abhi dikkat aa rahi hai. Main Shakshm ko aapka sandesh de dunga. "
-                                    + "Dhanyavaad.");
-                        } else {
-                            String o = out.trim();
-                            caHist.append("Jarvis: ").append(o).append("\n");
-                            replyAndListen(o, JarvisBrain.speechText(o));
-                        }
-                    }
-                });
-            }
-        }).start();
-    }
-
-    private void finishAssist(String say) {
-        if (!caActive) {
-            return;
-        }
-        caActive = false;
-        main.removeCallbacks(caTimeout);
-        final String name = caName;
-        final String said = caSaid.toString().trim();
-        cancelClose();
-        listenAfterSpeech = false;
-        setStatus(say, MODE_IDLE);
-        speak(JarvisBrain.speechText(say));
-        JarvisCallAssist.addLog(this, name, said);
-        main.postDelayed(new Runnable() {
-            @Override
-            public void run() {
-                boolean ok = JarvisCallAssist.hangup();
-                JarvisInbox.log(JarvisOverlayService.this, "call assistant: call kaata " + (ok ? "(ho gaya)" : "(nahi kat paya)"));
-                try {
-                    ((AudioManager) getSystemService(Context.AUDIO_SERVICE)).setSpeakerphoneOn(false);
-                } catch (Throwable ignored) {
-                }
-            }
-        }, Math.max(3500L, say.length() * 100L));
-    }
-
-    private boolean handleAssistCmd(String text) {
-        JarvisCallWords.Assist a = JarvisCallWords.parseAssist(text);
-        if (a.kind == 0) {
-            return false;
-        }
-        if (a.kind == 3) {
-            reply(JarvisCallAssist.speakLog(this));
-            return true;
-        }
-        if (a.kind == 2) {
-            JarvisCallAssist.setEnabled(this, false, "");
-            reply("Call assistant band. Ab WhatsApp call main nahi uthaunga.");
-            return true;
-        }
-        JarvisCallAssist.setEnabled(this, true, a.status);
-        String st = JarvisCallAssist.statusText(this);
-        reply("Call assistant chalu. WhatsApp voice call aane par kuch der baad main utha lunga aur bolunga ki Shakshm abhi "
-                + st + ". Video call kaat kar message bhej dunga. Ye abhi experimental hai, aur Accessibility "
-                + "aur Jarvis ka chalta rehna zaroori hai.");
-        return true;
-    }
-
     // ---------------------------------------------------------- yaaddasht --
     private boolean handleMemory(String text) {
         final JarvisMemory.Cmd c;
@@ -1903,7 +1744,7 @@ public class JarvisOverlayService extends Service {
     }
 
     private boolean flowPending() {
-        return caActive || cCall != null || rtStage != 0 || sConfirm || sChoices != null || sAwaitBody || sAwaitName || iAsk != null || iOffer
+        return sBusy || cCall != null || rtStage != 0 || sConfirm || sChoices != null || sAwaitBody || sAwaitName || iAsk != null || iOffer
                 || pendingChoices != null || awaitingName;
     }
 
@@ -1921,10 +1762,12 @@ public class JarvisOverlayService extends Service {
     }
 
     private void handleCommand(final String text) {
-        if (caActive) {
-            handleAssistTurn(text);               // call par caller bol raha hai
-            return;
+        long nowc = System.currentTimeMillis();
+        if (text.equals(lastCmdText) && nowc - lastCmdAt < 1200) {
+            return;                               // ek hi baat do baar aayi: dobara mat chalao
         }
+        lastCmdText = text;
+        lastCmdAt = nowc;
         if (mediaNoise(text) && !isDismiss(text)) {
             main.postDelayed(new Runnable() {
                 @Override
@@ -1960,9 +1803,6 @@ public class JarvisOverlayService extends Service {
             return;
         }
         if (!isDismiss(text) && !flowPending() && handleMoney(text)) {
-            return;
-        }
-        if (!isDismiss(text) && !flowPending() && handleAssistCmd(text)) {
             return;
         }
         if (!isDismiss(text) && !flowPending() && handleScreen(text)) {
@@ -2041,7 +1881,9 @@ public class JarvisOverlayService extends Service {
         cancelClose();
         listenAfterSpeech = true;             // kaam ke baad bhi active raho, chup-chaap agla kaam suno
         setStatus(text, MODE_IDLE);
-        speak(JarvisBrain.speechText(text));
+        String sp = JarvisBrain.speechText(text);
+        speak(sp);
+        armListenFallback(sp.length());
     }
 
     // ----------------------------------------------- messages / calls flow --
@@ -2230,9 +2072,130 @@ public class JarvisOverlayService extends Service {
         sAwaitBody = false;
         sConfirm = false;
         sAwaitName = false;
+        sRaw = "";
+        sExact = false;
+        sBusy = false;
+    }
+
+    // ---- message khud likhna: aap bas matlab bolo, Jarvis aapki style me achha message likh deta hai ----
+    private static final String COMPOSE_SYSTEM = "Tum Shakshm Jha ke liye WhatsApp message likhte ho. Shakshm bol kar "
+            + "sirf matlab batata hai (awaaz pehchanne me galtiyan ho sakti hain, unhe sahi samjho). Tum wo final "
+            + "message likho jo Shakshm khud apne haath se type karke bhejta: pehle purush (main/mujhe), usi ka "
+            + "dhang, wahi Hinglish. Matlab bilkul wahi rakho; koi naya samay, jagah, paisa, wada, naam ya baat "
+            + "apne se mat jodo. Chhota, saaf aur insaani likho (aam taur par 1-2 line), rukha ya robot jaisa nahi. "
+            + "Agar pehle se poora aur theek message ho (jaise 'hello', 'kaise ho') to lagbhag waisa hi rehne do. "
+            + "Emoji tabhi jab Shakshm ki style me hote hon. Khud ko AI/assistant mat batao. "
+            + "Sirf message ka text likho: koi quote, naam ya samjhaish nahi.";
+
+    private static final String[] EXACT_MARKERS = {"jaisa hai waisa", "jaisa bola waisa", "jaise bola waise", "word to word",
+            "exactly", "as it is", "hubahu", "hu ba hu", "ye hi bhejo", "yahi bhejo", "bina badle", "mat badlo", "waisa hi"};
+
+    private String composeSystemFor(String who) {
+        String blk = "";
+        try {
+            blk = JarvisStyle.block(this, who);
+        } catch (Throwable ignored) {
+        }
+        int i = blk.indexOf(" ABHI SHAKSHM BUSY HAI");
+        if (i >= 0) {
+            blk = blk.substring(0, i);            // busy wala hissa yahan nahi chahiye
+        }
+        return COMPOSE_SYSTEM + blk;
+    }
+
+    private boolean wantsExact(String text) {
+        String l = " " + text.toLowerCase(Locale.ENGLISH) + " ";
+        for (String m : EXACT_MARKERS) {
+            if (l.contains(m)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Bole hue matlab se message likho (ya diye hue message me badlav karo), phir poochho "bhej dun?". */
+    private void socialCompose(final String instruction, final String current) {
+        final SharedPreferences p = prefs();
+        final String key = p.getString("gemini_key", "");
+        final JarvisSocial.Job job = sJob;
+        if (job == null) {
+            return;
+        }
+        if (current == null && (sExact || key.trim().length() == 0 || !p.getBoolean("ai_enabled", true))) {
+            socialAskConfirm();                   // jaisa bola waisa (ya Gemini nahi): seedha confirm
+            return;
+        }
+        final String who = JarvisContactMatch.speakable(job.person.name);
+        sBusy = true;
+        setStatus("Message likh raha hoon...", MODE_THINK);
+        final String sys = composeSystemFor(job.person.name);
+        final String user = current == null
+                ? "Shakshm ne " + who + " ke liye bola: " + instruction + "\nFinal message likho:"
+                : "Abhi ka message: " + current + "\nShakshm ki farmaish: " + instruction
+                + "\nFarmaish ke hisaab se naya final message likho:";
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                String o = "";
+                try {
+                    o = JarvisBrain.generate(key, p.getString("ai_model", ""), sys, user, true);
+                } catch (Throwable ignored) {
+                }
+                final String out = clean(o);
+                main.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        sBusy = false;
+                        if (!alive || sJob != job) {
+                            return;
+                        }
+                        if (out.length() > 0) {
+                            job.body = out;
+                        } else if (current != null) {
+                            reply("Abhi badal nahi paya. Purana hi rakhun? Haan ya nahi boliye.");
+                            sConfirm = true;
+                            return;
+                        }
+                        socialAskConfirm();
+                    }
+                });
+            }
+        }).start();
+    }
+
+    private String clean(String o) {
+        if (o == null) {
+            return "";
+        }
+        String t = o.trim();
+        if (t.length() > 1 && t.startsWith("\"") && t.endsWith("\"")) {
+            t = t.substring(1, t.length() - 1).trim();
+        }
+        if (t.length() > 600 || t.toUpperCase(Locale.ENGLISH).equals("ASK")) {
+            return "";
+        }
+        return t;
+    }
+
+    private static final String[] REVISE_WORDS = {"badlo", "badal", "change", "dobara", "phir se", "firse", "fir se",
+            "thoda", "chhota", "chota", "short", "lamba", "long", "formal", "casual", "funny", "pyaar", "gussa",
+            "emoji", "sorry", "hata", "jod", "add", "ki jagah", "aur ", "nahi ye", "nahi yeh", "rewrite", "likho",
+            "bolo ki", "kehna", "keh do", "respect", "polite", "naram", "seedha"};
+
+    private boolean looksLikeRevision(String text) {
+        String l = " " + text.toLowerCase(Locale.ENGLISH) + " ";
+        for (String w : REVISE_WORDS) {
+            if (l.contains(w)) {
+                return true;
+            }
+        }
+        return JarvisContactMatch.words(text).size() >= 4;
     }
 
     private boolean handleSocialFlow(String text) {
+        if (sBusy) {
+            return true;                          // message likha ja raha hai; beech ki awaaz ignore
+        }
         if (sConfirm) {
             String ans = JarvisSocial.yesNo(text);
             if (ans.equals("yes")) {
@@ -2240,13 +2203,28 @@ public class JarvisOverlayService extends Service {
                 socialSend();
                 return true;
             }
-            if (ans.equals("no")) {
+            String lc = " " + text.toLowerCase(Locale.ENGLISH) + " ";
+            if (lc.contains(" cancel ") || lc.contains("rehne do") || lc.contains("rehne de") || lc.contains("mat bhej")
+                    || lc.contains("chhod") || lc.contains("chod do") || lc.contains("ruko")) {
                 socialReset();
                 reply("Theek hai, message nahi bheja.");
                 return true;
             }
+            boolean rev = looksLikeRevision(text);
+            if (ans.equals("no") && !rev) {
+                socialReset();
+                reply("Theek hai, message nahi bheja.");
+                return true;
+            }
+            if (rev && JarvisSocial.parse(text) == null) {
+                // "thoda chhota karo", "usme sorry bhi bolo", "dobara likho": naya version likh do
+                sConfirm = false;
+                socialCompose(text.trim(), sJob.body);
+                return true;
+            }
             if (JarvisSocial.parse(text) == null) {
-                replyAndListen("Bhej dun? Haan ya nahi boliye.", "Bhej dun? Haan ya nahi boliye.");
+                replyAndListen("Bhej dun? Haan ya nahi boliye. Badalna ho to bataiye kya badlun.",
+                        "Bhej dun? Haan ya nahi boliye. Badalna ho to bataiye kya badlun.");
                 return true;
             }
             socialReset();
@@ -2254,8 +2232,10 @@ public class JarvisOverlayService extends Service {
         if (sAwaitBody) {
             sAwaitBody = false;
             if (JarvisSocial.parse(text) == null || JarvisSocial.yesNo(text).length() == 0) {
-                sJob.body = text.trim();
-                socialAskConfirm();
+                sExact = sExact || wantsExact(text);
+                sRaw = text.trim();
+                sJob.body = sRaw;
+                socialCompose(sRaw, null);
                 return true;
             }
             socialReset();
@@ -2303,6 +2283,8 @@ public class JarvisOverlayService extends Service {
             return true;
         }
         sJob = j;
+        sExact = wantsExact(text);
+        sRaw = j.body == null ? "" : j.body;
         socialResolve();
         return true;
     }
@@ -2475,23 +2457,27 @@ public class JarvisOverlayService extends Service {
         sJob.person = p;
         if (sJob.body == null || sJob.body.length() == 0) {
             sAwaitBody = true;
-            replyAndListen(shown + " ko kya message bhejna hai?", shown + " ko kya message bhejna hai?");
+            replyAndListen(shown + " ko kya kehna hai? Bas matlab bol dijiye, main achha sa likh dunga.",
+                    shown + " ko kya kehna hai? Bas matlab bol dijiye, main achha sa likh dunga.");
             return;
         }
-        socialAskConfirm();
+        sRaw = sJob.body;
+        socialCompose(sRaw, null);
     }
 
     private void socialAskConfirm() {
         String shown = JarvisContactMatch.speakable(sJob.person.name);
         sConfirm = true;
-        replyAndListen(shown + " ko WhatsApp par bhejna hai: " + sJob.body + "\nBhej dun?",
-                shown + " ko WhatsApp par bhejna hai. " + sJob.body + ". Bhej dun?");
+        replyAndListen(shown + " ko ye bhejun:\n\"" + sJob.body + "\"\nBhej dun? (haan / nahi / ya bolo kya badlun)",
+                shown + " ko ye bhejun. " + sJob.body + ". Bhej dun? Badalna ho to bataiye.");
     }
 
     private void socialSend() {
         JarvisSocial.Job job = sJob;
         String shown = JarvisContactMatch.speakable(job.person.name);
-        JarvisStyle.learn(this, job.body);
+        if (sExact && sRaw.length() > 0) {
+            JarvisStyle.learn(this, sRaw);        // sirf aapke apne shabd style me jode jaate hain, AI ke likhe nahi
+        }
         try {
             if (job.person.ui) {
                 JarvisWhatsApp.uiTask(this, "message", job.person.name, job.body);
@@ -2562,18 +2548,14 @@ public class JarvisOverlayService extends Service {
         setStatus(shown, MODE_IDLE);
         listenAfterSpeech = true;
         speak(spoken);
-        // TTS na chale to bhi 20 second baad mic khul jaye
-        main.postDelayed(new Runnable() {
-            @Override
-            public void run() {
-                if (listenAfterSpeech && alive && !speaking) {
-                    listenAfterSpeech = false;
-                    startListening();
-                }
-            }
-        }, Math.max(6000L, spoken.length() * 110L));
+        armListenFallback(spoken.length());
     }
 
+    /** Bolna khatam hone ka signal kisi wajah se na aaye to bhi mic khul jaye (sirf ek hi timer). */
+    private void armListenFallback(int spokenLen) {
+        main.removeCallbacks(listenFallback);
+        main.postDelayed(listenFallback, Math.max(9000L, spokenLen * 150L + 4000L));
+    }
     // -------------------------------------------------------------- actions --
     private String runFunction(String name, JSONObject a) {
         try {
