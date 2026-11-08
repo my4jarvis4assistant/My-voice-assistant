@@ -23,6 +23,9 @@ public class JarvisBrain {
         public String function = null;
         public JSONObject args = null;
         public String error = null;
+        public boolean quota = false;     // free limit khatam
+        public boolean badKey = false;    // key galat/band
+        public boolean net = false;       // internet nahi
     }
 
     public static final String CREATOR = "Shakshm Jha";
@@ -35,7 +38,7 @@ public class JarvisBrain {
     public static volatile String memory = "";
 
     // ------------------------------------------------------------------ ask --
-    public static synchronized Result ask(String key, String model, String verbosity, String text) {
+    private static Result askOne(String key, String model, String verbosity, String text) {
         Result r = new Result();
         List<String> models = new ArrayList<String>();
         if (model != null && model.length() > 0) {
@@ -47,6 +50,7 @@ public class JarvisBrain {
             }
         }
         String lastError = "Gemini ka koi model abhi available nahi mila. Thodi der baad try kijiye.";
+        boolean quotaHit = false;
         try {
             for (String m : models) {
                 int[] status = new int[1];
@@ -65,10 +69,12 @@ public class JarvisBrain {
                 String low = body.toLowerCase(Locale.ENGLISH);
                 if (low.contains("api key") || status[0] == 401) {
                     r.error = "Gemini API key sahi nahi lag rahi. Jarvis app ki Settings me key dobara check kijiye.";
+                    r.badKey = true;
                     return r;
                 }
                 if (status[0] == 429 || low.contains("quota") || low.contains("resource_exhausted")) {
                     lastError = "Abhi Gemini ki free limit poori ho gayi hai. Thodi der baad dobara poochiye.";
+                    quotaHit = true;
                     continue;
                 }
                 if (status[0] == 404 || (status[0] == 400 && low.contains("model"))) {
@@ -76,6 +82,7 @@ public class JarvisBrain {
                 }
                 if (status[0] == 403) {
                     r.error = "Gemini ne is key ko allow nahi kiya. Key ya uski permission check kijiye.";
+                    r.badKey = true;
                     return r;
                 }
                 if (status[0] >= 500) {
@@ -86,8 +93,10 @@ public class JarvisBrain {
                 return r;
             }
             r.error = lastError;
+            r.quota = quotaHit;
         } catch (IOException e) {
             r.error = "Internet nahi chal raha lagta hai. Connection check karke dobara boliye.";
+            r.net = true;
         } catch (Exception e) {
             r.error = "AI se baat karte waqt kuch gadbad ho gayi. Dobara try kijiye.";
         }
@@ -95,6 +104,7 @@ public class JarvisBrain {
     }
 
     public static String lastError = "";
+    private static int failKind = 0;     // 0 theek, 1 free limit, 2 galat key, 3 anya, 4 internet
 
     /** Bina history/tools ke seedha text banao (message ka reply likhne ke liye). "" = nahi ban paya. */
     public static String generate(String key, String model, String system, String user) {
@@ -133,7 +143,7 @@ public class JarvisBrain {
                 return c.length() == 0 ? null : c;
             }
         }
-        String out = generate(key, "", HINDI_SYSTEM, text, true);
+        String out = generateImpl(key, "", HINDI_SYSTEM, text, true, false);   // Hindi lipi: Gemini hi behtar
         String res = (out != null && out.trim().length() > 0 && hasDevanagari(out)) ? out.trim() : "";
         if (out != null && out.trim().length() > 0) {
             synchronized (HINDI_CACHE) {
@@ -149,8 +159,9 @@ public class JarvisBrain {
     private static final String[] FAST = {"gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.0-flash"};
 
     /** fast = sabse tez model pehle, chhota jawab, kam intezaar (auto-reply ke liye: 1-2 second). */
-    public static String generate(String key, String model, String system, String user, boolean fast) {
+    private static String generateOne(String key, String model, String system, String user, boolean fast) {
         lastError = "";
+        failKind = 0;
         List<String> models = new ArrayList<String>();
         if (fast) {
             for (String m : FAST) {
@@ -183,14 +194,393 @@ public class JarvisBrain {
                     return "";
                 }
                 lastError = "Gemini error " + status[0];
-                if (status[0] == 404 || status[0] == 429 || (status[0] == 400
-                        && body.toLowerCase(Locale.ENGLISH).contains("model"))) {
+                String lowb = body.toLowerCase(Locale.ENGLISH);
+                if (status[0] == 429 || lowb.contains("resource_exhausted")) {
+                    failKind = 1;
                     continue;
                 }
+                if (status[0] == 401 || status[0] == 403 || (status[0] == 400 && lowb.contains("api key"))) {
+                    failKind = 2;
+                    return "";
+                }
+                if (status[0] == 404 || (status[0] == 400 && lowb.contains("model"))) {
+                    continue;
+                }
+                failKind = 3;
                 return "";
             }
         } catch (Exception e) {
             lastError = "internet/AI galti";
+            failKind = 4;
+        }
+        return "";
+    }
+
+
+    // ============================================ kai keys + doosre free AI (limit khatam ho to) ==
+    private static final java.util.Map<String, Long> BLOCKED = new java.util.HashMap<String, Long>();
+    private static final long BLOCK_MS = 2 * 60 * 1000L;
+    private static final String[][] COMPAT = {
+            {"gsk_", "https://api.groq.com/openai/v1", "Groq"},
+            {"csk-", "https://api.cerebras.ai/v1", "Cerebras"}};
+    private static final java.util.Map<String, List<String>> COMPAT_MODELS = new java.util.HashMap<String, List<String>>();
+
+    /** Settings me ek se zyada keys (comma/space/nayi line se alag) ho sakti hain. */
+    public static List<String> splitKeys(String raw) {
+        List<String> out = new ArrayList<String>();
+        if (raw == null) {
+            return out;
+        }
+        for (String k : raw.split("[,;\\s]+")) {
+            k = k.trim();
+            if (k.length() >= 8 && !out.contains(k)) {
+                out.add(k);
+            }
+        }
+        return out;
+    }
+
+    private static String[] compatOf(String key) {
+        for (String[] c : COMPAT) {
+            if (key.startsWith(c[0])) {
+                return c;
+            }
+        }
+        return null;
+    }
+
+    private static List<String> geminiKeys(String raw) {
+        List<String> g = new ArrayList<String>();
+        for (String k : splitKeys(raw)) {
+            if (compatOf(k) == null) {
+                g.add(k);
+            }
+        }
+        if (g.isEmpty() && splitKeys(raw).isEmpty() && raw != null && raw.trim().length() > 0) {
+            g.add(raw.trim());
+        }
+        return g;
+    }
+
+    private static List<String> compatKeys(String raw) {
+        List<String> g = new ArrayList<String>();
+        for (String k : splitKeys(raw)) {
+            if (compatOf(k) != null) {
+                g.add(k);
+            }
+        }
+        return g;
+    }
+
+    private static synchronized boolean isBlocked(String key) {
+        Long t = BLOCKED.get(key);
+        return t != null && t > System.currentTimeMillis();
+    }
+
+    private static final java.util.Map<String, Integer> BLOCK_HITS = new java.util.HashMap<String, Integer>();
+
+    /** Limit lagi: pehli baar 2 min, lagataar lagti rahe to 4, 8, 16... max 1 ghanta (din ki limit me bekaar koshish nahi). */
+    private static synchronized void block(String key) {
+        Integer h = BLOCK_HITS.get(key);
+        int hits = h == null ? 1 : Math.min(h + 1, 6);
+        BLOCK_HITS.put(key, hits);
+        long ms = Math.min(BLOCK_MS * (1L << (hits - 1)), 60L * 60 * 1000L);
+        BLOCKED.put(key, System.currentTimeMillis() + ms);
+    }
+
+    private static synchronized void good(String key) {
+        BLOCK_HITS.remove(key);
+    }
+
+    /** Chalne layak keys: jinki limit abhi khatam nahi mani gayi pehle; sab blocked ho to sab. */
+    private static List<String> usable(List<String> keys) {
+        List<String> ok = new ArrayList<String>();
+        for (String k : keys) {
+            if (!isBlocked(k)) {
+                ok.add(k);
+            }
+        }
+        return ok;
+    }
+
+    public static synchronized Result ask(String key, String model, String verbosity, String text) {
+        List<String> gem = geminiKeys(key);
+        List<String> alt = compatKeys(key);
+        Result last = null;
+        for (String k : usable(gem)) {
+            Result r = askOne(k, model, verbosity, text);
+            if (r.error == null) {
+                good(k);
+                return r;
+            }
+            last = r;
+            if (r.quota) {
+                block(k);
+            }
+            if (r.quota || r.badKey) {
+                continue;
+            }
+            if (r.net) {
+                return r;
+            }
+            break;
+        }
+        if (!alt.isEmpty()) {
+            Result f = askCompat(alt, verbosity, text);
+            if (f.error == null) {
+                return f;
+            }
+            if (last == null) {
+                last = f;
+            }
+        }
+        if (last == null && !gem.isEmpty()) {
+            last = askOne(gem.get(0), model, verbosity, text);   // sab "blocked" the: ek aakhri koshish
+        }
+        if (last == null) {
+            last = new Result();
+            last.error = "Gemini API key set nahi hai. Jarvis app ki Settings me key daaliye.";
+        }
+        if (last.quota && gem.size() + alt.size() < 2) {
+            last.error += " Aur free keys jodne se limit ka masla kam hota hai.";
+        }
+        return last;
+    }
+
+    public static String generate(String key, String model, String system, String user, boolean fast) {
+        return generateImpl(key, model, system, user, fast, fast);
+    }
+
+    /**
+     * groqFirst: Groq/Cerebras key jodi ho to pehle wahi (roz ke chhote kaam: message likhna, agent, auto-reply),
+     * taaki Gemini ki limit bachi rahe. Na chale ya limit ho to Gemini.
+     */
+    private static String generateImpl(String key, String model, String system, String user, boolean fast,
+                                       boolean groqFirst) {
+        List<String> gem = geminiKeys(key);
+        List<String> alt = compatKeys(key);
+        int kind = 0;
+        String err = "";
+        boolean triedAlt = false;
+        if (groqFirst && !alt.isEmpty()) {
+            triedAlt = true;
+            String first = generateCompat(alt, system, user, false);
+            if (first.length() > 0) {
+                return first;
+            }
+            err = lastError;
+        }
+        for (String k : usable(gem)) {
+            String out = generateOne(k, model, system, user, fast);
+            if (out.length() > 0) {
+                good(k);
+                return out;
+            }
+            kind = failKind;
+            err = lastError;
+            if (kind == 1) {
+                block(k);
+            }
+            if (kind == 1 || kind == 2) {
+                continue;
+            }
+            if (kind == 4) {
+                return "";
+            }
+            break;
+        }
+        if (!alt.isEmpty() && !triedAlt) {
+            String out = generateCompat(alt, system, user, fast);
+            if (out.length() > 0) {
+                return out;
+            }
+            if (err.length() == 0) {
+                err = lastError;
+            }
+        }
+        if (err.length() == 0 && !gem.isEmpty() && usable(gem).isEmpty()) {
+            return generateOne(gem.get(0), model, system, user, fast);
+        }
+        lastError = err;
+        return "";
+    }
+
+    // ---- OpenAI-jaisi free services (Groq, Cerebras) ----
+    private static String compatHttp(String method, String url, String key, String json, int[] status, int timeout)
+            throws IOException {
+        HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+        try {
+            conn.setRequestMethod(method);
+            conn.setConnectTimeout(8000);
+            conn.setReadTimeout(timeout);
+            conn.setRequestProperty("Authorization", "Bearer " + key.trim());
+            conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+            conn.setRequestProperty("User-Agent", "Jarvis/1.0");
+            if (json != null) {
+                conn.setDoOutput(true);
+                OutputStream out = conn.getOutputStream();
+                out.write(json.getBytes("UTF-8"));
+                out.flush();
+                out.close();
+            }
+            int code = conn.getResponseCode();
+            status[0] = code;
+            InputStream in = code < 400 ? conn.getInputStream() : conn.getErrorStream();
+            if (in == null) {
+                return "";
+            }
+            BufferedReader br = new BufferedReader(new InputStreamReader(in, "UTF-8"));
+            StringBuilder sb = new StringBuilder();
+            String line;
+            while ((line = br.readLine()) != null) {
+                sb.append(line).append('\n');
+            }
+            br.close();
+            return sb.toString();
+        } finally {
+            conn.disconnect();
+        }
+    }
+
+    /** Us service ke chat models, behtar pehle (70b), phir chhote (8b). Cache hota hai. */
+    private static synchronized List<String> compatModels(String base, String key, boolean fast) {
+        String ck = base + (fast ? "#f" : "#s");
+        List<String> cached = COMPAT_MODELS.get(ck);
+        if (cached != null) {
+            return cached;
+        }
+        List<String> big = new ArrayList<String>();
+        List<String> small = new ArrayList<String>();
+        List<String> other = new ArrayList<String>();
+        try {
+            int[] st = new int[1];
+            String body = compatHttp("GET", base + "/models", key, null, st, 10000);
+            if (st[0] == 200) {
+                JSONArray arr = new JSONObject(body).optJSONArray("data");
+                for (int i = 0; arr != null && i < arr.length(); i++) {
+                    String id = arr.getJSONObject(i).optString("id", "");
+                    String l = id.toLowerCase(Locale.ENGLISH);
+                    if (id.length() == 0 || l.contains("whisper") || l.contains("tts") || l.contains("guard")
+                            || l.contains("embed") || l.contains("orpheus") || l.contains("safeguard")
+                            || l.contains("vision") || l.contains("distil")) {
+                        continue;
+                    }
+                    if (l.contains("70b") || l.contains("120b") || l.contains("maverick")) {
+                        big.add(id);
+                    } else if (l.contains("8b") || l.contains("20b") || l.contains("scout")) {
+                        small.add(id);
+                    } else {
+                        other.add(id);
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        List<String> order = new ArrayList<String>();
+        if (fast) {
+            order.addAll(small);
+            order.addAll(big);
+        } else {
+            order.addAll(big);
+            order.addAll(small);
+        }
+        order.addAll(other);
+        if (order.isEmpty()) {
+            return order;                          // abhi nahi mila: cache mat karo
+        }
+        while (order.size() > 4) {
+            order.remove(order.size() - 1);
+        }
+        COMPAT_MODELS.put(ck, order);
+        return order;
+    }
+
+    private static String compatChat(String[] prov, String key, String system, List<String[]> hist, String user,
+                                     boolean fast, int maxTokens) {
+        List<String> models = compatModels(prov[1], key, fast);
+        for (String m : models) {
+            try {
+                JSONArray msgs = new JSONArray();
+                msgs.put(new JSONObject().put("role", "system").put("content", system));
+                if (hist != null) {
+                    for (String[] h : hist) {
+                        msgs.put(new JSONObject().put("role", h[0].equals("model") ? "assistant" : "user")
+                                .put("content", h[1]));
+                    }
+                }
+                msgs.put(new JSONObject().put("role", "user").put("content", user));
+                JSONObject root = new JSONObject();
+                root.put("model", m);
+                root.put("messages", msgs);
+                root.put("temperature", 0.7);
+                root.put("max_tokens", maxTokens);
+                int[] st = new int[1];
+                String body = compatHttp("POST", prov[1] + "/chat/completions", key, root.toString(), st,
+                        fast ? 12000 : 30000);
+                if (st[0] == 200) {
+                    JSONArray ch = new JSONObject(body).optJSONArray("choices");
+                    if (ch != null && ch.length() > 0) {
+                        String c = ch.getJSONObject(0).getJSONObject("message").optString("content", "").trim();
+                        c = c.replaceAll("(?s)<think>.*?</think>", "").trim();
+                        if (c.length() > 0) {
+                            lastModel = prov[2] + ":" + m;
+                            return c;
+                        }
+                    }
+                    continue;
+                }
+                lastError = prov[2] + " error " + st[0];
+                if (st[0] == 401 || st[0] == 403) {
+                    return null;                   // is service ki key galat
+                }
+            } catch (Exception e) {
+                lastError = prov[2] + " se baat nahi ho payi";
+            }
+        }
+        return "";
+    }
+
+    private static Result askCompat(List<String> keys, String verbosity, String text) {
+        Result r = new Result();
+        List<String[]> hist = new ArrayList<String[]>(HISTORY);
+        String sys = systemPrompt(verbosity);
+        for (String k : keys) {
+            String[] prov = compatOf(k);
+            if (prov == null || isBlocked(k)) {
+                continue;
+            }
+            String out = compatChat(prov, k, sys, hist, text, false, 700);
+            if (out != null && out.length() > 0) {
+                good(k);
+                r.reply = out;
+                lastModel = prov[2];
+                remember(text, r);
+                return r;
+            }
+            if (out != null) {
+                block(k);
+            }
+        }
+        r.error = "Abhi saari free AI limits poori hain. Thodi der baad dobara poochiye, ya Settings me aur free key jodiye.";
+        r.quota = true;
+        return r;
+    }
+
+    private static String generateCompat(List<String> keys, String system, String user, boolean fast) {
+        for (String k : keys) {
+            String[] prov = compatOf(k);
+            if (prov == null || isBlocked(k)) {
+                continue;
+            }
+            int max = fast ? Math.min(700, Math.max(120, user.length() * 2)) : 400;
+            String out = compatChat(prov, k, system, null, user, fast, max);
+            if (out != null && out.length() > 0) {
+                good(k);
+                return out;
+            }
+            if (out != null) {
+                block(k);
+            }
         }
         return "";
     }
