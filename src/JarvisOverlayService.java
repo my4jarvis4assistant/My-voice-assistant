@@ -120,6 +120,27 @@ public class JarvisOverlayService extends Service {
 
     // --- floating bubble (hamesha dikhta hai; sleep = dhundhla, active = chamakta) ---
     private WindowManager.LayoutParams bubbleLp = null;
+    // agent mode
+    private boolean agActive = false;
+    private boolean agAwaitTask = false;
+    private boolean agAsking = false;
+    private boolean agBusy = false;
+    private String agTask = "";
+    private String agAnswer = "";
+    private String agLastSig = "";
+    private int agStep = 0;
+    private int agToken = 0;
+    private int agSame = 0;
+    private int agBad = 0;
+    private long agStartAt = 0;
+    private JarvisAgent.Step agConfirm = null;
+    private final List<String> agHist = new ArrayList<String>();
+    private final Runnable agRun = new Runnable() {
+        @Override
+        public void run() {
+            agNext();
+        }
+    };
     private String cCall = null;              // call screening: jis call ke baare me jawab ka intezaar hai
     private long cCallAt = 0;
     private int rtStage = 0;                  // routine banate waqt: 1 = naam poochha, 2 = kaam sun raha hoon
@@ -406,6 +427,7 @@ public class JarvisOverlayService extends Service {
 
     /** Baatcheet khatam: bubble dhundhla (sleep) ho jata hai aur sirf "Jarvis" ka intezaar chalta hai. */
     private void shutdown() {
+        agStopAll();
         cleanup();
         pendingChoices = null;
         awaitingName = false;
@@ -1501,6 +1523,282 @@ public class JarvisOverlayService extends Service {
         }
     }
 
+    // ======================================================== agent mode ==
+    private void agStopAll() {
+        agActive = false;
+        agAwaitTask = false;
+        agAsking = false;
+        agBusy = false;
+        agConfirm = null;
+        agToken++;
+        JarvisAccessService.sayHook = null;
+    }
+
+    private boolean handleAgent(String text) {
+        String task = JarvisAgent.parse(text);
+        if (task == null) {
+            return false;
+        }
+        if (!JarvisAgent.sensibleTask(task)) {
+            agAwaitTask = true;
+            replyAndListen("Agent mode chalu. Kya karna hai? Jaise: YouTube kholkar lofi music chalao.",
+                    "Agent mode chalu. Kya karna hai? Jaise, YouTube kholkar lofi music chalao.");
+            return true;
+        }
+        agBegin(task);
+        return true;
+    }
+
+    private void agBegin(String task) {
+        SharedPreferences p = prefs();
+        if (p.getString("gemini_key", "").trim().length() == 0 || !p.getBoolean("ai_enabled", true)) {
+            reply("Agent mode ke liye Gemini key chahiye. Jarvis app ki Settings me key daaliye.");
+            return;
+        }
+        if (JarvisAccessService.instance == null) {
+            reply("Agent mode ke liye Accessibility me JARVIS auto-send On karna hoga.");
+            try {
+                Intent i = new Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS);
+                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(i);
+            } catch (Exception ignored) {
+            }
+            return;
+        }
+        agStopAll();
+        agActive = true;
+        agTask = task;
+        agStep = 0;
+        agSame = 0;
+        agBad = 0;
+        agLastSig = "";
+        agAnswer = "";
+        agHist.clear();
+        agStartAt = System.currentTimeMillis();
+        JarvisAccessService.sayHook = new JarvisAccessService.Say() {
+            @Override
+            public void say(final String msg) {
+                main.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (agActive) {
+                            agHist.add("   (phone ne bataya: " + msg + ")");
+                        }
+                    }
+                });
+            }
+        };
+        String say = "Theek hai, agent mode me kar raha hoon: " + task + ". Rokna ho to ruko bolo ya bubble dabao.";
+        cancelClose();
+        setStatus(say, MODE_IDLE);
+        listenAfterSpeech = true;
+        speak(say);
+        armListenFallback(say.length());
+        main.postDelayed(agRun, 900);
+    }
+
+    private void agEnd(String msg) {
+        agStopAll();
+        replyDone(msg);
+    }
+
+    private void agNext() {
+        if (!agActive || !alive || agBusy || agConfirm != null || agAsking) {
+            return;
+        }
+        if (speaking) {
+            main.postDelayed(agRun, 600);
+            return;
+        }
+        if (agStep >= JarvisAgent.MAX_STEPS || System.currentTimeMillis() - agStartAt > JarvisAgent.MAX_MS) {
+            agEnd("Kaam bahut lamba ho gaya, isliye yahin rok raha hoon. Jitna hua wo phone par dikh raha hai.");
+            return;
+        }
+        JarvisAccessService svc = JarvisAccessService.instance;
+        if (svc == null) {
+            agEnd("Accessibility band ho gayi, isliye agent ruk gaya.");
+            return;
+        }
+        final String app = svc.screenApp();
+        if (JarvisAgent.isMoneyApp(app)) {
+            agEnd("Ye paise ya bank ka app hai. Isme main khud kaam nahi karta, aap khud kar lijiye.");
+            return;
+        }
+        final String screen = svc.screenText(3500);
+        final SharedPreferences p = prefs();
+        final String key = p.getString("gemini_key", "");
+        final String mem = JarvisMemory.block(this);
+        final String user = JarvisAgent.userPrompt(agTask, agHist, app, screen, agAnswer);
+        agAnswer = "";
+        agBusy = true;
+        final int tok = ++agToken;
+        setStatus("Soch raha hoon... (kadam " + (agStep + 1) + ")", MODE_THINK);
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                String o = "";
+                try {
+                    o = JarvisBrain.generate(key, p.getString("ai_model", ""), JarvisAgent.system(mem), user, true);
+                } catch (Throwable ignored) {
+                }
+                final String out = o;
+                main.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (tok != agToken || !agActive) {
+                            return;
+                        }
+                        agBusy = false;
+                        JarvisAgent.Step st = JarvisAgent.parseStep(out);
+                        if (st == null) {
+                            agBad++;
+                            if (agBad >= 3) {
+                                agEnd("Mujhe agla kadam samajh nahi aa raha"
+                                        + (JarvisBrain.lastError.length() > 0 ? " (" + JarvisBrain.lastError + ")" : "")
+                                        + ". Isliye rok raha hoon.");
+                            } else {
+                                main.postDelayed(agRun, 700);
+                            }
+                            return;
+                        }
+                        agBad = 0;
+                        agDo(st);
+                    }
+                });
+            }
+        }).start();
+    }
+
+    private void agDo(JarvisAgent.Step st) {
+        String act = st.action;
+        if (act.equals("done")) {
+            agEnd(st.say.length() > 0 ? st.say : "Kaam ho gaya.");
+            return;
+        }
+        if (act.equals("fail")) {
+            agEnd(st.say.length() > 0 ? st.say : "Ye kaam main nahi kar paya.");
+            return;
+        }
+        if (act.equals("ask")) {
+            agAsking = true;
+            String q = st.say.length() > 0 ? st.say : "Thoda aur batao, kya karun?";
+            replyAndListen(q, q);
+            return;
+        }
+        agStep++;
+        String sig = act + "|" + st.target + "|" + st.text;
+        agSame = sig.equals(agLastSig) ? agSame + 1 : 0;
+        agLastSig = sig;
+        if (agSame >= 2 && !act.equals("wait")) {
+            agEnd("Main ek hi jagah atak gaya, isliye rok raha hoon.");
+            return;
+        }
+        String say = st.say.length() > 0 ? st.say : JarvisAgent.describe(st);
+        setStatus(say, MODE_THINK);
+        if (st.risky || JarvisAgent.looksRisky(st)) {
+            agConfirm = st;
+            String q = say + ". Main ye karun? Haan ya nahi boliye.";
+            replyAndListen(q, q);
+            return;
+        }
+        agPerform(st);
+    }
+
+    private void agPerform(JarvisAgent.Step st) {
+        JarvisAccessService svc = JarvisAccessService.instance;
+        if (svc == null) {
+            agEnd("Accessibility band ho gayi, isliye agent ruk gaya.");
+            return;
+        }
+        String res = "";
+        long delay = 1400;
+        String act = st.action;
+        JarvisControl.Cmd c = new JarvisControl.Cmd();
+        try {
+            if (act.equals("open_app")) {
+                res = openApp(st.target);
+                delay = 3000;
+            } else if (act.equals("click")) {
+                c.kind = JarvisControl.CLICK;
+                c.target = st.target;
+                res = svc.exec(c);
+            } else if (act.equals("type")) {
+                c.kind = JarvisControl.TYPE;
+                c.target = "";
+                c.text = st.text;
+                res = svc.exec(c);
+                delay = 1000;
+            } else if (act.equals("scroll")) {
+                c.kind = JarvisControl.SCROLL;
+                c.dir = st.dir;
+                c.count = 1;
+                res = svc.exec(c);
+            } else if (act.equals("back")) {
+                c.kind = JarvisControl.BACK;
+                res = svc.exec(c);
+            } else if (act.equals("home")) {
+                c.kind = JarvisControl.HOME;
+                res = svc.exec(c);
+            } else if (act.equals("enter")) {
+                c.kind = JarvisControl.ENTER;
+                res = svc.exec(c);
+                delay = 2000;
+            } else if (act.equals("send")) {
+                c.kind = JarvisControl.SEND;
+                res = svc.exec(c);
+                delay = 1800;
+            } else {
+                delay = 2000;                        // wait
+            }
+        } catch (Throwable t) {
+            res = "ye kadam nahi chala";
+        }
+        agHist.add(agStep + ". " + JarvisAgent.describe(st) + " -> " + (res == null || res.length() == 0 ? "ho gaya" : res));
+        main.postDelayed(agRun, delay);
+    }
+
+    /** Agent chal raha hai aur aapne kuch bola: ruko / haan / nahi / sawal ka jawab. */
+    private void agVoice(String text) {
+        if (agAwaitTask) {
+            agAwaitTask = false;
+            if (JarvisAgent.isStop(text)) {
+                reply("Theek hai, agent mode nahi chalaya.");
+            } else {
+                agBegin(text.trim());
+            }
+            return;
+        }
+        if (agConfirm != null) {
+            String ans = JarvisSocial.yesNo(text);
+            if (ans.equals("yes")) {
+                JarvisAgent.Step st = agConfirm;
+                agConfirm = null;
+                agPerform(st);
+                listenSoon();
+                return;
+            }
+            if (ans.equals("no") || JarvisAgent.isStop(text)) {
+                agEnd("Theek hai, ye kadam nahi kiya aur kaam rok diya.");
+                return;
+            }
+            replyAndListen("Haan ya nahi boliye.", "Haan ya nahi boliye.");
+            return;
+        }
+        if (JarvisAgent.isStop(text)) {
+            agEnd("Theek hai, ruk gaya.");
+            return;
+        }
+        if (agAsking) {
+            agAsking = false;
+            agAnswer = text.trim();
+            agHist.add("   (user ne bataya: " + agAnswer + ")");
+            main.postDelayed(agRun, 300);
+            listenSoon();
+            return;
+        }
+        listenSoon();                              // kuch aur bola: agent ka kaam chalne do
+    }
+
     // ---------------------------------------------------------- yaaddasht --
     private boolean handleMemory(String text) {
         final JarvisMemory.Cmd c;
@@ -1744,7 +2042,7 @@ public class JarvisOverlayService extends Service {
     }
 
     private boolean flowPending() {
-        return sBusy || cCall != null || rtStage != 0 || sConfirm || sChoices != null || sAwaitBody || sAwaitName || iAsk != null || iOffer
+        return agAwaitTask || agAsking || agConfirm != null || sBusy || cCall != null || rtStage != 0 || sConfirm || sChoices != null || sAwaitBody || sAwaitName || iAsk != null || iOffer
                 || pendingChoices != null || awaitingName;
     }
 
@@ -1779,6 +2077,10 @@ public class JarvisOverlayService extends Service {
             }, 250);
             return;
         }
+        if (agActive || agAwaitTask) {
+            agVoice(text);                        // agent kaam kar raha hai: sirf ruko / haan / nahi / jawab suno
+            return;
+        }
         final long myGen = ++gen;
         if (heardView != null) {
             heardView.setText("\"" + text + "\"");
@@ -1791,6 +2093,9 @@ public class JarvisOverlayService extends Service {
             return;
         }
         if (!isDismiss(text) && handleInboxFlow(text)) {
+            return;
+        }
+        if (!isDismiss(text) && !flowPending() && handleAgent(text)) {
             return;
         }
         if (!isDismiss(text) && !flowPending() && handleMemory(text)) {
