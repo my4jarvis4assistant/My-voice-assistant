@@ -2130,6 +2130,10 @@ public class JarvisOverlayService extends Service {
         if (!isDismiss(text) && !flowPending() && handleAgent(text)) {
             return;
         }
+        if (!isDismiss(text) && !flowPending() && JarvisAgent.autoGeneric(text)) {
+            agBegin(JarvisAgent.cleanTask(text));    // "instagram kholo aur reels dekho": sirf app kholne wale handler se pehle
+            return;
+        }
         if (!isDismiss(text) && !flowPending() && handleMemory(text)) {
             return;
         }
@@ -2149,10 +2153,6 @@ public class JarvisOverlayService extends Service {
             return;
         }
         if (!isDismiss(text) && handleSocialFlow(fixMein(text))) {
-            return;
-        }
-        if (!isDismiss(text) && !flowPending() && JarvisAgent.autoGeneric(text)) {
-            agBegin(JarvisAgent.cleanTask(text));    // app ka kai kadam wala kaam: agent apne aap
             return;
         }
         if (isDismiss(text)) {
