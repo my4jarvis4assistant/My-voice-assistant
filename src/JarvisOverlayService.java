@@ -1523,6 +1523,16 @@ public class JarvisOverlayService extends Service {
         }
     }
 
+    /** Awaaz pehchanne me "mein" kabhi "in" suna jata hai ("WhatsApp in saket ko"): naam me na jude. */
+    private static String fixMein(String text) {
+        String l = text.toLowerCase(Locale.ENGLISH);
+        if (l.contains("bhej") || l.contains("message") || l.contains("msg") || l.contains("whatsapp")
+                || l.contains("call") || l.contains("sms")) {
+            return text.replaceAll("(?i)\\bin\\b", "me");
+        }
+        return text;
+    }
+
     // ======================================================== agent mode ==
     private void agStopAll() {
         agActive = false;
@@ -1537,15 +1547,20 @@ public class JarvisOverlayService extends Service {
     private boolean handleAgent(String text) {
         String task = JarvisAgent.parse(text);
         if (task == null) {
+            if (JarvisAgent.autoStrong(text)) {      // "youtube par tum hi ho chalao": agent mode bole bina bhi
+                agBegin(JarvisAgent.cleanTask(text));
+                return true;
+            }
             return false;
         }
+        task = JarvisAgent.cleanTask(task);
         if (!JarvisAgent.sensibleTask(task)) {
             agAwaitTask = true;
             replyAndListen("Agent mode chalu. Kya karna hai? Jaise: YouTube kholkar lofi music chalao.",
                     "Agent mode chalu. Kya karna hai? Jaise, YouTube kholkar lofi music chalao.");
             return true;
         }
-        if (JarvisSocial.parse(task) != null && handleSocialFlow(task)) {
+        if (JarvisSocial.parse(fixMein(task)) != null && handleSocialFlow(fixMein(task))) {
             return true;                          // "WhatsApp par X ko ... bhejo": pakka message flow (likhna + confirm + send)
         }
         agBegin(task);
@@ -2133,7 +2148,11 @@ public class JarvisOverlayService extends Service {
         if (!isDismiss(text) && !flowPending() && handleControl(text)) {
             return;
         }
-        if (!isDismiss(text) && handleSocialFlow(text)) {
+        if (!isDismiss(text) && handleSocialFlow(fixMein(text))) {
+            return;
+        }
+        if (!isDismiss(text) && !flowPending() && JarvisAgent.autoGeneric(text)) {
+            agBegin(JarvisAgent.cleanTask(text));    // app ka kai kadam wala kaam: agent apne aap
             return;
         }
         if (isDismiss(text)) {
