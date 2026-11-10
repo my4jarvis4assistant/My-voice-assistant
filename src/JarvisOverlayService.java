@@ -1545,6 +1545,9 @@ public class JarvisOverlayService extends Service {
                     "Agent mode chalu. Kya karna hai? Jaise, YouTube kholkar lofi music chalao.");
             return true;
         }
+        if (JarvisSocial.parse(task) != null && handleSocialFlow(task)) {
+            return true;                          // "WhatsApp par X ko ... bhejo": pakka message flow (likhna + confirm + send)
+        }
         agBegin(task);
         return true;
     }
@@ -1588,13 +1591,30 @@ public class JarvisOverlayService extends Service {
                 });
             }
         };
-        String say = "Theek hai, agent mode me kar raha hoon: " + task + ". Rokna ho to ruko bolo ya bubble dabao.";
+        String say = "Theek hai, kar raha hoon. Rokna ho to ruko bolo.";
+        long firstDelay = 900;
+        final JarvisAgent.Shortcut sc = JarvisAgent.shortcut(task);
+        if (sc != null) {
+            try {
+                Intent yi = new Intent(Intent.ACTION_VIEW, android.net.Uri.parse(sc.url));
+                if (getPackageManager().getLaunchIntentForPackage(sc.pkg) != null) {
+                    yi.setPackage(sc.pkg);
+                }
+                yi.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(yi);
+                agTask = sc.task;
+                agHist.add("0. YouTube me '" + sc.query + "' ka search page khol diya gaya -> ho gaya");
+                say = sc.say;
+                firstDelay = 2800;
+            } catch (Throwable ignored) {
+            }
+        }
         cancelClose();
         setStatus(say, MODE_IDLE);
         listenAfterSpeech = true;
         speak(say);
         armListenFallback(say.length());
-        main.postDelayed(agRun, 900);
+        main.postDelayed(agRun, firstDelay);
     }
 
     private void agEnd(String msg) {
@@ -1711,23 +1731,20 @@ public class JarvisOverlayService extends Service {
             return;
         }
         String res = "";
-        long delay = 1400;
+        long delay = 1000;
         String act = st.action;
         JarvisControl.Cmd c = new JarvisControl.Cmd();
         try {
             if (act.equals("open_app")) {
                 res = openApp(st.target);
-                delay = 3000;
+                delay = 2400;
             } else if (act.equals("click")) {
                 c.kind = JarvisControl.CLICK;
                 c.target = st.target;
                 res = svc.exec(c);
             } else if (act.equals("type")) {
-                c.kind = JarvisControl.TYPE;
-                c.target = "";
-                c.text = st.text;
-                res = svc.exec(c);
-                delay = 1000;
+                res = svc.agentType(st.text, st.submit);
+                delay = st.submit ? 1800 : 800;
             } else if (act.equals("scroll")) {
                 c.kind = JarvisControl.SCROLL;
                 c.dir = st.dir;
