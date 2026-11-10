@@ -867,6 +867,52 @@ public class JarvisAccessService extends AccessibilityService {
         return e.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, b);
     }
 
+    /**
+     * Agent ke liye: text box dhoondh kar uska poora text BADAL do (purane ke aage jodna nahi).
+     * submit = true: likhne ke baad Enter/Search dabao. Jawab "" = theek, warna wajah.
+     */
+    public String agentType(final String text, boolean submit) {
+        final AccessibilityNodeInfo e = pickEditable("");
+        if (e == null) {
+            return "koi text box nahi dikha, pehle search ya text box par click karo";
+        }
+        e.performAction(AccessibilityNodeInfo.ACTION_FOCUS);
+        e.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+        Bundle b = new Bundle();
+        b.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text);
+        boolean ok = e.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, b);
+        if (!ok) {
+            try {
+                android.content.ClipboardManager cm =
+                        (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                cm.setPrimaryClip(android.content.ClipData.newPlainText("jarvis", text));
+                Bundle sel = new Bundle();
+                sel.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, 0);
+                sel.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, 10000);
+                e.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, sel);
+                ok = e.performAction(AccessibilityNodeInfo.ACTION_PASTE);
+            } catch (Throwable ignored) {
+            }
+        }
+        if (!ok) {
+            return "text box me likh nahi paya";
+        }
+        if (submit) {
+            handler.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    if (!imeEnter(e)) {
+                        AccessibilityNodeInfo s = findTarget("search", 0.9);
+                        if (s != null && !s.isEditable()) {
+                            doClick(s, false);
+                        }
+                    }
+                }
+            }, 450);
+        }
+        return "";
+    }
+
     private boolean imeEnter(AccessibilityNodeInfo e) {
         if (Build.VERSION.SDK_INT < 30 || e == null) {
             return false;
