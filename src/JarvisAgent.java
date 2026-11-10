@@ -26,6 +26,7 @@ public final class JarvisAgent {
         public String dir = "down";
         public String say = "";
         public boolean risky = false;
+        public boolean submit = false; // type ke baad Enter/Search dabao
     }
 
     private static String norm(String s) {
@@ -97,7 +98,8 @@ public final class JarvisAgent {
             + "markdown ya ``` nahi): "
             + "{\"action\":\"...\",\"target\":\"...\",\"text\":\"...\",\"dir\":\"...\",\"say\":\"...\",\"risky\":false}. "
             + "action in: open_app (target = app ka naam), click (target = screen par dikhne wale button/text ka naam, "
-            + "bilkul waisa jaisa screen text me hai), type (text = jo likhna hai; pehle us box par click karo, phir type), "
+            + "bilkul waisa jaisa screen text me hai), type (text = jo likhna hai; screen par text box dikhna chahiye, na dikhe to pehle search/text box ke icon par click karo; "
+            + "text purane text ko badal deta hai; search karna ho to \"submit\":true bhi do taaki Enter/Search dab jaye), "
             + "scroll (dir = up ya down), back, home, enter (keyboard ka search/enter), send (send ka button), "
             + "wait (screen load hone do), ask (user se ek chhota sawal poochho, sawal say me), done (kaam poora; say me "
             + "natural Hinglish me chhota natija), fail (nahi ho sakta; say me wajah). "
@@ -166,6 +168,7 @@ public final class JarvisAgent {
         String d = field(j, "dir").toLowerCase(Locale.ENGLISH);
         s.dir = d.startsWith("u") ? "up" : "down";
         s.say = field(j, "say");
+        s.submit = Pattern.compile("\"submit\"\\s*:\\s*true", Pattern.CASE_INSENSITIVE).matcher(j).find();
         s.risky = Pattern.compile("\"risky\"\\s*:\\s*true", Pattern.CASE_INSENSITIVE).matcher(j).find();
         List<String> ok = new ArrayList<String>();
         for (String x : new String[]{"open_app", "click", "type", "scroll", "back", "home", "enter", "send", "wait",
@@ -223,6 +226,67 @@ public final class JarvisAgent {
     /** Kaam ka text itna lamba/ajeeb to nahi ki galat suna gaya ho. */
     public static boolean sensibleTask(String task) {
         return task != null && task.trim().length() >= 3;
+    }
+
+    // ------------------------------------------------------ seedha raasta (jaldi) --
+    /** Jaana-pehchana kaam jisme Gemini ke kai kadam bachaye ja sakte hain. */
+    public static final class Shortcut {
+        public String url = "";
+        public String pkg = "";
+        public String query = "";
+        public String task = "";   // baaki kaam agent ke liye
+        public String say = "";
+    }
+
+    private static final String[] YT_STOP = {"youtube", "yt", "you", "tube", "par", "pe", "me", "mein", "main", "kholkar",
+            "kholo", "khol", "kar", "karo", "kro", "kijiye", "karna", "search", "chalao", "chala", "play", "bajao", "baja",
+            "sunao", "suna", "lagao", "laga", "do", "de", "dijiye", "aur", "ko", "ka", "ki", "ke", "se", "wala", "wali",
+            "ek", "mujhe", "mere", "meri", "liye", "best", "sabse", "achha", "accha", "achhi", "badhiya", "top", "sunna",
+            "dhundo", "dhundho", "khojo", "dikhao", "gaana", "gana", "gaane", "song", "songs", "music", "video", "videos",
+            "bhi", "pehle", "phir", "fir", "app", "open", "the", "a"};
+
+    /** "youtube par arijit ke gaane chalao" -> YouTube search page seedha kholo, phir agent sabse achha video chune. */
+    public static Shortcut shortcut(String task) {
+        String n = norm(task);
+        String w = " " + n + " ";
+        boolean yt = w.contains(" youtube ") || w.contains(" yt ") || w.contains(" you tube ");
+        boolean song = w.contains(" song ") || w.contains(" songs ") || w.contains(" gaana ") || w.contains(" gana ")
+                || w.contains(" gaane ") || w.contains(" music ") || w.contains(" bhajan ") || w.contains(" ghazal ");
+        boolean verb = false;
+        for (String v : new String[]{"chalao", "chala", "play", "bajao", "baja", "sunao", "suna", "lagao", "laga",
+                "search", "dhundo", "dhundho", "khojo", "dikhao"}) {
+            if (w.contains(" " + v + " ")) {
+                verb = true;
+            }
+        }
+        if (!verb || !(yt || song)) {
+            return null;
+        }
+        StringBuilder q = new StringBuilder();
+        java.util.Set<String> stop = new java.util.HashSet<String>(java.util.Arrays.asList(YT_STOP));
+        for (String t : n.split(" ")) {
+            if (t.length() > 0 && !stop.contains(t)) {
+                q.append(q.length() > 0 ? " " : "").append(t);
+            }
+        }
+        String query = q.toString().trim();
+        if (query.length() < 2) {
+            return null;
+        }
+        Shortcut sc = new Shortcut();
+        sc.query = query;
+        try {
+            sc.url = "https://www.youtube.com/results?search_query=" + java.net.URLEncoder.encode(query, "UTF-8");
+        } catch (Exception e) {
+            return null;
+        }
+        sc.pkg = "com.google.android.youtube";
+        sc.say = "Theek hai, YouTube par " + query + " chala raha hoon.";
+        sc.task = "YouTube par \"" + query + "\" search ho chuka hai aur results screen par hain. Tumhe sabse achha result "
+                + "chunna hai: official audio ya official video, jiske views sabse zyada hon (ad, Shorts, reels, playlist, "
+                + "live, reaction/cover nahi). Use kholo taaki chalne lage. Jaise hi video chalne lage (player dikh jaye) "
+                + "done do. Search dobara mat karo.";
+        return sc;
     }
 
     public static String describe(Step s) {
