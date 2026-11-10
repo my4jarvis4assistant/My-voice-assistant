@@ -44,7 +44,7 @@ public final class JarvisAgent {
             "^(?:(?:hey|hello|ok)\\s+)?(?:jarvis\\s+)?(?:agent|agents|ejent|ajent|agent\\s+mode|agent\\s+mod)\\b\\s*(.*)$");
     private static final Pattern LEAD = Pattern.compile(
             "^(?:mode\\s+|mod\\s+)?(?:(?:on|chalu|start|shuru)\\s+(?:karo|kro|kar|kijiye|karna)?\\s*)?"
-                    + "(?:me|mein|main|se|ab|abhi|ki tarah|jaise)?\\s*(?:ye|yeh|yah)?\\s*(?:kaam)?\\s*");
+                    + "(?:(?:me|mein|men|mei|mai|in|main|par|pe|per|se|ab|abhi|ki tarah|jaise)\\b)?\\s*(?:(?:ye|yeh|yah)\\b)?\\s*(?:kaam\\b)?\\s*");
 
     /** null = agent ka kaam nahi. "" = bas "agent mode" bola (kaam baad me poochho). Warna kaam ka text. */
     public static String parse(String utterance) {
@@ -62,7 +62,7 @@ public final class JarvisAgent {
             rest = r2;
         }
         for (int i = 0; i < 3; i++) {
-            rest = rest.replaceAll("^(?:ko|me|mein|aur|karo|kro|kar|ye kaam karo|ye kaam|ye)\\s+", "").trim();
+            rest = rest.replaceAll("^(?:ko|me|mein|men|mei|mai|in|par|pe|per|aur|karo|kro|kar|ye kaam karo|ye kaam|ye)\\s+", "").trim();
         }
         if (rest.equals("mode") || rest.equals("on") || rest.equals("chalu") || rest.equals("start")) {
             return "";
@@ -238,8 +238,8 @@ public final class JarvisAgent {
         public String say = "";
     }
 
-    private static final String[] YT_STOP = {"youtube", "yt", "you", "tube", "par", "pe", "me", "mein", "main", "kholkar",
-            "kholo", "khol", "kar", "karo", "kro", "kijiye", "karna", "search", "chalao", "chala", "play", "bajao", "baja",
+    private static final String[] YT_STOP = {"agent", "mode", "youtube", "yt", "you", "tube", "par", "pe", "me", "mein", "main", "kholkar",
+            "kholo", "in", "per", "pr", "mei", "men", "mai", "chalo", "chalu", "khol", "kar", "karo", "kro", "kijiye", "karna", "search", "chalao", "chala", "play", "bajao", "baja",
             "sunao", "suna", "lagao", "laga", "do", "de", "dijiye", "aur", "ko", "ka", "ki", "ke", "se", "wala", "wali",
             "ek", "mujhe", "mere", "meri", "liye", "best", "sabse", "achha", "accha", "achhi", "badhiya", "top", "sunna",
             "dhundo", "dhundho", "khojo", "dikhao", "gaana", "gana", "gaane", "song", "songs", "music", "video", "videos",
@@ -253,7 +253,7 @@ public final class JarvisAgent {
         boolean song = w.contains(" song ") || w.contains(" songs ") || w.contains(" gaana ") || w.contains(" gana ")
                 || w.contains(" gaane ") || w.contains(" music ") || w.contains(" bhajan ") || w.contains(" ghazal ");
         boolean verb = false;
-        for (String v : new String[]{"chalao", "chala", "play", "bajao", "baja", "sunao", "suna", "lagao", "laga",
+        for (String v : new String[]{"chalao", "chala", "chalo", "chalu", "chalado", "play", "bajado", "sunado", "lagado", "bajao", "baja", "sunao", "suna", "lagao", "laga",
                 "search", "dhundo", "dhundho", "khojo", "dikhao"}) {
             if (w.contains(" " + v + " ")) {
                 verb = true;
@@ -287,6 +287,69 @@ public final class JarvisAgent {
                 + "live, reaction/cover nahi). Use kholo taaki chalne lage. Jaise hi video chalne lage (player dikh jaye) "
                 + "done do. Search dobara mat karo.";
         return sc;
+    }
+
+    /** Shuru ke faltu shabd hatao (awaaz pehchanne me "mein" kabhi "in" ban jata hai). */
+    public static String cleanTask(String task) {
+        String t = norm(task);
+        for (int i = 0; i < 4; i++) {
+            t = t.replaceAll("^(?:jarvis|hey|hello|ab|abhi|zara|please|plz|in|me|mein|men|mei|mai|par|pe|per|ko)\\s+", "");
+        }
+        return t.trim();
+    }
+
+    private static final String[] APPS = {"youtube", "instagram", "insta", "facebook", "chrome", "settings", "setting",
+            "wifi", "bluetooth", "camera", "gallery", "photos", "maps", "spotify", "telegram", "snapchat", "amazon",
+            "flipkart", "play store", "playstore", "gmail", "calculator", "twitter", "reddit", "netflix", "hotstar",
+            "swiggy", "zomato", "meesho", "myntra", "linkedin", "browser", "google", "whatsapp"};
+    private static final String[] DO_WORDS = {"khol", "kholo", "kholkar", "chalao", "chala", "chalo", "play", "search",
+            "dhundo", "dhundho", "khojo", "dekho", "dikhao", "scroll", "laga", "lagao", "check", "like", "download", "karo",
+            "kro", "kar"};
+    private static final String[] MULTI = {" aur ", " phir ", " fir ", " search ", " dhundo ", " dhundho ", " khojo ",
+            " chalao ", " play ", " scroll ", " dekho ", " check ", " download ", " like "};
+    private static final String[] QUESTION = {"kya", "kaun", "kaise", "kyu", "kyun", "kitna", "kitne", "kab", "kahan",
+            "kaha", "why", "what", "how", "who", "when", "where", "batao", "bataiye", "samjhao"};
+
+    /** Bina "agent mode" bole bhi: app + kaam + kai kadam jaisa lage to agent chalao (sawal/baatcheet nahi). */
+    public static boolean autoGeneric(String utterance) {
+        String n = norm(utterance);
+        if (n.length() == 0) {
+            return false;
+        }
+        String[] tok = n.split(" ");
+        for (String q : QUESTION) {
+            if (tok[0].equals(q)) {
+                return false;
+            }
+        }
+        String w = " " + n + " ";
+        boolean app = false;
+        for (String x : APPS) {
+            if (w.contains(" " + x + " ")) {
+                app = true;
+            }
+        }
+        boolean verb = false;
+        for (String x : DO_WORDS) {
+            if (w.contains(" " + x + " ")) {
+                verb = true;
+            }
+        }
+        if (!app || !verb) {
+            return false;
+        }
+        boolean multi = tok.length >= 5;
+        for (String x : MULTI) {
+            if (w.contains(x)) {
+                multi = true;
+            }
+        }
+        return multi;
+    }
+
+    /** Gaana/YouTube chalane wali baat (bina "agent mode" ke). */
+    public static boolean autoStrong(String utterance) {
+        return shortcut(utterance) != null;
     }
 
     public static String describe(Step s) {
