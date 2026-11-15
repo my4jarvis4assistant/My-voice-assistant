@@ -58,6 +58,7 @@ DARK_TEXT = (0.02, 0.09, 0.09, 1)
 
 # Voice name -> (TTS pitch, TTS speech rate). Sirf awaaz ka andaaz badalta hai.
 ORB_GLOW = 0.30      # orb ke peeche halki teal chamak (0 = bilkul band)
+ORB_STYLE = ["blue"]  # chuna hua orb: blue red gold green purple water (jarvis_orbs.py)
 
 VOICES = {
     "Male Alpha": (0.85, 1.00),
@@ -789,6 +790,11 @@ class OrbHost(FloatLayout):
     def _ticks(self):
         return getattr(self.orb, "_ticks", 0) if self.orb is not None else 0
 
+    def set_style(self, style):
+        """Orb ka rang/roop badlo (blue red gold green purple water); abhi ke abhi badal jata hai."""
+        ORB_STYLE[0] = style
+        return self.set_level(self.level)
+
     def set_level(self, level):
         """level 0 = Advanced (GPU), 2 = Safe. Asli chalne wale orb ka naam lautata hai."""
         old = self.orb
@@ -818,6 +824,11 @@ class OrbHost(FloatLayout):
 def make_orb(level=0, **kwargs):
     """level 0: GPU shader orb, 1: texture orb, 2: simple orb (sabse safe).
     Jo level fail ho jaye, uske neeche wala apne aap chalta hai."""
+    try:
+        import jarvis_orbs
+        return jarvis_orbs.make_orb_for(ORB_STYLE[0], **kwargs)   # dots ya paani wala orb
+    except Exception as exc:
+        print("JARVIS orb style error:", exc)
     return SimpleOrb(**kwargs)          # sirf Safe orb: kabhi nahi atkta
 
 
@@ -1115,6 +1126,7 @@ def _save_state(app):
                 "eleven_key": getattr(app, "eleven_key", ""),
                 "eleven_slots": getattr(app, "eleven_slots", []),
                 "wake_enabled": getattr(app, "wake_enabled", False),
+                "orb_style": ORB_STYLE[0],
             }, fh, ensure_ascii=False)
     except Exception as exc:
         print("JARVIS UI state save error:", exc)
@@ -1138,6 +1150,7 @@ def build_jarvis_ui(app):
 
     # ---- saved settings ----
     state = _load_state(app)
+    ORB_STYLE[0] = str(state.get("orb_style", "blue") or "blue")
     app.selected_voice = state.get("voice", "Male Alpha")
     app.eleven_key = str(state.get("eleven_key", "") or "").strip()
     app.eleven_slots = _clean_slots(state.get("eleven_slots"))
@@ -1668,7 +1681,11 @@ def build_jarvis_ui(app):
         elif not app.gemini_key:
             ai_info.text = "Key set nahi hai. Neeche paste karke Save dabaiye."
         elif app.ai_enabled:
-            ai_info.text = "AI chalu hai. Jo command samajh na aaye, Gemini jawab dega."
+            _g = len(ai_brain.gemini_keys(app.gemini_key))
+            _o = len(ai_brain.compat_keys(app.gemini_key))
+            ai_info.text = ("AI chalu hai. Keys: Gemini %d, Groq/Cerebras %d. Ek ki free limit khatam ho to "
+                            "agli chalti hai. Aur key jodni ho to paste karke Save dabaiye; "
+                            "khali Save sab keys hata deta hai." % (_g, _o))
         else:
             ai_info.text = "AI band hai (key saved)."
 
@@ -1676,7 +1693,7 @@ def build_jarvis_ui(app):
                         spacing=dp(10))
     key_wrap = PlateBox(fill=INPUT, edge=EDGE, radius=dp(12), orientation="horizontal",
                         padding=[dp(10), 0, dp(10), 0])
-    key_input = style_input(TextInput(text="", hint_text="Gemini API key paste kijiye",
+    key_input = style_input(TextInput(text="", hint_text="Key paste kijiye (Gemini / Groq gsk_ / Cerebras csk-)",
                                       font_size=sp(14), password=True))
     key_wrap.add_widget(key_input)
     key_row.add_widget(key_wrap)
@@ -1686,7 +1703,16 @@ def build_jarvis_ui(app):
     ai_card.add_widget(key_row)
 
     def save_key(*_):
-        app.gemini_key = key_input.text.strip() or ""
+        _new = key_input.text.strip()
+        if _new and ai_brain is not None:
+            _all = ai_brain.split_keys(app.gemini_key) + [k for k in ai_brain.split_keys(_new)]
+            _seen = []
+            for _k in _all:
+                if _k not in _seen:
+                    _seen.append(_k)
+            app.gemini_key = ",".join(_seen)
+        else:
+            app.gemini_key = _new
         if key_input.text.strip():
             key_input.text = ""
             key_input.focus = False
@@ -1695,7 +1721,9 @@ def build_jarvis_ui(app):
         app.ai_model = ""
         _save_state(app)
         refresh_ai_info()
-        toast("Key save ho gayi" if app.gemini_key else "Key hata di gayi")
+        toast(("Key save ho gayi (kul %d)" % len(ai_brain.split_keys(app.gemini_key)))
+              if app.gemini_key and ai_brain is not None else
+              ("Key save ho gayi" if app.gemini_key else "Saari keys hata di gayi"))
 
     key_btn.bind(on_release=save_key)
 
@@ -2199,9 +2227,50 @@ def build_jarvis_ui(app):
     orb_info = make_label("", 11, MUTED, height=dp(34), lines=2)
 
     def show_orb_info():
-        orb_info.text = "Orb: Safe (sabse halka, kabhi nahi atkta)"
+        try:
+            import jarvis_orbs
+            orb_info.text = "Orb: " + jarvis_orbs.style_name(ORB_STYLE[0]) + " (halka, kabhi nahi atkta)"
+        except Exception:
+            orb_info.text = "Orb: Safe (sabse halka, kabhi nahi atkta)"
+
+    def pick_orb_style(style):
+        orb.set_style(style)
+        orb_preview.set_style(style)
+        _save_state(app)
+        show_orb_info()
+
+    def make_style_row(choices):
+        row = Segmented([n for n, _s in choices], "", None)
+        mapping = dict(choices)
+        row._style_names = mapping
+
+        def on_pick(name, mapping=mapping, row=row):
+            for other in style_rows:
+                if other is not row:
+                    other.select("", False)
+            pick_orb_style(mapping[name])
+        row._on_change = on_pick
+        return row
+
+    try:
+        import jarvis_orbs
+        style_choices = list(jarvis_orbs.ORB_CHOICES)
+    except Exception:
+        style_choices = []
+    style_rows = []
+    if style_choices:
+        style_rows.append(make_style_row(style_choices[:3]))
+        style_rows.append(make_style_row(style_choices[3:]))
+        for _row in style_rows:
+            for _n, _s in _row._style_names.items():
+                if _s == ORB_STYLE[0]:
+                    _row.select(_n, False)
+                else:
+                    pass
 
     orb_card.add_widget(orb_preview)
+    for _row in style_rows:
+        orb_card.add_widget(_row)
     orb_card.add_widget(orb_info)
     show_orb_info()
     content.add_widget(orb_card)
@@ -2428,7 +2497,7 @@ def build_jarvis_ui(app):
                 except Exception:
                     pass
                 speaker.speak(app.eleven_key, vid, str(text), on_error=fail,
-                              hindi_key=getattr(app, "gemini_key", "") or None)
+                              hindi_key=((ai_brain.first_gemini_key(getattr(app, "gemini_key", "")) if ai_brain is not None else getattr(app, "gemini_key", "")) or None))
                 used_eleven = True
             except Exception as exc:
                 print("eleven speak error:", exc)
