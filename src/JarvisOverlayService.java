@@ -69,7 +69,7 @@ public class JarvisOverlayService extends Service {
     private TextView statusView;
     private TextView heardView;
     private View orbView;
-    private GradientDrawable orbShape;
+    private WaterOrbView waterOrb;
     private SpeechRecognizer recognizer;
     private TextToSpeech tts;
     private final JarvisEleven eleven = new JarvisEleven();
@@ -505,6 +505,7 @@ public class JarvisOverlayService extends Service {
         }
         panel = null;
         orbView = null;
+        waterOrb = null;
         bubbleLp = null;
     }
 
@@ -533,14 +534,10 @@ public class JarvisOverlayService extends Service {
             wm = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
             panel = new LinearLayout(this);
             panel.setOrientation(LinearLayout.VERTICAL);
-            orbView = new View(this);
-            orbShape = new GradientDrawable();
-            orbShape.setShape(GradientDrawable.OVAL);
-            orbShape.setColor(Color.WHITE);
-            orbShape.setStroke(dp(1), Color.parseColor("#55000000"));
-            orbView.setBackground(orbShape);
-            panel.addView(orbView, new LinearLayout.LayoutParams(dp(18), dp(18)));
-            panel.setPadding(dp(12), dp(12), dp(12), dp(12));
+            waterOrb = new WaterOrbView(this);
+            orbView = waterOrb;
+            panel.addView(orbView, new LinearLayout.LayoutParams(dp(46), dp(46)));
+            panel.setPadding(dp(6), dp(6), dp(6), dp(6));
             int type = Build.VERSION.SDK_INT >= 26 ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
                     : WindowManager.LayoutParams.TYPE_PHONE;
             bubbleLp = new WindowManager.LayoutParams(
@@ -551,7 +548,7 @@ public class JarvisOverlayService extends Service {
             bubbleLp.gravity = Gravity.TOP | Gravity.LEFT;
             DisplayMetrics dm = getResources().getDisplayMetrics();
             SharedPreferences p = prefs();
-            bubbleLp.x = p.getInt("bubble_x", dm.widthPixels / 2 - dp(21));
+            bubbleLp.x = p.getInt("bubble_x", dm.widthPixels / 2 - dp(29));
             bubbleLp.y = p.getInt("bubble_y", dp(28));
             clampBubble();
             panel.setOnTouchListener(bubbleTouch);
@@ -569,7 +566,7 @@ public class JarvisOverlayService extends Service {
             return;
         }
         DisplayMetrics dm = getResources().getDisplayMetrics();
-        int size = dp(42);
+        int size = dp(58);
         bubbleLp.x = Math.max(0, Math.min(dm.widthPixels - size, bubbleLp.x));
         bubbleLp.y = Math.max(0, Math.min(dm.heightPixels - size, bubbleLp.y));
     }
@@ -579,9 +576,12 @@ public class JarvisOverlayService extends Service {
         if (orbView == null) {
             return;
         }
-        orbView.setAlpha(active ? 1.0f : 0.40f);
+        orbView.setAlpha(active ? 1.0f : 0.82f);      // sote waqt bhi dikhta aur lehrata rehta hai
         orbView.setScaleX(1f);
         orbView.setScaleY(1f);
+        if (waterOrb != null) {
+            waterOrb.setActive(active);
+        }
     }
 
     private final View.OnTouchListener bubbleTouch = new View.OnTouchListener() {
@@ -680,7 +680,10 @@ public class JarvisOverlayService extends Service {
                 target = 0f;
             }
             level += (target - level) * 0.18f;
-            float scale = 1f + 0.05f * (float) Math.sin(clock * 1.3) + 0.22f * level;
+            float scale = 1f + 0.03f * (float) Math.sin(clock * 1.3) + 0.12f * level;
+            if (waterOrb != null) {
+                waterOrb.setLevel(level);
+            }
             orbView.setScaleX(scale);
             orbView.setScaleY(scale);
             targetLevel *= 0.9f;
@@ -848,7 +851,7 @@ public class JarvisOverlayService extends Service {
             AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
             int flag = on ? AudioManager.ADJUST_MUTE : AudioManager.ADJUST_UNMUTE;
             int[] streams = {AudioManager.STREAM_MUSIC, AudioManager.STREAM_NOTIFICATION,
-                    AudioManager.STREAM_SYSTEM};
+                    AudioManager.STREAM_SYSTEM, 10 /* STREAM_ACCESSIBILITY: kuch phones me mic ki "ting" yahan se */};
             for (int s : streams) {
                 try {
                     am.adjustStreamVolume(s, flag, 0);
