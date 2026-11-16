@@ -40,18 +40,18 @@ from kivy.uix.textinput import TextInput
 from kivy.uix.widget import Widget
 
 # ----------------------------------------------------------------- PALETTE --
-BG_TOP = (0.050, 0.105, 0.120)
-BG_BOTTOM = (0.012, 0.022, 0.026)
-PANEL = (0.062, 0.092, 0.100, 1)
-INPUT = (0.040, 0.070, 0.076, 1)
-PILL = (0.085, 0.125, 0.135, 1)
+BG_TOP = (0.030, 0.070, 0.125)
+BG_BOTTOM = (0.006, 0.012, 0.026)
+PANEL = (0.050, 0.078, 0.122, 1)
+INPUT = (0.030, 0.052, 0.090, 1)
+PILL = (0.066, 0.100, 0.150, 1)
 EDGE = (1, 1, 1, 0.09)
-CYAN = (0.30, 0.88, 0.85, 1)
-CYAN_12 = (0.30, 0.88, 0.85, 0.12)
-CYAN_60 = (0.30, 0.88, 0.85, 0.60)
+CYAN = (0.26, 0.78, 1.00, 1)
+CYAN_12 = (0.26, 0.78, 1.00, 0.12)
+CYAN_60 = (0.26, 0.78, 1.00, 0.60)
 WHITE = (0.90, 0.95, 0.96, 1)
-MUTED = (0.55, 0.66, 0.68, 1)
-FAINT = (0.36, 0.48, 0.49, 1)
+MUTED = (0.56, 0.66, 0.76, 1)
+FAINT = (0.38, 0.48, 0.60, 1)
 GREEN = (0.12, 0.95, 0.52, 1)
 CLEAR = (0, 0, 0, 0)
 DARK_TEXT = (0.02, 0.09, 0.09, 1)
@@ -951,16 +951,73 @@ def accent_bar():
     return w
 
 
-def make_card(title):
-    card = PlateBox(orientation="vertical", padding=dp(16), spacing=dp(10),
-                    size_hint_y=None)
-    card.bind(minimum_height=card.setter("height"))
-    row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(26),
-                    spacing=dp(10))
-    row.add_widget(accent_bar())
-    row.add_widget(make_label(title, 16, WHITE, True))
-    card.add_widget(row)
-    return card
+class _CardHead(ButtonBehavior, BoxLayout):
+    """Card ki title wali patti: dabane par card khulta/band hota hai."""
+
+    def __init__(self, title, **kwargs):
+        super().__init__(orientation="horizontal", size_hint_y=None, height=dp(46),
+                         spacing=dp(10), **kwargs)
+        self.add_widget(accent_bar())
+        self.add_widget(make_label(title, 16, WHITE, True))
+        self._chev = Widget(size_hint=(None, 1), width=dp(22))
+        self.add_widget(self._chev)
+        self.is_open = False
+        self._chev.bind(pos=self._draw, size=self._draw)
+
+    def _draw(self, *_):
+        c = self._chev
+        c.canvas.clear()
+        x, y = c.center
+        s = dp(5)
+        d = s * 0.5 if self.is_open else -s * 0.5
+        with c.canvas:
+            Color(*MUTED)
+            Line(points=[x - s, y - d, x, y + d, x + s, y - d], width=dp(1.5),
+                 cap="round", joint="round")
+
+
+class SettingsCard(PlateBox):
+    """Settings ka card: title dabane par khulta hai. Purana code card.add_widget() waise hi use karta hai."""
+
+    def __init__(self, title, open_=False, **kwargs):
+        super().__init__(orientation="vertical", padding=[dp(16), dp(2), dp(16), dp(2)],
+                         spacing=0, size_hint_y=None, **kwargs)
+        self._ready = False
+        self.toggled_cb = None
+        self.bind(minimum_height=self.setter("height"))
+        self.head = _CardHead(title)
+        self.body = BoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(10),
+                              padding=[0, 0, 0, dp(10)])
+        self.body.bind(minimum_height=self._fit)
+        super().add_widget(self.head)
+        super().add_widget(self.body)
+        self._ready = True
+        self.head.bind(on_release=lambda *_: self.set_open(not self.head.is_open))
+        self.set_open(open_)
+
+    def add_widget(self, widget, *args, **kwargs):
+        if self._ready:
+            return self.body.add_widget(widget, *args, **kwargs)
+        return super().add_widget(widget, *args, **kwargs)
+
+    def _fit(self, *_):
+        self.body.height = self.body.minimum_height if self.head.is_open else 0
+
+    def set_open(self, flag):
+        self.head.is_open = bool(flag)
+        self.body.opacity = 1 if flag else 0
+        self.body.disabled = not flag
+        self._fit()
+        self.head._draw()
+        if self.toggled_cb:
+            try:
+                self.toggled_cb(bool(flag))
+            except Exception:
+                pass
+
+
+def make_card(title, open_=False):
+    return SettingsCard(title, open_)
 
 
 # -------------------------------------------------- BOOT GUARD + SAFETY NET --
@@ -1103,6 +1160,7 @@ def _sync_prefs(app):
         ed.putFloat("rate", float(rate))
         ed.putString("eleven_key", str(getattr(app, "eleven_key", "") or ""))
         ed.putString("eleven_voice_id", eleven_voice_id(app))
+        ed.putString("orb_style", str(ORB_STYLE[0] or "blue"))     # home screen bubble yahi orb dikhata hai
         ed.apply()
     except Exception as exc:
         print("Prefs sync skipped:", exc)
@@ -1151,6 +1209,10 @@ def build_jarvis_ui(app):
     # ---- saved settings ----
     state = _load_state(app)
     ORB_STYLE[0] = str(state.get("orb_style", "blue") or "blue")
+    try:                                    # bubble ko pehli baar se hi chuna hua orb mile
+        app.activity.getSharedPreferences("jarvis_prefs", 0).edit().putString("orb_style", ORB_STYLE[0]).apply()
+    except Exception:
+        pass
     app.selected_voice = state.get("voice", "Male Alpha")
     app.eleven_key = str(state.get("eleven_key", "") or "").strip()
     app.eleven_slots = _clean_slots(state.get("eleven_slots"))
@@ -1235,7 +1297,16 @@ def build_jarvis_ui(app):
     header = BoxLayout(orientation="horizontal", size_hint=(1, None), height=dp(64),
                        padding=[dp(22), dp(8), dp(18), dp(8)], spacing=dp(4),
                        pos_hint={"top": 1})
-    title = Label(text="JARVIS", font_size=sp(26), color=WHITE, size_hint_x=None,
+    try:
+        _logo = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logo.png")
+        if os.path.exists(_logo):
+            from kivy.uix.image import Image as _Img
+            header.add_widget(_Img(source=_logo, size_hint=(None, None), size=(dp(34), dp(34)),
+                                   pos_hint={"center_y": 0.5}))
+            header.add_widget(Widget(size_hint=(None, 1), width=dp(8)))
+    except Exception as exc:
+        print("logo load error:", exc)
+    title = Label(text="JARVIS", font_size=sp(24), color=WHITE, size_hint_x=None, bold=True,
                   width=dp(100), halign="left")
     title.bind(texture_size=lambda obj, ts: setattr(obj, "width", ts[0]))
     header.add_widget(title)
@@ -1305,7 +1376,7 @@ def build_jarvis_ui(app):
                         size_hint=(0.90, None), height=dp(54),
                         pos_hint={"center_x": 0.5})
     composer.y = dp(28)
-    chat = style_input(TextInput(hint_text="Message...", font_size=sp(16)))
+    chat = style_input(TextInput(hint_text="Type a message...", font_size=sp(16)))
     composer.add_widget(chat)
     send_btn = IconButton("send", size_hint=(None, 1), width=dp(46))
     composer.add_widget(send_btn)
@@ -2206,20 +2277,8 @@ def build_jarvis_ui(app):
         privacy_card.add_widget(row)
     content.add_widget(privacy_card)
 
-    # 6) Appearance
-    look_card = make_card("Appearance")
-
-    def on_theme(value):
-        if value != "Dark":
-            look_card_seg.select("Dark", False)
-            toast(value + " theme abhi available nahi hai")
-
-    look_card_seg = Segmented(["Light", "Dark", "System"], "Dark", on_theme)
-    look_card.add_widget(look_card_seg)
-    content.add_widget(look_card)
-
     # 6b) Orb animation
-    orb_card = make_card("Orb Animation")
+    orb_card = make_card("Orb Animation", True)
 
     orb_preview = OrbHost(orb_level, size_hint=(1, None), height=dp(150))
     orb_preview.mode = "listening"
@@ -2229,9 +2288,9 @@ def build_jarvis_ui(app):
     def show_orb_info():
         try:
             import jarvis_orbs
-            orb_info.text = "Orb: " + jarvis_orbs.style_name(ORB_STYLE[0]) + " (halka, kabhi nahi atkta)"
+            orb_info.text = "Orb: " + jarvis_orbs.style_name(ORB_STYLE[0]) + "  -  home screen bubble me bhi yahi dikhega"
         except Exception:
-            orb_info.text = "Orb: Safe (sabse halka, kabhi nahi atkta)"
+            orb_info.text = "Orb: Safe"
 
     def pick_orb_style(style):
         orb.set_style(style)
@@ -2269,19 +2328,12 @@ def build_jarvis_ui(app):
                     pass
 
     orb_card.add_widget(orb_preview)
+    orb_card.toggled_cb = lambda opened: setattr(orb_preview, "paused", (not opened) or not view["settings"])
     for _row in style_rows:
         orb_card.add_widget(_row)
     orb_card.add_widget(orb_info)
     show_orb_info()
     content.add_widget(orb_card)
-
-    # 7) Integrations
-    integ_card = make_card("Integration Settings")
-    for label in ("Connect Smart Home", "Sync Calendar", "Link Accounts"):
-        row = ActionRow(label)
-        row.bind(on_release=lambda w, t=label: toast(t + " - jaldi aa raha hai"))
-        integ_card.add_widget(row)
-    content.add_widget(integ_card)
 
     # ---------------------------------------------------------- NAVIGATION --
     view = {"settings": False}
