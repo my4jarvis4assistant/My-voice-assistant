@@ -70,6 +70,9 @@ public class JarvisOverlayService extends Service {
     private TextView heardView;
     private View orbView;
     private WaterOrbView waterOrb;
+    private DotOrbView dotOrb;
+    private String orbStyleShown = "";
+    private int orbCheck = 0;
     private SpeechRecognizer recognizer;
     private TextToSpeech tts;
     private final JarvisEleven eleven = new JarvisEleven();
@@ -506,6 +509,7 @@ public class JarvisOverlayService extends Service {
         panel = null;
         orbView = null;
         waterOrb = null;
+        dotOrb = null;
         bubbleLp = null;
     }
 
@@ -534,10 +538,8 @@ public class JarvisOverlayService extends Service {
             wm = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
             panel = new LinearLayout(this);
             panel.setOrientation(LinearLayout.VERTICAL);
-            waterOrb = new WaterOrbView(this);
-            orbView = waterOrb;
-            panel.addView(orbView, new LinearLayout.LayoutParams(dp(46), dp(46)));
-            panel.setPadding(dp(6), dp(6), dp(6), dp(6));
+            installOrb();
+            panel.setPadding(dp(4), dp(4), dp(4), dp(4));
             int type = Build.VERSION.SDK_INT >= 26 ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
                     : WindowManager.LayoutParams.TYPE_PHONE;
             bubbleLp = new WindowManager.LayoutParams(
@@ -548,7 +550,7 @@ public class JarvisOverlayService extends Service {
             bubbleLp.gravity = Gravity.TOP | Gravity.LEFT;
             DisplayMetrics dm = getResources().getDisplayMetrics();
             SharedPreferences p = prefs();
-            bubbleLp.x = p.getInt("bubble_x", dm.widthPixels / 2 - dp(29));
+            bubbleLp.x = p.getInt("bubble_x", dm.widthPixels / 2 - dp(33));
             bubbleLp.y = p.getInt("bubble_y", dp(28));
             clampBubble();
             panel.setOnTouchListener(bubbleTouch);
@@ -561,12 +563,34 @@ public class JarvisOverlayService extends Service {
         }
     }
 
+    /** Settings me chuna hua orb (dots ke 5 rang ya paani) bubble me lagao. */
+    private void installOrb() {
+        String st = prefs().getString("orb_style", "blue");
+        if (st == null || st.length() == 0) {
+            st = "blue";
+        }
+        orbStyleShown = st;
+        if (orbView != null && panel != null) {
+            panel.removeView(orbView);
+        }
+        waterOrb = null;
+        dotOrb = null;
+        if ("water".equals(st)) {
+            waterOrb = new WaterOrbView(this);
+            orbView = waterOrb;
+        } else {
+            dotOrb = new DotOrbView(this, st);
+            orbView = dotOrb;
+        }
+        panel.addView(orbView, new LinearLayout.LayoutParams(dp(58), dp(58)));
+    }
+
     private void clampBubble() {
         if (bubbleLp == null) {
             return;
         }
         DisplayMetrics dm = getResources().getDisplayMetrics();
-        int size = dp(58);
+        int size = dp(66);
         bubbleLp.x = Math.max(0, Math.min(dm.widthPixels - size, bubbleLp.x));
         bubbleLp.y = Math.max(0, Math.min(dm.heightPixels - size, bubbleLp.y));
     }
@@ -576,11 +600,14 @@ public class JarvisOverlayService extends Service {
         if (orbView == null) {
             return;
         }
-        orbView.setAlpha(active ? 1.0f : 0.82f);      // sote waqt bhi dikhta aur lehrata rehta hai
+        orbView.setAlpha(active ? 1.0f : 0.85f);      // sote waqt bhi dikhta aur ghoomta rehta hai
         orbView.setScaleX(1f);
         orbView.setScaleY(1f);
         if (waterOrb != null) {
             waterOrb.setActive(active);
+        }
+        if (dotOrb != null) {
+            dotOrb.setActive(active);
         }
     }
 
@@ -684,8 +711,31 @@ public class JarvisOverlayService extends Service {
             if (waterOrb != null) {
                 waterOrb.setLevel(level);
             }
+            if (dotOrb != null) {
+                // bikharna sirf tab: Jarvis bole ya aap bolo (mic ki awaaz); intezaar/sochte waqt sirf ghoomna
+                float dl = speaking ? level
+                        : (mode == MODE_LISTEN && targetLevel > 0.12f ? Math.max(0.5f, targetLevel) : 0f);
+                dotOrb.setLevel(dl);
+                scale = 1f;                              // dots orb apna bada hona khud sambhalta hai
+            }
             orbView.setScaleX(scale);
             orbView.setScaleY(scale);
+            if (++orbCheck >= 45) {                      // ~1.5 sec me ek baar: orb ka style badla to naya lagao
+                orbCheck = 0;
+                try {
+                    String st = prefs().getString("orb_style", "blue");
+                    if (st != null && st.length() > 0 && !st.equals(orbStyleShown) && panel != null) {
+                        installOrb();
+                        if (dotOrb != null) {
+                            dotOrb.setActive(mode != MODE_IDLE || speaking);
+                        }
+                        if (waterOrb != null) {
+                            waterOrb.setActive(mode != MODE_IDLE || speaking);
+                        }
+                    }
+                } catch (Exception ignored) {
+                }
+            }
             targetLevel *= 0.9f;
             main.postDelayed(this, 33);
         }
