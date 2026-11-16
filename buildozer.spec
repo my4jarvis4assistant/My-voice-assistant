@@ -1,18 +1,24 @@
 [app]
 
-title = My Voice Assistant
+title = JARVIS
 package.name = myvoiceassistant
 package.domain = org.myassistant
 
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,java,xml
 
-version = 0.88
+version = 0.89
 
 requirements = python3,kivy,pyjnius
 
 orientation = portrait
 fullscreen = 0
+
+icon.filename = %(source.dir)s/icon.png
+icon.adaptive_foreground.filename = %(source.dir)s/icon_fg.png
+icon.adaptive_background.filename = %(source.dir)s/icon_bg.png
+presplash.filename = %(source.dir)s/presplash.png
+android.presplash_color = #060C16
 
 android.permissions = android.permission.RECORD_AUDIO,com.android.alarm.permission.SET_ALARM,android.permission.POST_NOTIFICATIONS,android.permission.VIBRATE,android.permission.SCHEDULE_EXACT_ALARM,android.permission.INTERNET,android.permission.SYSTEM_ALERT_WINDOW,android.permission.FOREGROUND_SERVICE,android.permission.FOREGROUND_SERVICE_MICROPHONE,android.permission.QUERY_ALL_PACKAGES,android.permission.READ_CONTACTS,android.permission.CALL_PHONE,android.permission.ACCESS_NOTIFICATION_POLICY,android.permission.SEND_SMS
 
