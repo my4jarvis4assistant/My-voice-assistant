@@ -61,50 +61,94 @@ class _OrbBase(ButtonBehavior, Widget):
         t = self._t
         if self.speaking:
             target = 0.6 + 0.4 * abs(math.sin(t * 4.3))
-        elif self.mode in ("listening", "thinking"):
-            target = 0.45 + 0.15 * math.sin(t * (4.2 if self.mode == "thinking" else 2.2))
+        elif self.mode == "listening":
+            target = 0.5 + 0.15 * math.sin(t * 2.2)
+        elif self.mode == "thinking":
+            target = 0.0 if isinstance(self, ParticleOrb) else 0.45 + 0.15 * math.sin(t * 4.2)
         else:
             target = 0.0
         self._lvl += (target - self._lvl) * min(1.0, dt * 6.0)
         return t
 
 
+def _dot_texture():
+    """Chhota gol, naram kinaare wala dot (Kivy ka Point warna chorus dikhta hai)."""
+    try:
+        from kivy.graphics.texture import Texture
+        n = 16
+        buf = bytearray()
+        for yy in range(n):
+            for xx in range(n):
+                d = math.hypot(xx - 7.5, yy - 7.5) / 7.8
+                a = max(0.0, min(1.0, (1.0 - d) * 2.4))
+                buf += bytes((255, 255, 255, int(255 * a)))
+        tex = Texture.create(size=(n, n), colorfmt="rgba")
+        tex.blit_buffer(bytes(buf), colorfmt="rgba", bufferfmt="ubyte")
+        tex.mag_filter = "linear"
+        tex.min_filter = "linear"
+        return tex
+    except Exception:
+        return None
+
+
+def grid_points():
+    """Reference jaisa lat-long grid: har ring me barabar dots, isliye upar-neeche ghane
+    gol rings banti hain aur beech me seedhi line."""
+    rows = [math.radians(-78 + 156.0 * i / 22.0) for i in range(23)]
+    for extra in (82.0, 85.0, 87.5, 89.0):
+        rows.append(math.radians(extra))
+        rows.append(math.radians(-extra))
+    pts = []
+    for lat in rows:
+        n = 36
+        for j in range(n):
+            lon = 2.0 * math.pi * j / n + (0.0 if abs(lat) < 1.4 else 0.09 * abs(lat))
+            pts.append((math.cos(lat) * math.cos(lon), math.sin(lat), math.cos(lat) * math.sin(lon)))
+    for j in range(60):                      # equator ki line thodi ghani
+        lon = 2.0 * math.pi * (j + 0.5) / 60
+        pts.append((math.cos(lon), 0.0, math.sin(lon)))
+    return pts
+
+
 class ParticleOrb(_OrbBase):
-    """Dots ka sphere: shaant me dheere ghoomta hai, bolte/sunte waqt bikharta aur simatta hai."""
-    COUNT = 520
+    """Dots ka gola. Shaant me sirf left-right ghoomta hai (dots jame rehte hain).
+    Jab aap bolo ya Jarvis bole tab thoda bada hokar dots bikharte aur simatte hain."""
 
     def __init__(self, color="blue", **kwargs):
         super().__init__(**kwargs)
         self._rgb = PALETTE.get(color, PALETTE["blue"])
-        rnd = random.Random(11)
-        self._sph, self._cloud, self._ph = [], [], []
-        n = self.COUNT
-        for i in range(n):
-            y = 1.0 - 2.0 * (i + 0.5) / n
-            r = math.sqrt(max(0.0, 1.0 - y * y))
-            th = i * 2.399963
-            self._sph.append((math.cos(th) * r, y, math.sin(th) * r))
-            u = rnd.random() * 2.0 - 1.0
-            a = rnd.random() * 6.283185
-            s = math.sqrt(max(0.0, 1.0 - u * u))
-            rr = 0.15 + 1.1 * (rnd.random() ** 0.7)
-            self._cloud.append((s * math.cos(a) * rr, u * rr * 0.95, s * math.sin(a) * rr))
+        rnd = random.Random(7)
+        self._sph = grid_points()
+        n = len(self._sph)
+        self._cloud, self._ph = [], []
+        for (sx, sy, sz) in self._sph:
+            f = 0.64 + 0.56 * (rnd.random() ** 0.8)
+            pull = 0.10 + 0.45 * (rnd.random() ** 2)      # dots upar/neeche ke paas jhund banate hain
+            ty = sy + ((1.0 if sy >= 0 else -1.0) * 0.92 - sy) * pull
+            k = math.sqrt(max(0.0, 1.0 - ty * ty)) / max(0.05, math.sqrt(sx * sx + sz * sz))
+            jx = (rnd.random() - 0.5) * 0.34
+            jy = (rnd.random() - 0.5) * 0.26
+            jz = (rnd.random() - 0.5) * 0.34
+            self._cloud.append(((sx * k) * f + jx, ty * f + jy, (sz * k) * f + jz))
             self._ph.append(rnd.random() * 6.283185)
         r0, g0, b0 = self._rgb
-        light = (r0 + (1 - r0) * 0.45, g0 + (1 - g0) * 0.45, b0 + (1 - b0) * 0.45)
-        with self.canvas:
-            self._glows = []
-            for k in range(3):
-                c = Color(r0, g0, b0, 0.045)
-                e = Ellipse()
-                self._glows.append((c, e))
-            Color(r0, g0, b0, 0.38)
-            self._back = Point(points=[], pointsize=dp(1.0))
-            Color(r0, g0, b0, 0.80)
-            self._mid = Point(points=[], pointsize=dp(1.4))
-            Color(light[0], light[1], light[2], 1.0)
-            self._front = Point(points=[], pointsize=dp(1.9))
-        self._yaw = 0.0
+        light = (r0 + (1 - r0) * 0.35, g0 + (1 - g0) * 0.35, b0 + (1 - b0) * 0.35)
+        tex = _dot_texture()
+
+        def build(kw):
+            self.canvas.clear()
+            with self.canvas:
+                Color(r0, g0, b0, 0.40)
+                self._back = Point(points=[], pointsize=1.2, **kw)
+                Color(r0, g0, b0, 0.78)
+                self._mid = Point(points=[], pointsize=1.4, **kw)
+                Color(light[0], light[1], light[2], 1.0)
+                self._front = Point(points=[], pointsize=1.6, **kw)
+        try:
+            build({"texture": tex} if tex is not None else {})
+        except Exception:
+            build({})                      # gol dot texture na chale to bhi orb chalega
+        self._m = 0.0
         self._start()
 
     def _tick(self, dt=0, *_):
@@ -114,37 +158,44 @@ class ParticleOrb(_OrbBase):
             return
         t = self._advance(dt)
         lvl = self._lvl
-        self._yaw += dt * (0.45 + 1.1 * lvl)
-        # bikhrav: shaant me thoda, bolte/sunte waqt zyada (lehron me)
-        m = 0.012 + 0.05 * (0.5 + 0.5 * math.sin(t * 0.6)) + 0.62 * lvl * (0.5 + 0.5 * math.sin(t * 1.9))
-        m = min(0.85, m)
+        # bikhrav ka target: bolte/sunte waqt lehar (bikhro-simto), warna bilkul 0
+        if lvl > 0.04:
+            wave = 0.5 + 0.5 * math.sin(t * 2.6)
+            target = min(1.0, lvl * 1.25) * (0.15 + 0.85 * wave * wave * (3 - 2 * wave))
+        else:
+            target = 0.0
+        self._m += (target - self._m) * min(1.0, dt * 9.0)
+        m = self._m if self._m > 0.006 else 0.0
+        yaw = 0.75 * math.sin(t * 0.55) + 0.25 * math.sin(t * 0.21 + 1.0)
+        tilt = 0.20 + 0.05 * math.sin(t * 0.37)
         cx, cy = self.center
-        R = min(self.width, self.height) * 0.38 * (1.0 + 0.03 * math.sin(t * 1.4) + 0.06 * lvl)
-        cy_a, sy_a = math.cos(self._yaw), math.sin(self._yaw)
-        tilt = 0.38
+        R = min(self.width, self.height) * 0.36 * (1.0 + 0.012 * math.sin(t * 1.3) + 0.10 * min(1.0, lvl))
+        ps = max(0.9, R * 0.0062)
+        cy_a, sy_a = math.cos(yaw), math.sin(yaw)
         ct, st = math.cos(tilt), math.sin(tilt)
         back, mid, front = [], [], []
         sph, cloud, ph = self._sph, self._cloud, self._ph
-        for i in range(self.COUNT):
-            mi = m + 0.30 * m * math.sin(t * 1.3 + ph[i])
-            if mi < 0.0:
-                mi = 0.0
-            k = 1.0 - mi
+        for i in range(len(sph)):
             sx, sy, sz = sph[i]
-            qx, qy, qz = cloud[i]
-            x = sx * k + qx * mi
-            y = sy * k + qy * mi
-            z = sz * k + qz * mi
+            if m:
+                mi = m * (0.80 + 0.20 * math.sin(t * 2.1 + ph[i]))
+                qx, qy, qz = cloud[i]
+                k = 1.0 - mi
+                x = sx * k + qx * mi
+                y = sy * k + qy * mi
+                z = sz * k + qz * mi
+            else:
+                x, y, z = sx, sy, sz
             x2 = x * cy_a + z * sy_a
             z2 = -x * sy_a + z * cy_a
             y3 = y * ct - z2 * st
             z3 = y * st + z2 * ct
             px = cx + x2 * R
             py = cy + y3 * R
-            if z3 > 0.35:
+            if z3 > 0.3:
                 front.append(px)
                 front.append(py)
-            elif z3 > -0.35:
+            elif z3 > -0.3:
                 mid.append(px)
                 mid.append(py)
             else:
@@ -153,11 +204,9 @@ class ParticleOrb(_OrbBase):
         self._back.points = back
         self._mid.points = mid
         self._front.points = front
-        for idx, (c, e) in enumerate(self._glows):
-            d = R * (2.0 + 0.55 * idx) * (1.0 + 0.08 * lvl)
-            e.size = (d, d)
-            e.pos = (cx - d / 2, cy - d / 2)
-            c.a = (0.05 + 0.04 * lvl) / (1 + idx * 0.6)
+        self._back.pointsize = ps * 0.85
+        self._mid.pointsize = ps
+        self._front.pointsize = ps * 1.15
 
 
 class WaterOrb(_OrbBase):
