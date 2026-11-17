@@ -1982,6 +1982,51 @@ public class JarvisOverlayService extends Service {
     }
 
     // ------------------------------------------------------ screen samajhna --
+    /** Camera se dekhkar batana: "jarvis dekho", "ye kya hai dekho", "pichhe kya dikh raha hai". */
+    private boolean handleVision(String text) {
+        final String[] v = JarvisVision.parse(text);
+        if (v == null) {
+            return false;
+        }
+        final String key = prefs().getString("gemini_key", "");
+        if (key.trim().length() == 0) {
+            reply("Camera ke liye Gemini key chahiye. Jarvis app ki Settings me key daaliye.");
+            return true;
+        }
+        if (!JarvisVision.hasCameraPermission(this)) {
+            reply("Camera ki permission nahi hai. Jarvis app me camera button dabakar permission de do.");
+            return true;
+        }
+        final long myGen = gen;
+        setStatus("Dekh raha hoon...", MODE_THINK);
+        if (!JarvisVision.start(this, "front".equals(v[0]), v[1], key)) {
+            reply("Main abhi dekh raha hoon, thoda ruko.");
+            return true;
+        }
+        visionPoll(myGen, 0);
+        return true;
+    }
+
+    private void visionPoll(final long myGen, final int n) {
+        main.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                if (!alive || myGen != gen) {
+                    return;
+                }
+                if (JarvisVision.state() == JarvisVision.WORKING && n < 150) {
+                    visionPoll(myGen, n + 1);
+                    return;
+                }
+                String r = JarvisVision.result();
+                if (r.length() == 0) {
+                    r = "Abhi dekh nahi paya. Dobara try karo.";
+                }
+                reply(r);
+            }
+        }, 300);
+    }
+
     private boolean handleScreen(final String text) {
         if (!JarvisScreen.isAsk(text)) {
             return false;
@@ -2176,6 +2221,9 @@ public class JarvisOverlayService extends Service {
         }
         if (rtStage != 0 && handleRoutineFlow(text)) {
             return;
+        }
+        if (!isDismiss(text) && !flowPending() && handleVision(text)) {
+            return;                               // "jarvis dekho / pichhe kya dikh raha hai": camera se photo
         }
         if (!isDismiss(text) && handleInboxFlow(text)) {
             return;
