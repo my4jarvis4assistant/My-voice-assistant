@@ -1999,7 +1999,7 @@ public class JarvisOverlayService extends Service {
         }
         final long myGen = gen;
         setStatus("Dekh raha hoon...", MODE_THINK);
-        if (!JarvisVision.start(this, "front".equals(v[0]), v[1], key)) {
+        if (!JarvisVision.start(this, "front".equals(v[0]), v[1], key, prefs().getString("ai_model", ""))) {
             reply("Main abhi dekh raha hoon, thoda ruko.");
             return true;
         }
