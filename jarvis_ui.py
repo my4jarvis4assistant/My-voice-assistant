@@ -25,7 +25,7 @@ import threading
 from kivy.animation import Animation
 from kivy.clock import Clock
 from kivy.core.window import Window
-from kivy.graphics import (Color, Ellipse, Line, Rectangle, RenderContext,
+from kivy.graphics import (Color, Ellipse, Line, Mesh, Rectangle, RenderContext,
                            RoundedRectangle, StencilPop, StencilPush,
                            StencilUnUse, StencilUse)
 from kivy.graphics.texture import Texture
@@ -357,12 +357,17 @@ class IconButton(ButtonBehavior, Widget):
                 Color(*PILL)
                 Ellipse(pos=(x - side / 2, y - side / 2), size=(side, side))
                 Color(CYAN[0], CYAN[1], CYAN[2], 0.55 if down else 0.28)
-                Line(circle=(x, y, side / 2 - 0.5), width=dp(1.1))
-                Color(0.80, 0.92, 1.0, 0.7 if down else 1)
-                big = side * 0.265
-                Line(points=gear_points(x, y, big, big * 0.78), close=True,
-                     width=dp(1.5), joint="round")
-                Line(circle=(x, y, big * 0.36), width=dp(1.5))
+                Line(circle=(x, y, side / 2 - 0.5), width=1.2)
+                big = side * 0.30
+                pts = gear_points(x, y, big, big * 0.80, teeth=8)
+                verts = [x, y, 0, 0]
+                for i in range(0, len(pts), 2):
+                    verts += [pts[i], pts[i + 1], 0, 0]
+                verts += [pts[0], pts[1], 0, 0]
+                Color(0.62, 0.88, 1.0, 0.70 if down else 1)
+                Mesh(vertices=verts, indices=list(range(len(verts) // 4)), mode="triangle_fan")
+                Color(*PILL)
+                Ellipse(pos=(x - big * 0.40, y - big * 0.40), size=(big * 0.80, big * 0.80))
             else:
                 Color(CYAN[0], CYAN[1], CYAN[2], 0.75 if down else 1)
                 Ellipse(pos=(x - side / 2, y - side / 2), size=(side, side))
@@ -1016,11 +1021,17 @@ def accent_bar():
 class _CardHead(ButtonBehavior, BoxLayout):
     """Card ki title wali patti: dabane par card khulta/band hota hai."""
 
-    def __init__(self, title, **kwargs):
-        super().__init__(orientation="horizontal", size_hint_y=None, height=dp(46),
-                         spacing=dp(10), **kwargs)
+    def __init__(self, title, sub="", **kwargs):
+        super().__init__(orientation="horizontal", size_hint_y=None, height=dp(58 if sub else 48),
+                         spacing=dp(12), **kwargs)
         self.add_widget(accent_bar())
-        self.add_widget(make_label(title, 16, WHITE, True))
+        if sub:
+            col = BoxLayout(orientation="vertical", spacing=dp(1), padding=[0, dp(6), 0, dp(6)])
+            col.add_widget(make_label(title, 16, WHITE, True))
+            col.add_widget(make_label(sub, 11, MUTED))
+            self.add_widget(col)
+        else:
+            self.add_widget(make_label(title, 16, WHITE, True))
         self._chev = Widget(size_hint=(None, 1), width=dp(22))
         self.add_widget(self._chev)
         self.is_open = False
@@ -1041,13 +1052,13 @@ class _CardHead(ButtonBehavior, BoxLayout):
 class SettingsCard(PlateBox):
     """Settings ka card: title dabane par khulta hai. Purana code card.add_widget() waise hi use karta hai."""
 
-    def __init__(self, title, open_=False, **kwargs):
+    def __init__(self, title, open_=False, sub="", **kwargs):
         super().__init__(orientation="vertical", padding=[dp(16), dp(2), dp(16), dp(2)],
                          spacing=0, size_hint_y=None, **kwargs)
         self._ready = False
         self.toggled_cb = None
         self.bind(minimum_height=self.setter("height"))
-        self.head = _CardHead(title)
+        self.head = _CardHead(title, sub)
         self.body = BoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(10),
                               padding=[0, 0, 0, dp(10)])
         self.body.bind(minimum_height=self._fit)
@@ -1120,8 +1131,31 @@ def patch_ai_brain(mod):
                                                             str(low).strip()))
 
 
+try:                                  # import hote hi patch: koi bhi file ai_brain.split_keys bulaye to chalega
+    import ai_brain as _early_ai
+    patch_ai_brain(_early_ai)
+except Exception as _exc:
+    print("ai_brain early patch skipped:", _exc)
+
+
+_CARD_INFO = {
+    "Voice Selection": ("Voice", "Jarvis ki awaaz chuno"),
+    "ElevenLabs Voices": ("ElevenLabs Voices", "Natural Hindi/English awaazein"),
+    "History": ("History", "Pichhli baatein"),
+    "Wake Word Customization": ("Wake Word", "Jarvis ko bulane ke shabd"),
+    "Response Verbosity": ("Response Style", "Jawab chhota ya detail me"),
+    "Gemini AI (baat-cheet)": ("AI Assistant", "Gemini / Groq keys aur on-off"),
+    "Home Screen Jarvis": ("Home Screen Bubble", "Kisi bhi app ke upar Jarvis"),
+    "Hey Jarvis (kahin se bhi)": ("Always Listening", "Sirf 'Jarvis' bolne par jaagna"),
+    "Messages, Calls aur Auto-reply": ("Messages & Calls", "Inbox, auto-reply, call screening"),
+    "Data Privacy & Security": ("Privacy & Security", "Aapka data sirf is phone me"),
+    "Orb Animation": ("Orb", "Orb ka rang aur animation"),
+}
+
+
 def make_card(title, open_=False):
-    return SettingsCard(title, open_)
+    name, sub = _CARD_INFO.get(title, (title, ""))
+    return SettingsCard(name, open_, sub)
 
 
 # -------------------------------------------------- BOOT GUARD + SAFETY NET --
@@ -1499,7 +1533,7 @@ def build_jarvis_ui(app):
     # ------------------------------------------------------------ SETTINGS --
     sheader = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(44),
                         spacing=dp(14))
-    close_btn = PillButton(text="<  Close", size_hint=(None, None), size=(dp(92), dp(36)),
+    close_btn = PillButton(text="<  Back", size_hint=(None, None), size=(dp(92), dp(36)),
                            pos_hint={"center_y": 0.5})
     sheader.add_widget(close_btn)
     sheader.add_widget(make_label("Settings", 21, WHITE, True))
@@ -2510,7 +2544,7 @@ def build_jarvis_ui(app):
         view["settings"] = True
         chat.focus = False
         orb.paused = True
-        orb_preview.paused = False
+        orb_preview.paused = not orb_card.head.is_open
         show_orb_info()
         refresh_parts()
         refresh_history()
@@ -3001,7 +3035,7 @@ def build_jarvis_ui(app):
         try:
             from jnius import autoclass
             JV = autoclass("org.myassistant.myvoiceassistant.JarvisVision")
-            ok = JV.start(get_activity(), bool(front), str(question), str(app.gemini_key))
+            ok = JV.start(get_activity(), bool(front), str(question), str(app.gemini_key), str(app.ai_model or ""))
         except Exception as exc:
             print("vision start error:", repr(exc))
             set_status("Camera abhi nahi khul paya")
