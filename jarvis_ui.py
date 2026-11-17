@@ -374,6 +374,68 @@ class IconButton(ButtonBehavior, Widget):
                      width=dp(2.2), cap="round", joint="round")
 
 
+class BarButton(ButtonBehavior, Widget):
+    """Neeche ke 3 button: camera, mic (bada, on/off), message. Sab canvas se bane hain."""
+
+    def __init__(self, kind, **kwargs):
+        super().__init__(**kwargs)
+        self.kind = kind
+        self.on = False
+        self.bind(pos=self._draw, size=self._draw, state=self._draw)
+        self._draw()
+
+    def set_on(self, flag):
+        self.on = bool(flag)
+        self._draw()
+
+    def _draw(self, *_):
+        self.canvas.clear()
+        x, y = self.center
+        side = min(self.width, self.height)
+        down = self.state == "down"
+        u = side * 0.17
+        lw = dp(1.7)
+        big = self.kind == "mic"
+        lit = big and self.on
+        with self.canvas:
+            if lit:
+                Color(CYAN[0], CYAN[1], CYAN[2], 0.22)
+                Line(circle=(x, y, side / 2 + dp(2)), width=dp(2))
+                Color(CYAN[0], CYAN[1], CYAN[2], 0.70 if down else 1)
+                fg = DARK_TEXT
+            else:
+                Color(1, 1, 1, 0.10 if not down else 0.22)
+                Ellipse(pos=(x - side / 2, y - side / 2), size=(side, side))
+                Color(1, 1, 1, 0.14)
+                Line(circle=(x, y, side / 2 - 0.5), width=1)
+                fg = (0.80, 0.90, 1.0, 1.0) if not big else MUTED
+            if lit:
+                Ellipse(pos=(x - side / 2, y - side / 2), size=(side, side))
+            Color(*fg)
+            if self.kind == "camera":
+                Line(rounded_rectangle=(x - 1.6 * u, y - 1.05 * u, 3.2 * u, 2.1 * u, 0.45 * u), width=lw)
+                Line(points=[x - 0.7 * u, y + 1.05 * u, x - 0.45 * u, y + 1.55 * u,
+                             x + 0.45 * u, y + 1.55 * u, x + 0.7 * u, y + 1.05 * u], width=lw,
+                     joint="round", cap="round")
+                Line(circle=(x, y, 0.62 * u), width=lw)
+            elif self.kind == "mic":
+                v = u * 1.12
+                Line(rounded_rectangle=(x - 0.62 * v, y - 0.35 * v, 1.24 * v, 2.3 * v, 0.62 * v), width=lw)
+                Line(circle=(x, y + 0.45 * v, 1.25 * v, 90, 270), width=lw, cap="round")
+                Line(points=[x, y - 0.8 * v, x, y - 1.55 * v], width=lw, cap="round")
+                Line(points=[x - 0.7 * v, y - 1.55 * v, x + 0.7 * v, y - 1.55 * v], width=lw, cap="round")
+                if not self.on:
+                    Color(1.0, 0.45, 0.45, 1)
+                    Line(points=[x - 1.5 * v, y + 1.7 * v, x + 1.5 * v, y - 1.7 * v], width=lw + dp(0.4),
+                         cap="round")
+            else:       # chat
+                Line(rounded_rectangle=(x - 1.6 * u, y - 0.75 * u, 3.2 * u, 2.2 * u, 0.55 * u), width=lw)
+                Line(points=[x - 0.95 * u, y - 0.75 * u, x - 1.1 * u, y - 1.55 * u, x - 0.15 * u, y - 0.75 * u],
+                     width=lw, joint="round", cap="round")
+                for dx in (-0.65, 0.0, 0.65):
+                    Ellipse(pos=(x + dx * u - 0.17 * u, y + 0.35 * u - 0.17 * u), size=(0.34 * u, 0.34 * u))
+
+
 class StatusDot(Widget):
     """Hari dot jiske charon taraf halka ring failta rehta hai."""
     pulse = NumericProperty(0)
@@ -1001,12 +1063,18 @@ class SettingsCard(PlateBox):
         return super().add_widget(widget, *args, **kwargs)
 
     def _fit(self, *_):
-        self.body.height = self.body.minimum_height if self.head.is_open else 0
+        self.body.height = self.body.minimum_height
 
     def set_open(self, flag):
-        self.head.is_open = bool(flag)
-        self.body.opacity = 1 if flag else 0
-        self.body.disabled = not flag
+        flag = bool(flag)
+        self.head.is_open = flag
+        # Band card ka andar ka hissa tree se hi hata do: warna uske chhupe bachhe
+        # agle card ke upar aa kar touch kha jaate the.
+        attached = self.body.parent is self
+        if flag and not attached:
+            super().add_widget(self.body)
+        elif not flag and attached:
+            super().remove_widget(self.body)
         self._fit()
         self.head._draw()
         if self.toggled_cb:
@@ -1263,6 +1331,9 @@ def build_jarvis_ui(app):
         actions_mod = None
     ai = {"busy": False, "last": "", "gen": 0, "typed": False, "from_typed": False,
           "relisten": None}
+    cm = {"on": False, "resume": False, "last": "", "typing": None}      # message (text) mode
+    vis = {"mode": False, "busy": False}                                   # camera mode
+    mic = {"on": True}                                                     # in-app sunna on/off
     client = None
     if ai_brain is not None:
         def _remember_model(name):
@@ -1355,7 +1426,7 @@ def build_jarvis_ui(app):
         status.height = max(status.texture_size[1] + dp(8), status_scroll.height)
 
     def fit_status_scroll(*_):
-        status_scroll.height = max(dp(60), home.height * 0.385 - dp(100))
+        status_scroll.height = max(dp(60), home.height * 0.385 - dp(160))
 
     status.bind(texture_size=fit_status)
     status_scroll.bind(size=fit_status)
@@ -1368,19 +1439,24 @@ def build_jarvis_ui(app):
                          "center", height=dp(18))
     caption.size_hint_x = 0.9
     caption.pos_hint = {"center_x": 0.5}
-    caption.y = dp(90)
+    caption.y = dp(122)
     home.add_widget(caption)
 
-    composer = PlateBox(fill=PILL, edge=EDGE, radius=dp(27), orientation="horizontal",
-                        padding=[dp(18), dp(4), dp(6), dp(4)], spacing=dp(4),
-                        size_hint=(0.90, None), height=dp(54),
-                        pos_hint={"center_x": 0.5})
-    composer.y = dp(28)
-    chat = style_input(TextInput(hint_text="Type a message...", font_size=sp(16)))
-    composer.add_widget(chat)
-    send_btn = IconButton("send", size_hint=(None, 1), width=dp(46))
-    composer.add_widget(send_btn)
-    home.add_widget(composer)
+    chat = style_input(TextInput(hint_text="Type a message...", font_size=sp(16)))   # sirf purane code ke liye
+    bar = PlateBox(fill=PILL, edge=EDGE, radius=dp(44), orientation="horizontal",
+                   padding=[dp(30), dp(8), dp(30), dp(8)], spacing=0,
+                   size_hint=(0.90, None), height=dp(88), pos_hint={"center_x": 0.5})
+    bar.y = dp(24)
+    camera_btn = BarButton("camera", size_hint=(None, 1), width=dp(56))
+    mic_btn = BarButton("mic", size_hint=(None, 1), width=dp(72))
+    mic_btn.on = True
+    chat_btn = BarButton("chat", size_hint=(None, 1), width=dp(56))
+    bar.add_widget(camera_btn)
+    bar.add_widget(Widget())
+    bar.add_widget(mic_btn)
+    bar.add_widget(Widget())
+    bar.add_widget(chat_btn)
+    home.add_widget(bar)
 
     # ------------------------------------------------------------ SETTINGS --
     sheader = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(44),
@@ -2368,6 +2444,9 @@ def build_jarvis_ui(app):
         orb_preview.paused = True
 
     def on_key(window, key, *args):
+        if key == 27 and cm["on"]:
+            hide_chat()
+            return True
         if key == 27 and view["settings"]:      # Android back button
             hide_settings()
             return True
@@ -2515,6 +2594,8 @@ def build_jarvis_ui(app):
                 return
             if ai_brain is not None and not app.gemini_key:
                 message += "\n(AI ke liye Settings me Gemini key daaliye)"
+        if cm["on"]:
+            Clock.schedule_once(lambda dt, m=message: chat_incoming(m), 0)
         if original_set_status is not None:
             original_set_status(message)          # main.py ka thread-safe version
         else:
@@ -2522,6 +2603,8 @@ def build_jarvis_ui(app):
         Clock.schedule_once(lambda dt: sync_orb(message), 0)
 
     def speak(text):
+        if cm["on"]:
+            return                                 # message mode: Jarvis sirf likh kar jawab deta hai
         if ai["busy"] and "command clear nahi hui" in str(text).lower():
             return                                 # purana "samajh nahi aaya" jawab band
         unmute_beep()                              # bolne se pehle awaaz wapas
@@ -2593,6 +2676,17 @@ def build_jarvis_ui(app):
         Clock.schedule_once(lambda dt: unmute_beep(), 0)
         ai["typed"] = False
         Clock.schedule_once(lambda dt: add_history(cmd), 0)
+        if vis["mode"] and re.search(r"\b(band|cancel|rehne do|rahne do|nahi chahiye)\b", cmd.lower()):
+            vis["mode"] = False
+            Clock.schedule_once(lambda dt: set_status("Camera band kar diya"), 0)
+            return
+        vp = vision_parse(cmd)
+        if vis["mode"] or vp:
+            front = bool(vp and vp[0] == "front") or bool(re.search(r"selfie|front|mujhe dekho", cmd.lower()))
+            question = cmd if not vp else vp[1]
+            vis["mode"] = False
+            Clock.schedule_once(lambda dt: start_vision(front, question), 0)
+            return
         if ai_brain is not None:
             quick = ai_brain.creator_reply(cmd)
             if quick:                                   # turant jawab, internet ki zaroorat nahi
@@ -2666,6 +2760,8 @@ def build_jarvis_ui(app):
     original_listen = getattr(app, "listen", None)
     if original_listen is not None:
         def listen(*args):
+            if not mic["on"] or cm["on"]:
+                return None                       # mic band (ya message mode): sunna nahi hai
             if ai["busy"]:
                 return None                       # AI jawab de raha hai: abhi mic mat kholo
             if tts_busy():                        # Jarvis bol raha hai: khatam hone ka intezaar
@@ -2687,6 +2783,8 @@ def build_jarvis_ui(app):
     original_listen_again = getattr(app, "listen_again", None)
     if original_listen_again is not None:
         def listen_again(*args):
+            if not mic["on"] or cm["on"]:
+                return None
             pause_wake()
             mute_beep()
             return original_listen_again(*args)
@@ -2710,9 +2808,10 @@ def build_jarvis_ui(app):
             set_status("Message could not be processed")
 
     chat.bind(on_text_validate=send_message)
-    send_btn.bind(on_release=send_message)
 
     def start_listening(*_):
+        mic["on"] = True
+        mic_btn.set_on(True)
         ai["gen"] += 1                      # chal raha AI jawab radd
         ai["busy"] = False
         cancel_relisten()
@@ -2738,6 +2837,259 @@ def build_jarvis_ui(app):
             print("Orb tap error:", exc)
 
     orb.bind(on_release=start_listening)
+
+    # ------------------------------------------------------------- MIC ----
+    def stop_mic(quiet=False):
+        mic["on"] = False
+        mic_btn.set_on(False)
+        cancel_relisten()
+        ai["listen_wait"] = False
+        try:
+            rec = getattr(app, "speech_recognizer", None)
+            if rec is not None:
+                app.run_on_android_thread(lambda: rec.cancel())      # bina result diye sunna band
+        except Exception as exc:
+            print("mic stop error:", exc)
+        orb.mode = "idle"                                            # orb ab sirf left-right ghoomega
+        if not quiet:
+            status.text = "Mic band hai. Sunne ke liye mic dabao"
+            status.color = MUTED
+
+    def on_mic(*_):
+        if mic["on"]:
+            stop_mic()
+        else:
+            start_listening()
+
+    mic_btn.bind(on_release=on_mic)
+
+    # ----------------------------------------------------------- CAMERA ----
+    def vision_parse(text):
+        """\"jarvis dekho\", \"pichhe kya dikh raha hai\" jaisi baat pehchano (Java wale jaisa hi)."""
+        low = " " + re.sub(r"\s+", " ", re.sub(r"[^\w ]", " ", str(text).lower())).strip() + " "
+        if len(low.strip()) < 4:
+            return None
+        for w in (" screen ", " skreen ", " display ", " reel", " video", " movie", " film", " series", " song ",
+                  " gaana", " gana ", " youtube", " instagram", " whatsapp", " status ", " story ", " message",
+                  " msg ", " notification", " scroll", " click", " type "):
+            if w in low:
+                return None
+        cam = " camera" in low or " kemra" in low or " selfie" in low
+        dikh = any(k in low for k in ("kya dikh", "kya dikhai", "kya nazar", "kya najar", "what do you see",
+                                      "look at this", "kya dekh rahe", "kya dekh raha"))
+        dek = any(k in low for k in (" dekho", " dekh ", " dekhna ", " dekhiye", " see ")) and (
+            any(k in low for k in (" ye ", " yeh ", " is ", " isko ", " ise ", " yaha", " yahan", " samne",
+                                   " saamne", " piche", " pichhe", " peeche", " kya ", " bata", " haath", " mujhe"))
+            or low.endswith(" dekho ") or low.endswith(" dekh "))
+        if not (cam or dikh or dek):
+            return None
+        front = any(k in low for k in ("selfie", "front", "mujhe dekho", "meri taraf", "mera chehra", "main kaisa",
+                                       "mai kaisa", "me kaisa", "mujhe dikh"))
+        q = re.sub(r"(?i)^(hey |hello |hi )?jarvis[ ,]*", "", str(text).strip()).strip()
+        return ("front" if front else "back", q or "Jo dikh raha hai wo batao")
+
+    def camera_permission():
+        try:
+            from android.permissions import check_permission, request_permissions, Permission
+            if not check_permission(Permission.CAMERA):
+                request_permissions([Permission.CAMERA])
+                return False
+        except Exception as exc:
+            print("camera permission check skipped:", exc)
+        return True
+
+    def start_vision(front, question):
+        if vis["busy"]:
+            toast("Main abhi dekh raha hoon, thoda ruko")
+            return
+        if not str(app.gemini_key or "").strip():
+            set_status("Camera ke liye Settings me Gemini key daaliye")
+            return
+        if not camera_permission():
+            set_status("Camera ki permission de do, phir dobara camera dabao")
+            return
+        try:
+            from jnius import autoclass
+            JV = autoclass("org.myassistant.myvoiceassistant.JarvisVision")
+            ok = JV.start(get_activity(), bool(front), str(question), str(app.gemini_key))
+        except Exception as exc:
+            print("vision start error:", repr(exc))
+            set_status("Camera abhi nahi khul paya")
+            return
+        if not ok:
+            toast("Main abhi dekh raha hoon, thoda ruko")
+            return
+        vis["busy"] = True
+        ai["busy"] = True                       # dekhte waqt mic mat kholo
+        ai["gen"] += 1
+        gen = ai["gen"]
+        ai["from_typed"] = bool(cm["on"])
+        cancel_relisten()
+        try:
+            rec = getattr(app, "speech_recognizer", None)
+            if rec is not None:
+                app.run_on_android_thread(lambda: rec.cancel())
+        except Exception:
+            pass
+        orb.mode = "thinking"
+        status.text = "Dekh raha hoon..."
+        status.color = MUTED
+        t0 = Clock.get_time()
+
+        def poll(dt):
+            try:
+                st = int(JV.state())
+            except Exception:
+                st = 3
+            if st == 1 and Clock.get_time() - t0 < 60:
+                return True
+            vis["busy"] = False
+            try:
+                res = str(JV.result())
+            except Exception:
+                res = ""
+            if not res:
+                res = "Abhi dekh nahi paya. Dobara try karo."
+            deliver(gen, st == 2, res)
+            return False
+
+        Clock.schedule_interval(poll, 0.3)
+
+    def on_camera(*_):
+        if vis["mode"]:
+            vis["mode"] = False
+            toast("Camera band")
+            return
+        if not camera_permission():
+            toast("Camera ki permission de do, phir dobara camera dabao")
+            return
+        if not str(app.gemini_key or "").strip():
+            toast("Camera ke liye Settings me Gemini key daaliye")
+            return
+        vis["mode"] = True
+        toast("Camera on: ab poochho, jaise 'ye kya hai'")
+        if cm["on"]:
+            return
+        start_listening()
+
+    camera_btn.bind(on_release=on_camera)
+
+    # ------------------------------------------------- MESSAGE (CHAT) PAGE --
+    chat_page = BoxLayout(orientation="vertical", padding=[dp(16), dp(12), dp(16), dp(10)], spacing=dp(10))
+    cheader = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(44), spacing=dp(14))
+    cclose = PillButton(text="<  Back", size_hint=(None, None), size=(dp(92), dp(36)),
+                        pos_hint={"center_y": 0.5})
+    cheader.add_widget(cclose)
+    cheader.add_widget(make_label("Chat with JARVIS", 19, WHITE, True))
+    chat_page.add_widget(cheader)
+    chat_scroll = ScrollView(do_scroll_x=False, bar_width=dp(2))
+    chat_list = BoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(10),
+                          padding=[0, dp(6), 0, dp(6)])
+    chat_list.bind(minimum_height=chat_list.setter("height"))
+    chat_scroll.add_widget(chat_list)
+    chat_page.add_widget(chat_scroll)
+    typing_lbl = make_label("", 12, MUTED, height=dp(20))
+    chat_page.add_widget(typing_lbl)
+    cbar = PlateBox(fill=PILL, edge=EDGE, radius=dp(27), orientation="horizontal",
+                    padding=[dp(18), dp(4), dp(6), dp(4)], spacing=dp(4), size_hint_y=None, height=dp(54))
+    chat_in = style_input(TextInput(hint_text="Message likho...", font_size=sp(16)))
+    chat_send_btn = IconButton("send", size_hint=(None, 1), width=dp(46))
+    cbar.add_widget(chat_in)
+    cbar.add_widget(chat_send_btn)
+    chat_page.add_widget(cbar)
+
+    def add_chat_bubble(text, mine):
+        text = str(text).strip()
+        if not text:
+            return
+        maxw = max(dp(200), Window.width * 0.80 - dp(60))
+        lab = Label(text=text, font_size=sp(15), color=WHITE, size_hint=(None, None),
+                    halign="left", valign="top")
+        lab.text_size = (maxw, None)
+        lab.texture_update()
+        lab.size = lab.texture_size
+        plate = PlateBox(fill=(0.09, 0.27, 0.42, 1) if mine else PANEL,
+                         edge=CYAN_60 if mine else EDGE, radius=dp(16), orientation="vertical",
+                         padding=[dp(14), dp(10), dp(14), dp(10)], size_hint=(None, None))
+        plate.add_widget(lab)
+        plate.size = (lab.width + dp(28), lab.height + dp(20))
+        row = BoxLayout(orientation="horizontal", size_hint_y=None, height=plate.height)
+        if mine:
+            row.add_widget(Widget())
+            row.add_widget(plate)
+        else:
+            row.add_widget(plate)
+            row.add_widget(Widget())
+        chat_list.add_widget(row)
+        Clock.schedule_once(lambda dt: setattr(chat_scroll, "scroll_y", 0), 0.08)
+
+    def chat_incoming(message):
+        """set_status ka jo bhi jawab/message aaye, chat me Jarvis ke bubble ki tarah dikhao."""
+        m = str(message).strip()
+        low = m.lower()
+        if (not m or low.startswith("you:") or low.startswith("listening") or low.startswith("soch raha")
+                or low.startswith("dekh raha") or low.startswith("mic band")):
+            return
+        if m == cm["last"]:
+            return
+        cm["last"] = m
+        typing_lbl.text = ""
+        add_chat_bubble(m, False)
+
+    def chat_send(*_):
+        msg = chat_in.text.strip()
+        if not msg:
+            return
+        chat_in.text = ""
+        add_chat_bubble(msg, True)
+        cm["last"] = ""
+        typing_lbl.text = "JARVIS likh raha hai..."
+        Clock.schedule_once(lambda dt: setattr(typing_lbl, "text", ""), 25)
+        ai["typed"] = True
+        try:
+            app.process_command(msg)
+        except Exception as exc:
+            print("Chat message error:", exc)
+            typing_lbl.text = ""
+            add_chat_bubble("Ye message process nahi ho paya", False)
+
+    chat_in.bind(on_text_validate=chat_send)
+    chat_send_btn.bind(on_release=chat_send)
+
+    def show_chat(*_):
+        if cm["on"]:
+            return
+        if view["settings"]:
+            return
+        cm["on"] = True
+        cm["resume"] = bool(mic["on"])
+        chat.focus = False
+        stop_mic(quiet=True)
+        orb.paused = True
+        root.remove_widget(home)
+        chat_page.opacity = 0
+        root.add_widget(chat_page, index=len(root.children))
+        Animation(opacity=1, d=0.18).start(chat_page)
+        if not chat_list.children:
+            add_chat_bubble("Namaste! Mujhse yahan likh kar baat karo. Main bhi sirf likh kar jawab dunga, "
+                            "awaaz nahi nikalegi.", False)
+
+    def hide_chat(*_):
+        if not cm["on"]:
+            return
+        cm["on"] = False
+        chat_in.focus = False
+        typing_lbl.text = ""
+        root.remove_widget(chat_page)
+        root.add_widget(home, index=len(root.children))
+        orb.paused = False
+        if cm["resume"]:
+            Clock.schedule_once(lambda dt: start_listening(), 0.3)
+        else:
+            orb.mode = "idle"
+
+    chat_btn.bind(on_release=show_chat)
+    cclose.bind(on_release=hide_chat)
 
     # Home screen button / shortcut se app khule to turant sunna shuru
     def talk_from_shortcut(*_):
