@@ -356,9 +356,9 @@ class IconButton(ButtonBehavior, Widget):
             if self.kind == "gear":
                 Color(*PILL)
                 Ellipse(pos=(x - side / 2, y - side / 2), size=(side, side))
-                Color(1, 1, 1, 0.14 if not down else 0.30)
-                Line(circle=(x, y, side / 2 - 0.5), width=1)
-                Color(0.82, 0.92, 0.92, 0.65 if down else 1)
+                Color(CYAN[0], CYAN[1], CYAN[2], 0.55 if down else 0.28)
+                Line(circle=(x, y, side / 2 - 0.5), width=dp(1.1))
+                Color(0.80, 0.92, 1.0, 0.7 if down else 1)
                 big = side * 0.265
                 Line(points=gear_points(x, y, big, big * 0.78), close=True,
                      width=dp(1.5), joint="round")
@@ -1084,6 +1084,42 @@ class SettingsCard(PlateBox):
                 pass
 
 
+def _split_keys(raw):
+    out = []
+    for k in re.split(r"[,;\s]+", str(raw or "")):
+        k = k.strip()
+        if len(k) >= 8 and k not in out:
+            out.append(k)
+    return out
+
+
+def _is_compat_key(k):
+    return k.startswith("gsk_") or k.startswith("csk-")
+
+
+def patch_ai_brain(mod):
+    """Purani ai_brain.py me jo helper na ho, wo yahin se de do (taaki 'no attribute' error na aaye)."""
+    if not hasattr(mod, "split_keys"):
+        mod.split_keys = _split_keys
+    if not hasattr(mod, "gemini_keys"):
+        mod.gemini_keys = lambda raw: [k for k in _split_keys(raw) if not _is_compat_key(k)]
+    if not hasattr(mod, "compat_keys"):
+        mod.compat_keys = lambda raw: [k for k in _split_keys(raw) if _is_compat_key(k)]
+    if not hasattr(mod, "first_gemini_key"):
+        mod.first_gemini_key = lambda raw: ([k for k in _split_keys(raw) if not _is_compat_key(k)] or [""])[0]
+    if not hasattr(mod, "creator_reply"):
+        def creator_reply(text):
+            low = str(text).lower()
+            if re.search(r"(kisne|kisne ne|kaun).*(banaya|banai|bnaya|create)|who (made|created|built) you|"
+                         r"tumhara creator|tumhe kisne", low):
+                return "Mujhe Shakshm Jha ne banaya hai."
+            return None
+        mod.creator_reply = creator_reply
+    if not hasattr(mod, "is_simple_math"):
+        mod.is_simple_math = lambda low: bool(re.fullmatch(r"[\d\s+\-*/x%().,^]+|(what is|kitna hota hai)?[\d\s+\-*/x%().,^]+",
+                                                            str(low).strip()))
+
+
 def make_card(title, open_=False):
     return SettingsCard(title, open_)
 
@@ -1324,6 +1360,8 @@ def build_jarvis_ui(app):
     except Exception as exc:                    # AI file na mile to baaki app chalta rahe
         print("ai_brain import error:", exc)
         ai_brain = None
+    if ai_brain is not None:
+        patch_ai_brain(ai_brain)
     try:
         import jarvis_actions as actions_mod
     except Exception as exc:
@@ -1341,7 +1379,7 @@ def build_jarvis_ui(app):
             _save_state(app)
 
         client = ai_brain.GeminiClient(
-            get_key=lambda: app.gemini_key, get_verbosity=lambda: app.verbosity,
+            get_key=lambda: ai_brain.first_gemini_key(app.gemini_key), get_verbosity=lambda: app.verbosity,
             get_model=lambda: app.ai_model or None, set_model=_remember_model)
     orb_level = boot_level(app)       # 0 = GPU, 1 = texture, 2 = simple
 
@@ -1464,7 +1502,15 @@ def build_jarvis_ui(app):
     close_btn = PillButton(text="<  Close", size_hint=(None, None), size=(dp(92), dp(36)),
                            pos_hint={"center_y": 0.5})
     sheader.add_widget(close_btn)
-    sheader.add_widget(make_label("JARVIS Settings", 19, WHITE, True))
+    sheader.add_widget(make_label("Settings", 21, WHITE, True))
+    try:
+        _slogo = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logo.png")
+        if os.path.exists(_slogo):
+            from kivy.uix.image import Image as _SImg
+            sheader.add_widget(_SImg(source=_slogo, size_hint=(None, None), size=(dp(30), dp(30)),
+                                     pos_hint={"center_y": 0.5}))
+    except Exception:
+        pass
     settings_page.add_widget(sheader)
 
     scroll = ScrollView(do_scroll_x=False, bar_width=dp(2), scroll_type=["bars", "content"])
@@ -1818,7 +1864,7 @@ def build_jarvis_ui(app):
     content.add_widget(verb_card)
 
     # 4b) Gemini AI
-    ai_card = make_card("Gemini AI (baat-cheet)")
+    ai_card = make_card("Gemini AI (baat-cheet)", True)
     ai_info = make_label("", 12, MUTED, height=dp(64), lines=4)
     ai_card.add_widget(ai_info)
 
@@ -1848,6 +1894,37 @@ def build_jarvis_ui(app):
                          pos_hint={"center_y": 0.5})
     key_row.add_widget(key_btn)
     ai_card.add_widget(key_row)
+    key_tools = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(36), spacing=dp(10))
+    key_paste = PillButton(text="Paste", size_hint=(1, None), height=dp(34), fsize=12)
+    key_clear = PillButton(text="Clear", size_hint=(1, None), height=dp(34), fsize=12)
+    key_show = PillButton(text="Show", size_hint=(1, None), height=dp(34), fsize=12)
+    for _b in (key_paste, key_clear, key_show):
+        key_tools.add_widget(_b)
+    ai_card.add_widget(key_tools)
+
+    def key_do_paste(*_):
+        try:
+            from kivy.core.clipboard import Clipboard
+            txt = (Clipboard.paste() or "").strip()
+        except Exception:
+            txt = ""
+        if txt:
+            key_input.text = txt
+            toast("Key paste ho gayi, ab Save dabaiye")
+        else:
+            toast("Clipboard khali hai")
+
+    def key_do_clear(*_):
+        key_input.text = ""
+        key_input.focus = False
+
+    def key_do_show(*_):
+        key_input.password = not key_input.password
+        key_show.text = "Show" if key_input.password else "Hide"
+
+    key_paste.bind(on_release=key_do_paste)
+    key_clear.bind(on_release=key_do_clear)
+    key_show.bind(on_release=key_do_show)
 
     def save_key(*_):
         _new = key_input.text.strip()
@@ -2354,7 +2431,7 @@ def build_jarvis_ui(app):
     content.add_widget(privacy_card)
 
     # 6b) Orb animation
-    orb_card = make_card("Orb Animation", True)
+    orb_card = make_card("Orb Animation")
 
     orb_preview = OrbHost(orb_level, size_hint=(1, None), height=dp(150))
     orb_preview.mode = "listening"
@@ -2410,6 +2487,19 @@ def build_jarvis_ui(app):
     orb_card.add_widget(orb_info)
     show_orb_info()
     content.add_widget(orb_card)
+
+    # Cards ko sections me baanto (andar ka code waisa hi, sirf kram aur heading badli)
+    content.clear_widgets()
+    for _title, _cards in (
+            ("AI AUR AWAAZ", [ai_card, voice_card, eleven_card, verb_card]),
+            ("JARVIS KA KAAM", [wake_ai_card, home_card, wake_card, inbox_card]),
+            ("DIKHAWA", [orb_card]),
+            ("DATA AUR SECURITY", [history_card, privacy_card])):
+        _lab = make_label(_title, 11, FAINT, True, height=dp(26))
+        _lab.padding = [dp(6), dp(6)]
+        content.add_widget(_lab)
+        for _c in _cards:
+            content.add_widget(_c)
 
     # ---------------------------------------------------------- NAVIGATION --
     view = {"settings": False}
