@@ -31,7 +31,8 @@ import java.util.concurrent.TimeUnit;
 public class JarvisVision {
     public static final int IDLE = 0, WORKING = 1, DONE = 2, ERROR = 3;
     private static final String BASE = "https://generativelanguage.googleapis.com/v1beta";
-    private static final String[] MODELS = {"gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash"};
+    private static final String[] MODELS = {"gemini-2.5-flash", "gemini-3-flash-preview", "gemini-2.5-flash-lite",
+            "gemini-2.0-flash", "gemini-flash-latest"};
     private static volatile int state = IDLE;
     private static volatile String result = "";
     private static volatile boolean busy = false;
@@ -59,7 +60,7 @@ public class JarvisVision {
 
     /** Photo lo + Gemini se poochho. Jawab ke liye state()/result() dekho. */
     public static synchronized boolean start(final Context ctx, final boolean front, final String question,
-                                             final String rawKeys) {
+                                             final String rawKeys, final String prefModel) {
         if (busy) {
             return false;
         }
@@ -71,7 +72,7 @@ public class JarvisVision {
             public void run() {
                 try {
                     byte[] jpg = capture(front);
-                    String ans = askGemini(rawKeys, jpg, question);
+                    String ans = askGemini(rawKeys, jpg, question, prefModel);
                     if (ans == null || ans.trim().length() == 0) {
                         result = "Photo li par abhi jawab nahi bana paya. Internet ya Gemini limit check karo.";
                         state = ERROR;
@@ -207,7 +208,7 @@ public class JarvisVision {
     }
 
     // ------------------------------------------------------------------ gemini --
-    private static String askGemini(String rawKeys, byte[] jpg, String question) throws Exception {
+    private static String askGemini(String rawKeys, byte[] jpg, String question, String prefModel) throws Exception {
         List<String> keys = new ArrayList<String>();
         for (String k : JarvisBrain.splitKeys(rawKeys)) {
             if (!k.startsWith("gsk_") && !k.startsWith("csk-")) {
@@ -228,9 +229,25 @@ public class JarvisVision {
         body.put("contents", new JSONArray().put(new JSONObject().put("role", "user").put("parts", parts)));
         body.put("generationConfig", new JSONObject().put("maxOutputTokens", 500).put("temperature", 0.4));
         String json = body.toString();
+        List<String> models = new ArrayList<String>();
+        if (prefModel != null && prefModel.trim().length() > 0) {
+            models.add(prefModel.trim());
+        }
+        for (String m : MODELS) {
+            if (!models.contains(m)) {
+                models.add(m);
+            }
+        }
+        StringBuilder errs = new StringBuilder();
         String lastErr = "";
-        for (String model : MODELS) {
+        boolean discovered = false;
+        for (int mi = 0; mi < models.size(); mi++) {
+            String model = models.get(mi);
+            boolean skipModel = false;
             for (String key : keys) {
+                if (skipModel) {
+                    break;
+                }
                 try {
                     HttpURLConnection c = (HttpURLConnection) new URL(BASE + "/models/" + model
                             + ":generateContent").openConnection();
@@ -257,7 +274,13 @@ public class JarvisVision {
                             br.close();
                         }
                         if (code >= 400) {
-                            lastErr = "HTTP " + code;
+                            lastErr = model + " HTTP " + code;
+                            if (errs.length() < 160) {
+                                errs.append(model).append(':').append(code).append(' ');
+                            }
+                            if (code == 404 || code == 400) {
+                                skipModel = true;       // is model me photo nahi chalti / naam galat: agla model
+                            }
                             continue;
                         }
                         JSONObject o = new JSONObject(sb.toString());
@@ -285,7 +308,94 @@ public class JarvisVision {
                 }
             }
         }
+        // Sab model 404 the: Google se is key ke chalne wale flash models ki list mangao aur wo try karo.
+        try {
+            for (String key : keys) {
+                HttpURLConnection c = (HttpURLConnection) new URL(BASE + "/models?pageSize=100").openConnection();
+                c.setConnectTimeout(10000);
+                c.setReadTimeout(15000);
+                c.setRequestProperty("x-goog-api-key", key.trim());
+                if (c.getResponseCode() >= 400) {
+                    continue;
+                }
+                BufferedReader br = new BufferedReader(new InputStreamReader(c.getInputStream(), "UTF-8"));
+                StringBuilder sb = new StringBuilder();
+                String line;
+                while ((line = br.readLine()) != null) {
+                    sb.append(line);
+                }
+                br.close();
+                JSONArray arr = new JSONObject(sb.toString()).optJSONArray("models");
+                List<String> found = new ArrayList<String>();
+                if (arr != null) {
+                    for (int i = 0; i < arr.length(); i++) {
+                        JSONObject mo = arr.getJSONObject(i);
+                        String nm = mo.optString("name", "").replace("models/", "");
+                        String meths = String.valueOf(mo.optJSONArray("supportedGenerationMethods"));
+                        if (nm.contains("flash") && meths.contains("generateContent") && !models.contains(nm)
+                                && !nm.contains("tts") && !nm.contains("image") && !nm.contains("live")
+                                && !nm.contains("audio") && !nm.contains("thinking")) {
+                            found.add(nm);
+                        }
+                    }
+                }
+                for (int fi = 0; fi < found.size() && fi < 4; fi++) {
+                    String out = tryModel(found.get(fi), key, json);
+                    if (out != null) {
+                        return out;
+                    }
+                }
+                break;
+            }
+        } catch (Exception e) {
+            errs.append("list:").append(e.getMessage());
+        }
+        lastErr = errs.toString().trim();
         throw new Exception("Gemini se jawab nahi mila (" + lastErr + ")");
+    }
+
+    private static String tryModel(String model, String key, String json) {
+        try {
+            HttpURLConnection c = (HttpURLConnection) new URL(BASE + "/models/" + model + ":generateContent").openConnection();
+            try {
+                c.setRequestMethod("POST");
+                c.setConnectTimeout(15000);
+                c.setReadTimeout(45000);
+                c.setDoOutput(true);
+                c.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+                c.setRequestProperty("x-goog-api-key", key.trim());
+                OutputStream os = c.getOutputStream();
+                os.write(json.getBytes("UTF-8"));
+                os.close();
+                if (c.getResponseCode() >= 400) {
+                    return null;
+                }
+                BufferedReader br = new BufferedReader(new InputStreamReader(c.getInputStream(), "UTF-8"));
+                StringBuilder sb = new StringBuilder();
+                String line;
+                while ((line = br.readLine()) != null) {
+                    sb.append(line).append('\n');
+                }
+                br.close();
+                JSONArray cands = new JSONObject(sb.toString()).optJSONArray("candidates");
+                if (cands == null || cands.length() == 0) {
+                    return null;
+                }
+                JSONArray ps = cands.getJSONObject(0).getJSONObject("content").optJSONArray("parts");
+                StringBuilder t = new StringBuilder();
+                if (ps != null) {
+                    for (int i = 0; i < ps.length(); i++) {
+                        t.append(ps.getJSONObject(i).optString("text", ""));
+                    }
+                }
+                String out = JarvisBrain.clean(t.toString());
+                return out.length() > 0 ? out : null;
+            } finally {
+                c.disconnect();
+            }
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     // ------------------------------------------------------------------ words --
