@@ -1141,6 +1141,7 @@ except Exception as _exc:
 _CARD_INFO = {
     "Voice Selection": ("Voice", "Jarvis ki awaaz chuno"),
     "ElevenLabs Voices": ("ElevenLabs Voices", "Natural Hindi/English awaazein"),
+    "MiniMax Voice": ("MiniMax Voice", "Natural awaaz (MiniMax key + Voice ID)"),
     "History": ("History", "Pichhli baatein"),
     "Wake Word Customization": ("Wake Word", "Jarvis ko bulane ke shabd"),
     "Response Verbosity": ("Response Style", "Jawab chhota ya detail me"),
@@ -1270,6 +1271,30 @@ def eleven_voice_id(app):
     return ""
 
 
+MM_SLOTS = 3
+
+
+def minimax_voice_id(app):
+    """Chuni hui awaaz MiniMax ki ho to uski Voice ID, warna ''."""
+    sel = getattr(app, "selected_voice", "")
+    for name, vid in getattr(app, "minimax_voices", []):
+        if name == sel and vid:
+            return vid
+    return ""
+
+
+def _clean_mm_slots(raw):
+    out = []
+    for item in list(raw or [])[:MM_SLOTS]:
+        try:
+            out.append([str(item[0]).strip(), str(item[1]).strip()])
+        except Exception:
+            out.append(["", ""])
+    while len(out) < MM_SLOTS:
+        out.append(["", ""])
+    return out
+
+
 def _clean_slots(raw):
     out = []
     for item in list(raw or [])[:ELEVEN_SLOTS]:
@@ -1298,6 +1323,10 @@ def _sync_prefs(app):
         ed.putFloat("rate", float(rate))
         ed.putString("eleven_key", str(getattr(app, "eleven_key", "") or ""))
         ed.putString("eleven_voice_id", eleven_voice_id(app))
+        _mv = minimax_voice_id(app)
+        ed.putString("minimax_key", str(getattr(app, "minimax_key", "") or ""))
+        ed.putString("minimax_voice_id", _mv)
+        ed.putString("tts_provider", "minimax" if (_mv and getattr(app, "minimax_key", "")) else "")
         ed.putString("orb_style", str(ORB_STYLE[0] or "blue"))     # home screen bubble yahi orb dikhata hai
         ed.apply()
     except Exception as exc:
@@ -1321,6 +1350,8 @@ def _save_state(app):
                 "ai_model": getattr(app, "ai_model", ""),
                 "eleven_key": getattr(app, "eleven_key", ""),
                 "eleven_slots": getattr(app, "eleven_slots", []),
+                "minimax_key": getattr(app, "minimax_key", ""),
+                "minimax_slots": getattr(app, "minimax_slots", []),
                 "wake_enabled": getattr(app, "wake_enabled", False),
                 "orb_style": ORB_STYLE[0],
             }, fh, ensure_ascii=False)
@@ -1354,6 +1385,9 @@ def build_jarvis_ui(app):
     app.selected_voice = state.get("voice", "Male Alpha")
     app.eleven_key = str(state.get("eleven_key", "") or "").strip()
     app.eleven_slots = _clean_slots(state.get("eleven_slots"))
+    app.minimax_key = str(state.get("minimax_key", "") or "").strip()
+    app.minimax_slots = _clean_mm_slots(state.get("minimax_slots"))
+    app.minimax_voices = [[n, v] for n, v in app.minimax_slots if n and v]
     try:
         import jarvis_secrets as _sec          # build ke waqt GitHub Secrets se banti hai (repo me nahi)
     except Exception:
@@ -1378,7 +1412,8 @@ def build_jarvis_ui(app):
         except Exception as exc:
             print("secrets seed error:", exc)
     app.eleven_voices = [[n, v] for n, v in app.eleven_slots if n and v]
-    if app.selected_voice not in VOICES and app.selected_voice not in [n for n, _v in app.eleven_voices]:
+    if app.selected_voice not in VOICES and app.selected_voice not in [n for n, _v in app.eleven_voices] \
+            and app.selected_voice not in [n for n, _v in app.minimax_voices]:
         app.selected_voice = "Male Alpha"
     app.ai_enabled = bool(state.get("ai_enabled", True))
     app.ai_model = str(state.get("ai_model", "") or "")
@@ -1572,6 +1607,9 @@ def build_jarvis_ui(app):
     eleven_box = BoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(4))
     eleven_box.bind(minimum_height=eleven_box.setter("height"))
     voice_card.add_widget(eleven_box)
+    mm_box = BoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(4))
+    mm_box.bind(minimum_height=mm_box.setter("height"))
+    voice_card.add_widget(mm_box)
     content.add_widget(voice_card)
 
     def apply_voice(*_):
@@ -1629,6 +1667,18 @@ def build_jarvis_ui(app):
         except Exception:
             cache_dir = getattr(app, "user_data_dir", "") or "."
         speaker = eleven_mod.ElevenSpeaker(cache_dir)
+    try:
+        import minimax as minimax_mod
+    except Exception as exc:
+        print("minimax import error:", exc)
+        minimax_mod = None
+    mm_speaker = None
+    if minimax_mod is not None:
+        try:
+            _mm_cache = str(app.activity.getCacheDir().getAbsolutePath())
+        except Exception:
+            _mm_cache = getattr(app, "user_data_dir", "") or "."
+        mm_speaker = minimax_mod.MiniMaxSpeaker(_mm_cache)
 
     ELEVEN_TINTS = [(0.55, 0.35, 0.85, 1), (0.85, 0.55, 0.20, 1), (0.20, 0.65, 0.70, 1),
                     (0.80, 0.30, 0.35, 1), (0.35, 0.60, 0.30, 1), (0.30, 0.45, 0.80, 1),
@@ -1717,7 +1767,8 @@ def build_jarvis_ui(app):
         names = set(VOICES.keys())
         app.eleven_voices = [[n, v] for n, v in app.eleven_slots if n and v and n not in names]
         if app.selected_voice not in VOICES and \
-                app.selected_voice not in [n for n, _v in app.eleven_voices]:
+                app.selected_voice not in [n for n, _v in app.eleven_voices] and \
+                app.selected_voice not in [n for n, _v in getattr(app, "minimax_voices", [])]:
             app.selected_voice = "Male Alpha"
             for c in chips:
                 c.set_selected(c.name == app.selected_voice)
@@ -1818,6 +1869,152 @@ def build_jarvis_ui(app):
     content.add_widget(eleven_card)
     rebuild_eleven_chips()
     refresh_eleven_info()
+
+    # 1c) MiniMax awaazein (key + 3 Voice ID)
+    mm_chips = []
+
+    def rebuild_mm_chips():
+        for c in mm_chips:
+            if c in chips:
+                chips.remove(c)
+        del mm_chips[:]
+        mm_box.clear_widgets()
+        voices = list(app.minimax_voices)
+        for start in range(0, len(voices), 4):
+            row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(96), spacing=dp(4))
+            for idx in range(start, min(start + 4, len(voices))):
+                name = voices[idx][0]
+                chip = VoiceChip(name, name[:1].upper() or "M", ELEVEN_TINTS[(idx + 3) % len(ELEVEN_TINTS)])
+                chip.set_selected(name == app.selected_voice)
+                chip.bind(on_release=choose_voice)
+                chips.append(chip)
+                mm_chips.append(chip)
+                row.add_widget(chip)
+            for _ in range(4 - min(4, len(voices) - start)):
+                row.add_widget(Widget())
+            mm_box.add_widget(row)
+
+    mm_card = make_card("MiniMax Voice")
+    mm_info = make_label("", 12, MUTED, height=dp(48), lines=3)
+    mm_card.add_widget(mm_info)
+
+    def refresh_mm_info():
+        if minimax_mod is None:
+            mm_info.text = "minimax.py file nahi mili - repo root me daaliye."
+        elif not app.minimax_key:
+            mm_info.text = "Key set nahi hai. MiniMax API key paste karke Save dabaiye."
+        elif not app.minimax_voices:
+            mm_info.text = "Key saved. Neeche naam + Voice ID bharkar 'Voices save karo' dabaiye."
+        else:
+            mm_info.text = (str(len(app.minimax_voices)) + " voice taiyaar. Upar Voice Selection me chuniye. "
+                            "Galti aaye to phone ki awaaz se bolega.")
+
+    mk_row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(44), spacing=dp(10))
+    mk_wrap = PlateBox(fill=INPUT, edge=EDGE, radius=dp(12), orientation="horizontal",
+                       padding=[dp(10), 0, dp(10), 0])
+    mk_input = style_input(TextInput(text="", hint_text="MiniMax API key", font_size=sp(14), password=True))
+    mk_wrap.add_widget(mk_input)
+    mk_row.add_widget(mk_wrap)
+    mk_btn = PillButton(text="Save", size_hint=(None, None), width=dp(72), height=dp(36),
+                        pos_hint={"center_y": 0.5})
+    mk_row.add_widget(mk_btn)
+    mm_card.add_widget(mk_row)
+    mk_tools = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(36), spacing=dp(10))
+    mk_paste = PillButton(text="Paste", size_hint=(1, None), height=dp(34), fsize=12)
+    mk_clear = PillButton(text="Clear", size_hint=(1, None), height=dp(34), fsize=12)
+    mk_show = PillButton(text="Show", size_hint=(1, None), height=dp(34), fsize=12)
+    for _b in (mk_paste, mk_clear, mk_show):
+        mk_tools.add_widget(_b)
+    mm_card.add_widget(mk_tools)
+
+    def mk_do_paste(*_):
+        try:
+            from kivy.core.clipboard import Clipboard
+            txt = (Clipboard.paste() or "").strip()
+        except Exception:
+            txt = ""
+        if txt:
+            mk_input.text = txt
+            toast("Key paste ho gayi, ab Save dabaiye")
+        else:
+            toast("Clipboard khali hai")
+
+    def mk_do_clear(*_):
+        mk_input.text = ""
+        mk_input.focus = False
+
+    def mk_do_show(*_):
+        mk_input.password = not mk_input.password
+        mk_show.text = "Show" if mk_input.password else "Hide"
+
+    mk_paste.bind(on_release=mk_do_paste)
+    mk_clear.bind(on_release=mk_do_clear)
+    mk_show.bind(on_release=mk_do_show)
+
+    def save_mm_key(*_):
+        txt = mk_input.text.strip()
+        if txt:
+            app.minimax_key = txt
+            mk_input.text = ""
+            mk_input.focus = False
+        _save_state(app)
+        refresh_mm_info()
+        toast("MiniMax key save ho gayi" if app.minimax_key else "Key khali hai")
+
+    mk_btn.bind(on_release=save_mm_key)
+
+    mm_slot_inputs = []
+    for i in range(MM_SLOTS):
+        srow = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(44), spacing=dp(8))
+        nwrap = PlateBox(fill=INPUT, edge=EDGE, radius=dp(12), orientation="horizontal",
+                         size_hint_x=0.34, padding=[dp(10), 0, dp(6), 0])
+        ninp = style_input(TextInput(text=app.minimax_slots[i][0], hint_text="Naam " + str(i + 1),
+                                     font_size=sp(13)))
+        nwrap.add_widget(ninp)
+        iwrap = PlateBox(fill=INPUT, edge=EDGE, radius=dp(12), orientation="horizontal",
+                         padding=[dp(10), 0, dp(6), 0])
+        iinp = style_input(TextInput(text=app.minimax_slots[i][1], hint_text="Voice ID",
+                                     font_size=sp(13)))
+        iwrap.add_widget(iinp)
+        srow.add_widget(nwrap)
+        srow.add_widget(iwrap)
+        mm_card.add_widget(srow)
+        mm_slot_inputs.append((ninp, iinp))
+
+    def save_mm_voices(*_):
+        app.minimax_slots = _clean_mm_slots([[n.text, v.text] for n, v in mm_slot_inputs])
+        taken = set(VOICES.keys()) | set(n for n, _v in app.eleven_voices)
+        app.minimax_voices = [[n, v] for n, v in app.minimax_slots if n and v and n not in taken]
+        if app.selected_voice not in VOICES and \
+                app.selected_voice not in [n for n, _v in app.eleven_voices] and \
+                app.selected_voice not in [n for n, _v in app.minimax_voices]:
+            app.selected_voice = "Male Alpha"
+            for c in chips:
+                c.set_selected(c.name == app.selected_voice)
+            current_voice.text = "Current: " + app.selected_voice
+        _save_state(app)
+        rebuild_mm_chips()
+        refresh_mm_info()
+        toast(str(len(app.minimax_voices)) + " voice save hui")
+
+    def test_mm(*_):
+        if not app.minimax_voices:
+            toast("Pehle naam + Voice ID bharkar 'Voices save karo' dabaiye")
+            return
+        if not minimax_voice_id(app):
+            toast("Upar Voice Selection me MiniMax wali awaaz chuniye")
+            return
+        app.speak("Namaste, main Jarvis hoon. Aapki awaaz ab aisi sunai degi.")
+
+    for label, fn in [("Voices save karo", save_mm_voices), ("Chuni hui awaaz test karo", test_mm)]:
+        row = ActionRow(label)
+        row.bind(on_release=lambda w, f=fn: f())
+        mm_card.add_widget(row)
+    mm_card.add_widget(make_label("Key aur Voice ID sirf is phone me save hote hain. Kabhi GitHub par "
+                                  "mat daaliye.", 11, MUTED, height=dp(34), lines=2))
+    content.add_widget(mm_card)
+    rebuild_mm_chips()
+    refresh_mm_info()
 
     # 2) History
     history_card = make_card("History")
@@ -2525,7 +2722,7 @@ def build_jarvis_ui(app):
     # Cards ko sections me baanto (andar ka code waisa hi, sirf kram aur heading badli)
     content.clear_widgets()
     for _title, _cards in (
-            ("AI AUR AWAAZ", [ai_card, voice_card, eleven_card, verb_card]),
+            ("AI AUR AWAAZ", [ai_card, voice_card, eleven_card, mm_card, verb_card]),
             ("JARVIS KA KAAM", [wake_ai_card, home_card, wake_card, inbox_card]),
             ("DIKHAWA", [orb_card]),
             ("DATA AUR SECURITY", [history_card, privacy_card])):
@@ -2644,6 +2841,11 @@ def build_jarvis_ui(app):
         except Exception:
             pass
         try:
+            if mm_speaker is not None and mm_speaker.busy():
+                return True
+        except Exception:
+            pass
+        try:
             t = getattr(app, "tts", None)
             return bool(t is not None and t.isSpeaking())
         except Exception:
@@ -2740,8 +2942,29 @@ def build_jarvis_ui(app):
         except Exception:
             pass
         used_eleven = False
+        mvid = minimax_voice_id(app)
+        if mm_speaker is not None and app.minimax_key and mvid and str(text).strip():
+            def mm_fail(msg, _t=text):
+                def fallback(dt):
+                    toast(str(msg) + ". Phone ki awaaz se bol raha hoon")
+                    if original_speak is not None:
+                        original_speak(_t)
+                Clock.schedule_once(fallback, 0)
+            try:
+                try:
+                    tts0 = getattr(app, "tts", None)
+                    if tts0 is not None:
+                        tts0.stop()
+                except Exception:
+                    pass
+                if speaker is not None:
+                    speaker.stop()
+                mm_speaker.speak(app.minimax_key, mvid, str(text), on_error=mm_fail)
+                used_eleven = True
+            except Exception as exc:
+                print("minimax speak error:", exc)
         vid = eleven_voice_id(app)
-        if speaker is not None and app.eleven_key and vid and str(text).strip():
+        if not used_eleven and speaker is not None and app.eleven_key and vid and str(text).strip():
             def fail(msg, _t=text):
                 def fallback(dt):
                     toast(str(msg) + ". Phone ki awaaz se bol raha hoon")
@@ -2947,6 +3170,8 @@ def build_jarvis_ui(app):
         try:
             if speaker is not None:
                 speaker.stop()
+            if mm_speaker is not None:
+                mm_speaker.stop()
         except Exception:
             pass
         try:
