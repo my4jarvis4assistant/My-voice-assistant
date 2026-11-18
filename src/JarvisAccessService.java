@@ -1129,11 +1129,22 @@ public class JarvisAccessService extends AccessibilityService {
         return false;
     }
 
+    private AccessibilityNodeInfo lastLabelNode = null;
+
     private AccessibilityNodeInfo findTile(String[] labels) {
         List<AccessibilityNodeInfo> nodes = panelNodes();
+        java.util.ArrayList<String> good = new java.util.ArrayList<String>();
+        java.util.ArrayList<String> bad = new java.util.ArrayList<String>();
+        for (String l : labels) {
+            if (l.startsWith("!")) {
+                bad.add(l.substring(1));
+            } else {
+                good.add(l);
+            }
+        }
         AccessibilityNodeInfo best = null;
-        int bestScore = -99;
-        for (String label : labels) {
+        for (String label : good) {
+            int bestScore = -99;
             for (AccessibilityNodeInfo n : nodes) {
                 CharSequence t = n.getText();
                 CharSequence d = n.getContentDescription();
@@ -1142,6 +1153,15 @@ public class JarvisAccessService extends AccessibilityService {
                     continue;
                 }
                 if (hay.contains("signal") || hay.contains("bars")) {
+                    continue;
+                }
+                boolean skip = false;
+                for (String x : bad) {
+                    if (hay.contains(x)) {
+                        skip = true;
+                    }
+                }
+                if (skip) {
                     continue;
                 }
                 AccessibilityNodeInfo c = n;
@@ -1164,6 +1184,7 @@ public class JarvisAccessService extends AccessibilityService {
                 if (score > bestScore) {
                     bestScore = score;
                     best = c;
+                    lastLabelNode = n;
                 }
             }
             if (best != null) {
@@ -1205,52 +1226,140 @@ public class JarvisAccessService extends AccessibilityService {
         return null;
     }
 
+    /** Asli haalat batane wala: 1 on, 0 off, -1 pata nahi. */
+    public interface Probe {
+        int get();
+    }
+
+    private boolean tapAt(float x, float y) {
+        if (Build.VERSION.SDK_INT < 24) {
+            return false;
+        }
+        try {
+            Path p = new Path();
+            p.moveTo(x, y);
+            GestureDescription.Builder b = new GestureDescription.Builder();
+            b.addStroke(new GestureDescription.StrokeDescription(p, 0, 70));
+            return dispatchGesture(b.build(), null, null);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** Dabane ke 3 tareeke: seedha click, tile ke beech me tap, icon par tap. */
+    private void pressTile(AccessibilityNodeInfo hit, AccessibilityNodeInfo label, int how) {
+        android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
+        Rect r = new Rect();
+        hit.getBoundsInScreen(r);
+        boolean big = r.width() > dm.widthPixels * 0.3f;
+        if (how == 0) {
+            if (!hit.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                tapAt(r.centerX(), r.centerY());
+            }
+        } else if (how == 1) {
+            tapAt(r.centerX(), r.centerY());
+        } else {
+            Rect l = new Rect();
+            if (label != null) {
+                label.getBoundsInScreen(l);
+            } else {
+                l.set(r);
+            }
+            if (big) {
+                tapAt(l.centerX(), l.centerY());
+            } else {
+                tapAt(l.centerX(), Math.max(10, l.top - dm.widthPixels * 0.09f));
+            }
+        }
+    }
+
     /**
-     * Quick Settings panel kholkar tile dabao. Kisi alag (background) thread se hi bulao.
-     * want: 1=on, 0=off, -1=ulta. Lautata: 1=kar diya, 2=pehle se waisa hi, 0=tile nahi mila, -1=panel nahi khula.
+     * Quick Settings panel kholkar tile dabao aur ASLI haalat se jaanch karo. Alag (background) thread se bulao.
+     * want: 1=on, 0=off, -1=ulta. Lautata: 1=ho gaya (jaanch kar li), 2=pehle se waisa hi, 0=tile nahi mila,
+     * -1=panel nahi khula, 3=dabaya par jaanch nahi ho saki, 4=dabaya par badla nahi.
      */
-    public int quickTile(String[] labels, int want) {
+    public int quickTile(String[] labels, int want, Probe probe) {
         if (Looper.myLooper() == Looper.getMainLooper()) {
             return -1;
         }
-        if (!performGlobalAction(GLOBAL_ACTION_QUICK_SETTINGS)) {
-            return -1;
+        int before = probe == null ? -1 : safeProbe(probe);
+        if (want >= 0 && before == want) {
+            return 2;
         }
-        nap(900);
         AccessibilityNodeInfo hit = null;
         android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
         float w = dm.widthPixels, h = dm.heightPixels;
-        for (int attempt = 0; attempt < 5 && hit == null; attempt++) {
-            hit = findTile(labels);
-            if (hit != null) {
-                break;
+        boolean opened = false;
+        for (int round = 0; round < 2 && hit == null; round++) {
+            if (!performGlobalAction(GLOBAL_ACTION_QUICK_SETTINGS)) {
+                continue;
             }
-            if (attempt == 0) {
-                swipe(w * 0.5f, h * 0.12f, w * 0.5f, h * 0.65f);        // panel poora kholo
-            } else if (attempt == 1) {
-                swipe(w * 0.5f, h * 0.30f, w * 0.5f, h * 0.70f);
-            } else if (attempt == 2) {
-                swipe(w * 0.85f, h * 0.30f, w * 0.15f, h * 0.30f);      // agla page
-            } else if (attempt == 3) {
-                swipe(w * 0.85f, h * 0.30f, w * 0.15f, h * 0.30f);
+            opened = true;
+            nap(1200);
+            for (int attempt = 0; attempt < 7 && hit == null; attempt++) {
+                hit = findTile(labels);
+                if (hit != null) {
+                    break;
+                }
+                if (attempt == 3) {
+                    swipe(w * 0.5f, h * 0.25f, w * 0.5f, h * 0.70f);        // panel poora kholo
+                } else if (attempt == 5) {
+                    swipe(w * 0.85f, h * 0.30f, w * 0.15f, h * 0.30f);      // agla page
+                }
+                nap(700);
             }
-            nap(800);
-        }
-        int result;
-        if (hit == null) {
-            result = 0;
-        } else {
-            Boolean on = tileState(hit);
-            if (want >= 0 && on != null && on.booleanValue() == (want == 1)) {
-                result = 2;
-            } else {
-                result = hit.performAction(AccessibilityNodeInfo.ACTION_CLICK) ? 1 : (gestureAt(hit, 60) ? 1 : 0);
+            if (hit == null) {
+                performGlobalAction(GLOBAL_ACTION_BACK);
                 nap(600);
+            }
+        }
+        if (hit == null) {
+            return opened ? 0 : -1;
+        }
+        AccessibilityNodeInfo label = lastLabelNode;
+        int result = 3;
+        Boolean ui = tileState(hit);
+        if (want >= 0 && before < 0 && probe == null && ui != null && ui.booleanValue() == (want == 1)) {
+            result = 2;
+        } else {
+            int target = want >= 0 ? want : (before >= 0 ? 1 - before : -1);
+            for (int how = 0; how < 3; how++) {
+                pressTile(hit, label, how);
+                if (target < 0 || probe == null) {
+                    nap(700);
+                    result = 3;
+                    break;
+                }
+                boolean ok = false;
+                for (int k = 0; k < 9 && !ok; k++) {
+                    nap(250);
+                    ok = safeProbe(probe) == target;
+                }
+                if (ok) {
+                    result = 1;
+                    break;
+                }
+                result = 4;
+                hit = refind(labels, hit);
+                label = lastLabelNode;
             }
         }
         performGlobalAction(GLOBAL_ACTION_BACK);
         nap(250);
         return result;
+    }
+
+    private AccessibilityNodeInfo refind(String[] labels, AccessibilityNodeInfo old) {
+        AccessibilityNodeInfo n = findTile(labels);
+        return n != null ? n : old;
+    }
+
+    private static int safeProbe(Probe p) {
+        try {
+            return p.get();
+        } catch (Throwable t) {
+            return -1;
+        }
     }
 
     /** Screen lock (Android 9+). */
