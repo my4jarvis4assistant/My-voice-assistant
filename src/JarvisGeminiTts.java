@@ -62,7 +62,7 @@ public final class JarvisGeminiTts {
         }
         for (String k : raw.split("[\\s,;]+")) {
             k = k.trim();
-            if (k.startsWith("AIza") && !out.contains(k)) {
+            if (k.length() >= 8 && !k.startsWith("gsk_") && !k.startsWith("csk-") && !k.startsWith("sk-") && !out.contains(k)) {
                 out.add(k);
             }
         }
@@ -137,7 +137,7 @@ public final class JarvisGeminiTts {
                 try {
                     List<String> ks = keys(rawKeys);
                     if (ks.isEmpty()) {
-                        throw new Exception("Gemini key nahi hai (AIza se shuru hone wali key chahiye)");
+                        throw new Exception("Gemini key nahi hai (AI card me Gemini key daaliye)");
                     }
                     if (voice == null || voice.trim().length() == 0) {
                         throw new Exception("Voice nahi chuni");
