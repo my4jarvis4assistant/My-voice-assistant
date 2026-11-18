@@ -3009,7 +3009,7 @@ def build_jarvis_ui(app):
         if str(app.selected_voice).startswith("Gemini ") and str(text).strip() and \
                 (gm_speaker is None or not gemini_mod.gemini_keys(getattr(app, "gemini_key", ""))):
             _why = gm_problem[0] if gm_speaker is None else \
-                "Gemini key (AIza se shuru) nahi mili - AI card me daaliye"
+                "Gemini key nahi mili - AI card me daaliye"
             Clock.schedule_once(lambda dt, _w=_why: toast(_w + ". Phone ki awaaz se bol raha hoon"), 0)
         if gm_speaker is not None and str(app.selected_voice).startswith("Gemini ") and str(text).strip() \
                 and gemini_mod.gemini_keys(getattr(app, "gemini_key", "")):
