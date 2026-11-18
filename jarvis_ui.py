@@ -1910,10 +1910,16 @@ def build_jarvis_ui(app):
         print("gemini_voice import error:", exc)
         gemini_mod = None
     gm_speaker = None
-    if gemini_mod is not None and minimax_mod is not None:
+    gm_problem = ["gemini_voice.py nahi chali"]
+    if gemini_mod is not None:
         try:
-            gm_speaker = minimax_mod.MiniMaxSpeaker(_mm_cache, synth=gemini_mod.synthesize, prefix="jarvis_gemini_")
+            try:
+                _gm_cache = str(app.activity.getCacheDir().getAbsolutePath())
+            except Exception:
+                _gm_cache = getattr(app, "user_data_dir", "") or "."
+            gm_speaker = gemini_mod.GeminiSpeaker(_gm_cache)
         except Exception as exc:
+            gm_problem[0] = "Gemini awaaz shuru nahi hui: " + str(exc)[:60]
             print("gemini speaker error:", exc)
     gm_chips = []
     if gemini_mod is not None:
@@ -1941,6 +1947,7 @@ def build_jarvis_ui(app):
         if not str(app.selected_voice).startswith("Gemini "):
             toast("Upar Voice Selection me koi 'Gemini' awaaz chuniye")
             return
+        toast("Awaaz ban rahi hai, 2-4 second ruko...")
         app.speak("Namaste, main Jarvis hoon. Aapki awaaz ab aisi sunai degi.")
 
     _grow = ActionRow("Chuni hui awaaz test karo")
@@ -2999,6 +3006,11 @@ def build_jarvis_ui(app):
         except Exception:
             pass
         used_eleven = False
+        if str(app.selected_voice).startswith("Gemini ") and str(text).strip() and \
+                (gm_speaker is None or not gemini_mod.gemini_keys(getattr(app, "gemini_key", ""))):
+            _why = gm_problem[0] if gm_speaker is None else \
+                "Gemini key (AIza se shuru) nahi mili - AI card me daaliye"
+            Clock.schedule_once(lambda dt, _w=_why: toast(_w + ". Phone ki awaaz se bol raha hoon"), 0)
         if gm_speaker is not None and str(app.selected_voice).startswith("Gemini ") and str(text).strip() \
                 and gemini_mod.gemini_keys(getattr(app, "gemini_key", "")):
             def gm_fail(msg, _t=text):
