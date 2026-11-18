@@ -45,8 +45,8 @@ public final class JarvisDevice {
     private static final String[][] TOGGLES = {
             // key, display, aliases (comma), tile labels (comma)
             {"torch", "Torch", "torch,flashlight,flash light,tarch,tourch,torchlight,torch light,flash", ""},
-            {"wifi", "Wi-Fi", "wifi,wi fi,wlan,wireless", "wi-fi,wifi,wlan,internet"},
-            {"bluetooth", "Bluetooth", "bluetooth,blutooth,blue tooth,bluetooh,bt", "bluetooth"},
+            {"wifi", "Wi-Fi", "wifi,wi fi,wlan,wireless", "wi-fi,wifi,wlan,internet,connected,!bluetooth,!hotspot,!mobile"},
+            {"bluetooth", "Bluetooth", "bluetooth,blutooth,blue tooth,bluetooh,bt", "bluetooth,blue"},
             {"data", "Mobile data", "mobile data,internet data,cellular,mobile network,network,data,net,internet",
                     "mobile data,mobile network,cellular,data,internet"},
             {"hotspot", "Hotspot", "hotspot,hot spot,tethering", "hotspot,tethering,portable hotspot"},
@@ -377,7 +377,7 @@ public final class JarvisDevice {
                 return "@wait";
             } else if ("toggle".equals(c.kind)) {
                 if ("torch".equals(c.key)) {
-                    return torch(ctx, c.on);
+                    return torchSmart(ctx, c);
                 }
                 return tile(ctx, c);
             }
@@ -392,7 +392,75 @@ public final class JarvisDevice {
         working = false;
     }
 
-    private static String tile(Context ctx, final Cmd c) {
+    /** Asli haalat: 1 on, 0 off, -1 pata nahi. */
+    static int stateOf(Context ctx, String key) {
+        Context app = ctx.getApplicationContext() == null ? ctx : ctx.getApplicationContext();
+        try {
+            if ("wifi".equals(key)) {
+                int v = Settings.Global.getInt(app.getContentResolver(), "wifi_on", -1);
+                return v < 0 ? -1 : (v == 0 ? 0 : 1);
+            } else if ("bluetooth".equals(key)) {
+                int v = Settings.Global.getInt(app.getContentResolver(), "bluetooth_on", -1);
+                return v < 0 ? -1 : (v == 0 ? 0 : 1);
+            } else if ("airplane".equals(key)) {
+                return Settings.Global.getInt(app.getContentResolver(), "airplane_mode_on", 0) != 0 ? 1 : 0;
+            } else if ("data".equals(key)) {
+                int v = Settings.Global.getInt(app.getContentResolver(), "mobile_data", -1);
+                return v < 0 ? -1 : (v == 0 ? 0 : 1);
+            } else if ("location".equals(key)) {
+                int m = Settings.Secure.getInt(app.getContentResolver(), "location_mode", -1);
+                return m < 0 ? -1 : (m == 0 ? 0 : 1);
+            } else if ("rotate".equals(key)) {
+                return Settings.System.getInt(app.getContentResolver(), "accelerometer_rotation", 0) != 0 ? 1 : 0;
+            } else if ("saver".equals(key)) {
+                android.os.PowerManager pm = (android.os.PowerManager) app.getSystemService(Context.POWER_SERVICE);
+                return pm != null && pm.isPowerSaveMode() ? 1 : 0;
+            } else if ("dnd".equals(key)) {
+                android.app.NotificationManager nm = (android.app.NotificationManager) app.getSystemService(Context.NOTIFICATION_SERVICE);
+                if (nm == null || android.os.Build.VERSION.SDK_INT < 23) {
+                    return -1;
+                }
+                return nm.getCurrentInterruptionFilter() == android.app.NotificationManager.INTERRUPTION_FILTER_ALL ? 0 : 1;
+            } else if ("hotspot".equals(key)) {
+                android.net.wifi.WifiManager wm = (android.net.wifi.WifiManager) app.getSystemService(Context.WIFI_SERVICE);
+                java.lang.reflect.Method m = wm.getClass().getDeclaredMethod("isWifiApEnabled");
+                m.setAccessible(true);
+                return ((Boolean) m.invoke(wm)).booleanValue() ? 1 : 0;
+            } else if ("nfc".equals(key)) {
+                android.nfc.NfcAdapter na = android.nfc.NfcAdapter.getDefaultAdapter(app);
+                return na == null ? -1 : (na.isEnabled() ? 1 : 0);
+            } else if ("torch".equals(key)) {
+                torchWatch(app);
+                return torchKnown ? (torchOn ? 1 : 0) : -1;
+            }
+        } catch (Throwable t) {
+            return -1;
+        }
+        return -1;
+    }
+
+    private static boolean torchKnown = false, torchWatching = false;
+
+    private static synchronized void torchWatch(Context app) {
+        if (torchWatching) {
+            return;
+        }
+        torchWatching = true;
+        try {
+            CameraManager cm = (CameraManager) app.getSystemService(Context.CAMERA_SERVICE);
+            cm.registerTorchCallback(new CameraManager.TorchCallback() {
+                @Override
+                public void onTorchModeChanged(String id, boolean enabled) {
+                    torchKnown = true;
+                    torchOn = enabled;
+                }
+            }, new android.os.Handler(android.os.Looper.getMainLooper()));
+            Thread.sleep(400);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static String tile(final Context ctx, final Cmd c) {
         final JarvisAccessService svc = JarvisAccessService.instance;
         if (svc == null) {
             return "Ye karne ke liye Accessibility me JARVIS ko on karna hoga. Settings me Accessibility kholkar JARVIS on kijiye.";
@@ -407,12 +475,26 @@ public final class JarvisDevice {
             public void run() {
                 String r;
                 try {
-                    int res = svc.quickTile(c.labels, c.on);
+                    final String key = c.key;
+                    JarvisAccessService.Probe probe = "other".equals(key) ? null : new JarvisAccessService.Probe() {
+                        @Override
+                        public int get() {
+                            return stateOf(ctx, key);
+                        }
+                    };
+                    int res = svc.quickTile(c.labels, c.on, probe);
                     String st = c.on == 1 ? "on" : c.on == 0 ? "off" : "";
+                    int now = probe == null ? -1 : stateOf(ctx, key);
+                    String nowTxt = now == 1 ? "on" : now == 0 ? "off" : st;
                     if (res == 1) {
-                        r = c.on < 0 ? c.name + " badal diya." : c.name + " " + st + " kar diya.";
+                        r = c.name + " " + nowTxt + " ho gaya.";
                     } else if (res == 2) {
-                        r = c.name + " pehle se " + st + " hai.";
+                        r = c.name + " pehle se " + (st.length() == 0 ? nowTxt : st) + " hai.";
+                    } else if (res == 3) {
+                        r = c.name + " ka button daba diya. Asli haalat main check nahi kar paya, ek baar dekh lena.";
+                    } else if (res == 4) {
+                        r = c.name + " badal nahi paya, button dabane par bhi " + nowTxt
+                                + " hi raha. Ho sakta hai phone use rok raha ho (jaise SIM na ho ya system ne roka ho).";
                     } else if (res == 0) {
                         r = c.name + " ka button Quick Settings me nahi mila. Use panel me jod lo ya naam alag bolo.";
                     } else {
@@ -420,6 +502,50 @@ public final class JarvisDevice {
                     }
                 } catch (Throwable t) {
                     r = "Ye kaam nahi ho paya: " + t.getMessage();
+                }
+                finish(r);
+            }
+        }).start();
+        return "@wait";
+    }
+
+    /** Torch: pehle Quick Settings ki tile se (taaki panel me bhi sahi dikhe), na ho to seedha. */
+    private static String torchSmart(final Context ctx, final Cmd c) {
+        JarvisAccessService svc = JarvisAccessService.instance;
+        if (svc == null) {
+            return torch(ctx, c.on);
+        }
+        stateOf(ctx, "torch");
+        int cur = stateOf(ctx, "torch");
+        if (c.on >= 0 && cur == c.on) {
+            return c.on == 1 ? "Torch pehle se on hai." : "Torch pehle se band hai.";
+        }
+        if (working) {
+            return "Main abhi ek kaam kar raha hoon, thoda ruko.";
+        }
+        working = true;
+        pending = "";
+        final Cmd cc = c;
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                String r;
+                try {
+                    JarvisAccessService s = JarvisAccessService.instance;
+                    int res = s == null ? -1 : s.quickTile(new String[]{"flashlight", "torch", "flash"}, cc.on,
+                            new JarvisAccessService.Probe() {
+                                @Override
+                                public int get() {
+                                    return stateOf(ctx, "torch");
+                                }
+                            });
+                    if (res == 1 || res == 2) {
+                        r = stateOf(ctx, "torch") == 1 ? "Torch on ho gayi." : "Torch band ho gayi.";
+                    } else {
+                        r = torch(ctx, cc.on);
+                    }
+                } catch (Throwable t) {
+                    r = torch(ctx, cc.on);
                 }
                 finish(r);
             }
