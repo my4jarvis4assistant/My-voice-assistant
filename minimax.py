@@ -110,9 +110,9 @@ def _message(code, status, msg):
     low = (msg or "").lower()
     if code == 401 or status in (1004, 2049):
         return "MiniMax key galat hai"
-    if status in (1008, 1039) or "balance" in low or "insufficient" in low:
-        return "MiniMax me balance/credits khatam hain"
-    if status == 1002 or code == 429:
+    if status == 1008 or "balance" in low or "insufficient" in low:
+        return "MiniMax me balance/credits khatam hain (code %s)" % (status or code)
+    if status in (1002, 1039) or code == 429:
         return "MiniMax: bahut requests, thodi der baad"
     if "voice" in low and ("not" in low or "exist" in low or "invalid" in low):
         return "MiniMax: Voice ID galat hai"
@@ -189,8 +189,9 @@ def _android_play(path, flag):
 
 
 class MiniMaxSpeaker:
-    def __init__(self, cache_dir, synth=None, player=None):
+    def __init__(self, cache_dir, synth=None, player=None, prefix="jarvis_minimax_"):
         self.cache_dir = cache_dir
+        self._prefix = prefix
         self._synth = synth or synthesize
         self._player = player or _android_play
         self._gen = 0
@@ -217,7 +218,7 @@ class MiniMaxSpeaker:
             self._busy = True
 
         def work():
-            path = os.path.join(self.cache_dir, "jarvis_minimax_%d.mp3" % gen)
+            path = os.path.join(self.cache_dir, self._prefix + "%d.mp3" % gen)
             ok = False
             try:
                 self._synth(key, voice_id, text, path)
