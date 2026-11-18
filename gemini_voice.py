@@ -6,8 +6,11 @@ Gemini PCM deta hai; yahan usse WAV banakar `path` par likhte hain.
 """
 import base64
 import json
+import os
 import re
 import struct
+import threading
+import time
 
 MODELS = ("gemini-3.1-flash-tts-preview", "gemini-2.5-flash-preview-tts")
 URL = "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent"
@@ -188,3 +191,90 @@ def synthesize(keys, voice_name, text, path, poster=None):
     if limited:
         last = "Gemini awaaz ki free limit khatam (kal ya thodi der baad)"
     raise GeminiVoiceError(last)
+
+
+def _android_play(path, flag):
+    """MediaPlayer se bajao, khatam hone tak (ya flag['stop'] tak) ruko."""
+    from jnius import autoclass
+    MediaPlayer = autoclass("android.media.MediaPlayer")
+    mp = MediaPlayer()
+    try:
+        mp.setDataSource(path)
+        mp.prepare()
+        mp.start()
+        started = time.time()
+        while not flag["stop"]:
+            time.sleep(0.1)
+            if not mp.isPlaying() and time.time() - started > 0.4:
+                break
+            if time.time() - started > 120:
+                break
+    finally:
+        try:
+            mp.stop()
+        except Exception:
+            pass
+        try:
+            mp.release()
+        except Exception:
+            pass
+
+
+class GeminiSpeaker:
+    """speak(keys, voice_name, text, on_error) -> thread me awaaz banao aur bajao. busy(), stop()."""
+
+    def __init__(self, cache_dir):
+        self.cache_dir = cache_dir
+        self._gen = 0
+        self._busy = False
+        self._lock = threading.Lock()
+        self._flag = {"stop": False}
+
+    def busy(self):
+        return self._busy
+
+    def stop(self):
+        with self._lock:
+            self._gen += 1
+            self._flag["stop"] = True
+        self._busy = False
+
+    def speak(self, keys, voice_name, text, on_error=None, on_done=None):
+        with self._lock:
+            self._gen += 1
+            gen = self._gen
+            flag = {"stop": False}
+            self._flag["stop"] = True
+            self._flag = flag
+            self._busy = True
+
+        def work():
+            path = os.path.join(self.cache_dir, "jarvis_gemini_%d.wav" % gen)
+            ok = False
+            try:
+                synthesize(keys, voice_name, text, path)
+                if gen == self._gen and not flag["stop"]:
+                    _android_play(path, flag)
+                ok = True
+            except Exception as exc:
+                msg = str(exc) or exc.__class__.__name__
+                print("gemini voice error:", msg)
+                if gen == self._gen and on_error is not None:
+                    try:
+                        on_error(msg)
+                    except Exception as exc2:
+                        print("gemini on_error failed:", exc2)
+            finally:
+                try:
+                    os.remove(path)
+                except Exception:
+                    pass
+                if gen == self._gen:
+                    self._busy = False
+                    if ok and on_done is not None and not flag["stop"]:
+                        try:
+                            on_done()
+                        except Exception:
+                            pass
+
+        threading.Thread(target=work, daemon=True).start()
