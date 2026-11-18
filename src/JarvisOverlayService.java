@@ -77,6 +77,7 @@ public class JarvisOverlayService extends Service {
     private TextToSpeech tts;
     private final JarvisEleven eleven = new JarvisEleven();
     private final JarvisMiniMax minimax = new JarvisMiniMax();
+    private final JarvisGeminiTts geminiTts = new JarvisGeminiTts();
     private boolean ttsReady = false;
     private String pendingSpeech = null;
     private boolean speaking = false;
@@ -491,6 +492,7 @@ public class JarvisOverlayService extends Service {
         try {
             eleven.stop();
             minimax.stop();
+            geminiTts.stop();
             if (tts != null) {
                 tts.stop();
                 tts.shutdown();
@@ -825,6 +827,39 @@ public class JarvisOverlayService extends Service {
         String vid = p.getString("eleven_voice_id", "");
         String mk = p.getString("minimax_key", "");
         String mv = p.getString("minimax_voice_id", "");
+        String gv = p.getString("gemini_voice", "");
+        if ("gemini".equals(p.getString("tts_provider", "")) && gv.trim().length() > 0
+                && p.getString("gemini_key", "").trim().length() > 0) {
+            muteBeep(false);
+            try {
+                if (tts != null) {
+                    tts.stop();
+                }
+                eleven.stop();
+                minimax.stop();
+            } catch (Exception ignored) {
+            }
+            speaking = true;
+            geminiTts.speak(this, p.getString("gemini_key", ""), gv, text, new JarvisGeminiTts.Callback() {
+                @Override
+                public void onDone(boolean ok, String error) {
+                    if (my != speakGen) {
+                        return;
+                    }
+                    speaking = false;
+                    if (!alive) {
+                        return;
+                    }
+                    if (ok) {
+                        afterSpeech();
+                    } else {
+                        showText(error + ". Phone ki awaaz se bol raha hoon");
+                        speakSystem(text);
+                    }
+                }
+            });
+            return;
+        }
         if ("minimax".equals(p.getString("tts_provider", "")) && mk.trim().length() > 0 && mv.trim().length() > 0) {
             muteBeep(false);
             try {
@@ -964,6 +999,7 @@ public class JarvisOverlayService extends Service {
             }
             eleven.stop();
             minimax.stop();
+            geminiTts.stop();
         } catch (Exception ignored) {
         }
         speaking = false;
