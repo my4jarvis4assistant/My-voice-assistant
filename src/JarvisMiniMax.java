@@ -72,10 +72,10 @@ public final class JarvisMiniMax {
         if (http == 401 || status == 1004 || status == 2049) {
             return "MiniMax key galat hai";
         }
-        if (status == 1008 || status == 1039 || low.contains("balance") || low.contains("insufficient")) {
-            return "MiniMax me balance/credits khatam hain";
+        if (status == 1008 || low.contains("balance") || low.contains("insufficient")) {
+            return "MiniMax me balance/credits khatam hain (code " + (status != 0 ? status : http) + ")";
         }
-        if (status == 1002 || http == 429) {
+        if (status == 1002 || status == 1039 || http == 429) {
             return "MiniMax: bahut requests, thodi der baad";
         }
         if (low.contains("voice") && (low.contains("not") || low.contains("exist") || low.contains("invalid"))) {
