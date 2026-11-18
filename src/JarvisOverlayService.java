@@ -76,6 +76,7 @@ public class JarvisOverlayService extends Service {
     private SpeechRecognizer recognizer;
     private TextToSpeech tts;
     private final JarvisEleven eleven = new JarvisEleven();
+    private final JarvisMiniMax minimax = new JarvisMiniMax();
     private boolean ttsReady = false;
     private String pendingSpeech = null;
     private boolean speaking = false;
@@ -489,6 +490,7 @@ public class JarvisOverlayService extends Service {
         recognizer = null;
         try {
             eleven.stop();
+            minimax.stop();
             if (tts != null) {
                 tts.stop();
                 tts.shutdown();
@@ -821,6 +823,38 @@ public class JarvisOverlayService extends Service {
         SharedPreferences p = prefs();
         String ek = p.getString("eleven_key", "");
         String vid = p.getString("eleven_voice_id", "");
+        String mk = p.getString("minimax_key", "");
+        String mv = p.getString("minimax_voice_id", "");
+        if ("minimax".equals(p.getString("tts_provider", "")) && mk.trim().length() > 0 && mv.trim().length() > 0) {
+            muteBeep(false);
+            try {
+                if (tts != null) {
+                    tts.stop();
+                }
+                eleven.stop();
+            } catch (Exception ignored) {
+            }
+            speaking = true;
+            minimax.speak(this, mk, mv, text, new JarvisMiniMax.Callback() {
+                @Override
+                public void onDone(boolean ok, String error) {
+                    if (my != speakGen) {
+                        return;
+                    }
+                    speaking = false;
+                    if (!alive) {
+                        return;
+                    }
+                    if (ok) {
+                        afterSpeech();
+                    } else {
+                        showText(error + ". Phone ki awaaz se bol raha hoon");
+                        speakSystem(text);
+                    }
+                }
+            });
+            return;
+        }
         if (ek.trim().length() > 0 && vid.trim().length() > 0) {
             muteBeep(false);
             try {
@@ -929,6 +963,7 @@ public class JarvisOverlayService extends Service {
                 tts.stop();
             }
             eleven.stop();
+            minimax.stop();
         } catch (Exception ignored) {
         }
         speaking = false;
