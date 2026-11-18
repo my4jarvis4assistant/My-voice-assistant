@@ -2804,6 +2804,11 @@ def build_jarvis_ui(app):
             vis["mode"] = False
             Clock.schedule_once(lambda dt: set_status("Camera band kar diya"), 0)
             return
+        if ai.get("dev_skip") == cmd:
+            ai["dev_skip"] = None                 # device wale ne chhoda: ab normal raste par
+        elif DEVICE_RE.search(cmd.lower()) and not vis["mode"]:
+            Clock.schedule_once(lambda dt: run_device(cmd), 0)
+            return
         vp = vision_parse(cmd)
         if vis["mode"] or vp:
             front = bool(vp and vp[0] == "front") or bool(re.search(r"selfie|front|mujhe dekho", cmd.lower()))
@@ -2963,6 +2968,70 @@ def build_jarvis_ui(app):
     orb.bind(on_release=start_listening)
 
     # ------------------------------------------------------------- MIC ----
+    # ------------------------------------------------- PHONE SETTINGS (voice) --
+    DEVICE_RE = re.compile(
+        r"\b(wifi|wi-fi|wi fi|bluetooth|blutooth|torch|tourch|flashlight|flash light|hotspot|airplane|aeroplane|"
+        r"flight mode|mobile data|network|internet|data|location|gps|rotate|rotation|battery|bettery|brightness|"
+        r"volume|awaaz|aawaz|mute|unmute|silent|sound|mausam|weather|temperature|dnd|disturb|nfc|dark|saver|"
+        r"screen|display|on karo|off karo|chalu|enable|disable)\b")
+
+    def ask_location_permission():
+        if ai.get("loc_asked"):
+            return
+        ai["loc_asked"] = True
+        try:
+            from android.permissions import request_permissions, check_permission, Permission
+            if not check_permission(Permission.ACCESS_COARSE_LOCATION):
+                request_permissions([Permission.ACCESS_COARSE_LOCATION, Permission.ACCESS_FINE_LOCATION])
+        except Exception as exc:
+            print("location permission skipped:", exc)
+
+    def run_device(cmd):
+        """wifi/bluetooth/torch on-off, brightness, volume, battery, mausam: Java (JarvisDevice) se."""
+        JD = None
+        try:
+            from jnius import autoclass
+            JD = autoclass("org.myassistant.myvoiceassistant.JarvisDevice")
+            if re.search(r"mausam|weather|temperature", cmd.lower()):
+                ask_location_permission()
+            r = JD.handle(get_activity(), cmd)
+        except Exception as exc:
+            print("device command error:", repr(exc))
+            r = None
+        if r is None:
+            ai["dev_skip"] = cmd
+            app.process_command(cmd)              # device ka kaam nahi tha: pehle jaisa chalao
+            return
+        r = str(r)
+        ai["gen"] += 1
+        gen = ai["gen"]
+        ai["busy"] = True
+        ai["from_typed"] = bool(cm["on"])
+        cancel_relisten()
+        if r == "@wait":
+            orb.mode = "thinking"
+            status.text = "Kar raha hoon..."
+            status.color = MUTED
+            t0 = Clock.get_time()
+
+            def poll(dt):
+                try:
+                    working = bool(JD.working())
+                except Exception:
+                    working = False
+                if working and Clock.get_time() - t0 < 45:
+                    return True
+                try:
+                    res = str(JD.pending())
+                except Exception:
+                    res = ""
+                deliver(gen, True, res or "Ho gaya.")
+                return False
+
+            Clock.schedule_interval(poll, 0.4)
+        else:
+            deliver(gen, True, r)
+
     def stop_mic(quiet=False):
         mic["on"] = False
         mic_btn.set_on(False)
