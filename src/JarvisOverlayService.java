@@ -1982,6 +1982,79 @@ public class JarvisOverlayService extends Service {
     }
 
     // ------------------------------------------------------ screen samajhna --
+    /** Notes / to-do, "kitne baje", "aaj kaun sa din", "battery kitni hai": turant, bina internet. */
+    private boolean handleQuick(String text) {
+        try {
+            SharedPreferences np = getSharedPreferences("jarvis_notes", MODE_PRIVATE);
+            java.util.List<String> items = new java.util.ArrayList<String>();
+            try {
+                org.json.JSONArray arr = new org.json.JSONArray(np.getString("items", "[]"));
+                for (int i = 0; i < arr.length(); i++) {
+                    items.add(arr.getString(i));
+                }
+            } catch (Exception ignored) {
+            }
+            boolean[] changed = new boolean[1];
+            String r = JarvisQuick.handle(text, items, java.util.Calendar.getInstance(), changed);
+            if (r == null) {
+                return false;
+            }
+            if ("@battery".equals(r)) {
+                Intent b = registerReceiver(null, new android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+                int level = b == null ? -1 : b.getIntExtra("level", -1);
+                int scale = b == null ? 100 : b.getIntExtra("scale", 100);
+                int status = b == null ? 0 : b.getIntExtra("status", 0);
+                boolean charging = status == 2 || status == 5;
+                int pct = level < 0 ? -1 : Math.round(level * 100f / Math.max(1, scale));
+                r = pct < 0 ? "Battery ka pata nahi chal paya."
+                        : "Battery " + pct + " percent hai" + (charging ? " aur charge ho rahi hai." : ".");
+            }
+            if (changed[0]) {
+                org.json.JSONArray out = new org.json.JSONArray();
+                for (String it : items) {
+                    out.put(it);
+                }
+                np.edit().putString("items", out.toString()).apply();
+            }
+            reply(r);
+            return true;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    private boolean handleDevice(String text) {
+        String r = JarvisDevice.handle(this, text);
+        if (r == null) {
+            return false;
+        }
+        if ("@wait".equals(r)) {
+            final long myGen = gen;
+            setStatus("Kar raha hoon...", MODE_THINK);
+            devicePoll(myGen, 0);
+        } else {
+            reply(r);
+        }
+        return true;
+    }
+
+    private void devicePoll(final long myGen, final int n) {
+        main.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                if (!alive || myGen != gen) {
+                    return;
+                }
+                if (JarvisDevice.working() && n < 100) {
+                    devicePoll(myGen, n + 1);
+                    return;
+                }
+                String r = JarvisDevice.pending();
+                reply(r.length() == 0 ? "Ho gaya." : r);
+            }
+        }, 400);
+    }
+
     /** Camera se dekhkar batana: "jarvis dekho", "ye kya hai dekho", "pichhe kya dikh raha hai". */
     private boolean handleVision(String text) {
         final String[] v = JarvisVision.parse(text);
@@ -2221,6 +2294,12 @@ public class JarvisOverlayService extends Service {
         }
         if (rtStage != 0 && handleRoutineFlow(text)) {
             return;
+        }
+        if (!isDismiss(text) && !flowPending() && handleQuick(text)) {
+            return;                               // notes/to-do, samay, tareekh, battery
+        }
+        if (!isDismiss(text) && !flowPending() && handleDevice(text)) {
+            return;                               // wifi/bluetooth/torch on-off, brightness, volume, battery, mausam
         }
         if (!isDismiss(text) && !flowPending() && handleVision(text)) {
             return;                               // "jarvis dekho / pichhe kya dikh raha hai": camera se photo
