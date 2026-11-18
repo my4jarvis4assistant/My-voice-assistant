@@ -43,10 +43,12 @@ def build_body(voice_id, text, model):
 
 
 def _post_java(url, key, body):
-    """(http_code, response_text). Java HttpURLConnection: phone par sabse bharosemand."""
-    from jnius import autoclass, cast, jarray
+    """(http_code, response_text). Java HttpURLConnection (jarray ki zaroorat nahi)."""
+    from jnius import autoclass, cast
     URL = autoclass("java.net.URL")
-    BAOS = autoclass("java.io.ByteArrayOutputStream")
+    Writer = autoclass("java.io.OutputStreamWriter")
+    Reader = autoclass("java.io.InputStreamReader")
+    Buffered = autoclass("java.io.BufferedReader")
     conn = cast("java.net.HttpURLConnection", URL(url).openConnection())
     try:
         conn.setRequestMethod("POST")
@@ -55,23 +57,23 @@ def _post_java(url, key, body):
         conn.setRequestProperty("Authorization", "Bearer " + key.strip())
         conn.setRequestProperty("Content-Type", "application/json")
         conn.setDoOutput(True)
-        out = conn.getOutputStream()
-        out.write(body)
-        out.flush()
-        out.close()
+        w = Writer(conn.getOutputStream(), "UTF-8")
+        w.write(body.decode("utf-8"))
+        w.flush()
+        w.close()
         code = int(conn.getResponseCode())
         stream = conn.getErrorStream() if code >= 400 else conn.getInputStream()
         if stream is None:
             return code, ""
-        baos = BAOS()
-        buf = jarray("b")(16384)
+        rd = Buffered(Reader(stream, "UTF-8"))
+        parts = []
         while True:
-            n = stream.read(buf)
-            if n < 0:
+            line = rd.readLine()
+            if line is None:
                 break
-            baos.write(buf, 0, n)
-        stream.close()
-        return code, bytes(bytearray([b & 0xFF for b in baos.toByteArray()])).decode("utf-8", "replace")
+            parts.append(str(line))
+        rd.close()
+        return code, "".join(parts)
     finally:
         try:
             conn.disconnect()
@@ -89,6 +91,19 @@ def _post_urllib(url, key, body):
             return resp.getcode(), resp.read().decode("utf-8", "replace")
     except urllib.error.HTTPError as exc:
         return exc.code, exc.read().decode("utf-8", "replace")
+
+
+def _post_auto(url, key, body):
+    """Pehle Java se, na chale to Python urllib se."""
+    try:
+        import jnius  # noqa: F401
+    except Exception:
+        return _post_urllib(url, key, body)
+    try:
+        return _post_java(url, key, body)
+    except Exception as exc:
+        print("minimax java post failed, urllib try:", exc)
+        return _post_urllib(url, key, body)
 
 
 def _message(code, status, msg):
@@ -116,11 +131,7 @@ def synthesize(key, voice_id, text, path, poster=None):
     if not text:
         raise MiniMaxError("khali text")
     if poster is None:
-        try:
-            import jnius  # noqa: F401
-            poster = _post_java
-        except Exception:
-            poster = _post_urllib
+        poster = _post_auto
     last = "MiniMax se awaaz nahi aayi"
     for model in MODELS:
         try:
