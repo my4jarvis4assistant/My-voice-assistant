@@ -1073,6 +1073,195 @@ public class JarvisAccessService extends AccessibilityService {
 
     /** Screen par is naam ka kuch hai? (OPEN: app kholna hai ya screen ka hissa dabana hai, tay karne ke liye) */
     /** Screen par is naam ka button ho to dabao (min = naam milne ka bharosa, 0 se 1). */
+    // ---------------------------------------------------------------- Quick Settings tiles --
+    private void nap(long ms) {
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException ignored) {
+        }
+    }
+
+    private void tileNodes(AccessibilityNodeInfo n, List<AccessibilityNodeInfo> out, int[] count, int depth) {
+        if (n == null || depth > 25 || count[0] > 1800) {
+            return;
+        }
+        count[0]++;
+        out.add(n);
+        for (int i = 0; i < n.getChildCount(); i++) {
+            tileNodes(n.getChild(i), out, count, depth + 1);
+        }
+    }
+
+    private List<AccessibilityNodeInfo> panelNodes() {
+        List<AccessibilityNodeInfo> out = new ArrayList<AccessibilityNodeInfo>();
+        int[] count = new int[1];
+        try {
+            for (android.view.accessibility.AccessibilityWindowInfo w : getWindows()) {
+                AccessibilityNodeInfo r = w.getRoot();
+                if (r == null) {
+                    continue;
+                }
+                CharSequence pk = r.getPackageName();
+                if (pk != null && getPackageName().contentEquals(pk)) {
+                    continue;
+                }
+                tileNodes(r, out, count, 0);
+            }
+        } catch (Throwable ignored) {
+        }
+        if (out.isEmpty()) {
+            tileNodes(getRootInActiveWindow(), out, count, 0);
+        }
+        return out;
+    }
+
+    private static boolean tileMatches(String hay, String label) {
+        int i = hay.indexOf(label);
+        while (i >= 0) {
+            boolean left = i == 0 || !Character.isLetterOrDigit(hay.charAt(i - 1));
+            int e = i + label.length();
+            boolean right = e >= hay.length() || !Character.isLetterOrDigit(hay.charAt(e)) || label.length() > 5;
+            if (left && right) {
+                return true;
+            }
+            i = hay.indexOf(label, i + 1);
+        }
+        return false;
+    }
+
+    private AccessibilityNodeInfo findTile(String[] labels) {
+        List<AccessibilityNodeInfo> nodes = panelNodes();
+        AccessibilityNodeInfo best = null;
+        int bestScore = -99;
+        for (String label : labels) {
+            for (AccessibilityNodeInfo n : nodes) {
+                CharSequence t = n.getText();
+                CharSequence d = n.getContentDescription();
+                String hay = ((t == null ? "" : t.toString()) + " | " + (d == null ? "" : d.toString())).toLowerCase();
+                if (hay.length() < 4 || !tileMatches(hay, label)) {
+                    continue;
+                }
+                if (hay.contains("signal") || hay.contains("bars")) {
+                    continue;
+                }
+                AccessibilityNodeInfo c = n;
+                for (int i = 0; i < 5 && c != null && !c.isClickable(); i++) {
+                    c = c.getParent();
+                }
+                if (c == null || !c.isClickable()) {
+                    continue;
+                }
+                int score = 0;
+                if (c.isCheckable()) {
+                    score += 3;
+                }
+                if (tileState(c) != null) {
+                    score += 2;
+                }
+                if (hay.startsWith(label)) {
+                    score += 1;
+                }
+                if (score > bestScore) {
+                    bestScore = score;
+                    best = c;
+                }
+            }
+            if (best != null) {
+                return best;                       // pehle wale (behtar) naam ko tarjeeh
+            }
+        }
+        return best;
+    }
+
+    /** true = on, false = off, null = pata nahi. */
+    private Boolean tileState(AccessibilityNodeInfo c) {
+        try {
+            if (c.isCheckable()) {
+                return c.isChecked();
+            }
+            String sd = "";
+            if (Build.VERSION.SDK_INT >= 30 && c.getStateDescription() != null) {
+                sd = c.getStateDescription().toString().toLowerCase();
+            }
+            CharSequence d = c.getContentDescription();
+            String all = sd + " , " + (d == null ? "" : d.toString().toLowerCase());
+            String[] tok = all.split("[^a-z]+");
+            boolean on = false, off = false;
+            for (String x : tok) {
+                if (x.equals("on") || x.equals("enabled") || x.equals("active")) {
+                    on = true;
+                } else if (x.equals("off") || x.equals("disabled") || x.equals("inactive")) {
+                    off = true;
+                }
+            }
+            if (on && !off) {
+                return Boolean.TRUE;
+            }
+            if (off && !on) {
+                return Boolean.FALSE;
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
+    /**
+     * Quick Settings panel kholkar tile dabao. Kisi alag (background) thread se hi bulao.
+     * want: 1=on, 0=off, -1=ulta. Lautata: 1=kar diya, 2=pehle se waisa hi, 0=tile nahi mila, -1=panel nahi khula.
+     */
+    public int quickTile(String[] labels, int want) {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            return -1;
+        }
+        if (!performGlobalAction(GLOBAL_ACTION_QUICK_SETTINGS)) {
+            return -1;
+        }
+        nap(900);
+        AccessibilityNodeInfo hit = null;
+        android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
+        float w = dm.widthPixels, h = dm.heightPixels;
+        for (int attempt = 0; attempt < 5 && hit == null; attempt++) {
+            hit = findTile(labels);
+            if (hit != null) {
+                break;
+            }
+            if (attempt == 0) {
+                swipe(w * 0.5f, h * 0.12f, w * 0.5f, h * 0.65f);        // panel poora kholo
+            } else if (attempt == 1) {
+                swipe(w * 0.5f, h * 0.30f, w * 0.5f, h * 0.70f);
+            } else if (attempt == 2) {
+                swipe(w * 0.85f, h * 0.30f, w * 0.15f, h * 0.30f);      // agla page
+            } else if (attempt == 3) {
+                swipe(w * 0.85f, h * 0.30f, w * 0.15f, h * 0.30f);
+            }
+            nap(800);
+        }
+        int result;
+        if (hit == null) {
+            result = 0;
+        } else {
+            Boolean on = tileState(hit);
+            if (want >= 0 && on != null && on.booleanValue() == (want == 1)) {
+                result = 2;
+            } else {
+                result = hit.performAction(AccessibilityNodeInfo.ACTION_CLICK) ? 1 : (gestureAt(hit, 60) ? 1 : 0);
+                nap(600);
+            }
+        }
+        performGlobalAction(GLOBAL_ACTION_BACK);
+        nap(250);
+        return result;
+    }
+
+    /** Screen lock (Android 9+). */
+    public boolean lockScreen() {
+        try {
+            return Build.VERSION.SDK_INT >= 28 && performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN);
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
     public boolean clickLabel(String target, double min) {
         try {
             AccessibilityNodeInfo t = findTarget(target, min);
