@@ -1141,6 +1141,7 @@ except Exception as _exc:
 _CARD_INFO = {
     "Voice Selection": ("Voice", "Jarvis ki awaaz chuno"),
     "ElevenLabs Voices": ("ElevenLabs Voices", "Natural Hindi/English awaazein"),
+    "Gemini Voice (free)": ("Gemini Voice", "Free natural male awaaz (aapki Gemini key se)"),
     "MiniMax Voice": ("MiniMax Voice", "Natural awaaz (MiniMax key + Voice ID)"),
     "History": ("History", "Pichhli baatein"),
     "Wake Word Customization": ("Wake Word", "Jarvis ko bulane ke shabd"),
@@ -1326,7 +1327,10 @@ def _sync_prefs(app):
         _mv = minimax_voice_id(app)
         ed.putString("minimax_key", str(getattr(app, "minimax_key", "") or ""))
         ed.putString("minimax_voice_id", _mv)
-        ed.putString("tts_provider", "minimax" if (_mv and getattr(app, "minimax_key", "")) else "")
+        _sv = str(getattr(app, "selected_voice", "") or "")
+        _gv = _sv[7:] if _sv.startswith("Gemini ") else ""
+        ed.putString("gemini_voice", _gv)
+        ed.putString("tts_provider", "gemini" if _gv else ("minimax" if (_mv and getattr(app, "minimax_key", "")) else ""))
         ed.putString("orb_style", str(ORB_STYLE[0] or "blue"))     # home screen bubble yahi orb dikhata hai
         ed.apply()
     except Exception as exc:
@@ -1413,7 +1417,8 @@ def build_jarvis_ui(app):
             print("secrets seed error:", exc)
     app.eleven_voices = [[n, v] for n, v in app.eleven_slots if n and v]
     if app.selected_voice not in VOICES and app.selected_voice not in [n for n, _v in app.eleven_voices] \
-            and app.selected_voice not in [n for n, _v in app.minimax_voices]:
+            and app.selected_voice not in [n for n, _v in app.minimax_voices] \
+            and not str(app.selected_voice).startswith("Gemini "):
         app.selected_voice = "Male Alpha"
     app.ai_enabled = bool(state.get("ai_enabled", True))
     app.ai_model = str(state.get("ai_model", "") or "")
@@ -1610,6 +1615,9 @@ def build_jarvis_ui(app):
     mm_box = BoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(4))
     mm_box.bind(minimum_height=mm_box.setter("height"))
     voice_card.add_widget(mm_box)
+    gm_box = BoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(4))
+    gm_box.bind(minimum_height=gm_box.setter("height"))
+    voice_card.add_widget(gm_box)
     content.add_widget(voice_card)
 
     def apply_voice(*_):
@@ -1768,7 +1776,8 @@ def build_jarvis_ui(app):
         app.eleven_voices = [[n, v] for n, v in app.eleven_slots if n and v and n not in names]
         if app.selected_voice not in VOICES and \
                 app.selected_voice not in [n for n, _v in app.eleven_voices] and \
-                app.selected_voice not in [n for n, _v in getattr(app, "minimax_voices", [])]:
+                app.selected_voice not in [n for n, _v in getattr(app, "minimax_voices", [])] and \
+                not str(app.selected_voice).startswith("Gemini "):
             app.selected_voice = "Male Alpha"
             for c in chips:
                 c.set_selected(c.name == app.selected_voice)
@@ -1894,6 +1903,51 @@ def build_jarvis_ui(app):
                 row.add_widget(Widget())
             mm_box.add_widget(row)
 
+    # 1d) Gemini awaazein (free): sirf chips, key wahi jo AI wali hai
+    try:
+        import gemini_voice as gemini_mod
+    except Exception as exc:
+        print("gemini_voice import error:", exc)
+        gemini_mod = None
+    gm_speaker = None
+    if gemini_mod is not None and minimax_mod is not None:
+        try:
+            gm_speaker = minimax_mod.MiniMaxSpeaker(_mm_cache, synth=gemini_mod.synthesize, prefix="jarvis_gemini_")
+        except Exception as exc:
+            print("gemini speaker error:", exc)
+    gm_chips = []
+    if gemini_mod is not None:
+        for _gi in range(0, len(gemini_mod.VOICES), 4):
+            _row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(96), spacing=dp(4))
+            for _gj in range(_gi, min(_gi + 4, len(gemini_mod.VOICES))):
+                _nm = gemini_mod.VOICES[_gj][0]
+                _chip = VoiceChip(_nm, _nm[7:8].upper() or "G", ELEVEN_TINTS[(_gj + 1) % len(ELEVEN_TINTS)])
+                _chip.set_selected(_nm == app.selected_voice)
+                _chip.bind(on_release=choose_voice)
+                chips.append(_chip)
+                gm_chips.append(_chip)
+                _row.add_widget(_chip)
+            for _ in range(4 - min(4, len(gemini_mod.VOICES) - _gi)):
+                _row.add_widget(Widget())
+            gm_box.add_widget(_row)
+
+    gm_card = make_card("Gemini Voice (free)")
+    gm_info = make_label("Upar Voice Selection me 'Gemini ...' naam wali awaaz chuniye (Charon, Orus, Iapetus, "
+                         "Puck... sab male). Ye aapki Gemini key se free chalti hai; free limit khatam ho to "
+                         "phone ki awaaz se bolega.", 12, MUTED, height=dp(76), lines=5)
+    gm_card.add_widget(gm_info)
+
+    def test_gm(*_):
+        if not str(app.selected_voice).startswith("Gemini "):
+            toast("Upar Voice Selection me koi 'Gemini' awaaz chuniye")
+            return
+        app.speak("Namaste, main Jarvis hoon. Aapki awaaz ab aisi sunai degi.")
+
+    _grow = ActionRow("Chuni hui awaaz test karo")
+    _grow.bind(on_release=lambda w: test_gm())
+    gm_card.add_widget(_grow)
+    content.add_widget(gm_card)
+
     mm_card = make_card("MiniMax Voice")
     mm_info = make_label("", 12, MUTED, height=dp(48), lines=3)
     mm_card.add_widget(mm_info)
@@ -1987,7 +2041,8 @@ def build_jarvis_ui(app):
         app.minimax_voices = [[n, v] for n, v in app.minimax_slots if n and v and n not in taken]
         if app.selected_voice not in VOICES and \
                 app.selected_voice not in [n for n, _v in app.eleven_voices] and \
-                app.selected_voice not in [n for n, _v in app.minimax_voices]:
+                app.selected_voice not in [n for n, _v in app.minimax_voices] and \
+                not str(app.selected_voice).startswith("Gemini "):
             app.selected_voice = "Male Alpha"
             for c in chips:
                 c.set_selected(c.name == app.selected_voice)
@@ -2722,7 +2777,7 @@ def build_jarvis_ui(app):
     # Cards ko sections me baanto (andar ka code waisa hi, sirf kram aur heading badli)
     content.clear_widgets()
     for _title, _cards in (
-            ("AI AUR AWAAZ", [ai_card, voice_card, eleven_card, mm_card, verb_card]),
+            ("AI AUR AWAAZ", [ai_card, voice_card, gm_card, eleven_card, mm_card, verb_card]),
             ("JARVIS KA KAAM", [wake_ai_card, home_card, wake_card, inbox_card]),
             ("DIKHAWA", [orb_card]),
             ("DATA AUR SECURITY", [history_card, privacy_card])):
@@ -2843,6 +2898,8 @@ def build_jarvis_ui(app):
         try:
             if mm_speaker is not None and mm_speaker.busy():
                 return True
+            if gm_speaker is not None and gm_speaker.busy():
+                return True
         except Exception:
             pass
         try:
@@ -2942,8 +2999,31 @@ def build_jarvis_ui(app):
         except Exception:
             pass
         used_eleven = False
+        if gm_speaker is not None and str(app.selected_voice).startswith("Gemini ") and str(text).strip() \
+                and gemini_mod.gemini_keys(getattr(app, "gemini_key", "")):
+            def gm_fail(msg, _t=text):
+                def fallback(dt):
+                    toast(str(msg) + ". Phone ki awaaz se bol raha hoon")
+                    if original_speak is not None:
+                        original_speak(_t)
+                Clock.schedule_once(fallback, 0)
+            try:
+                try:
+                    tts0 = getattr(app, "tts", None)
+                    if tts0 is not None:
+                        tts0.stop()
+                except Exception:
+                    pass
+                if speaker is not None:
+                    speaker.stop()
+                if mm_speaker is not None:
+                    mm_speaker.stop()
+                gm_speaker.speak(app.gemini_key, app.selected_voice, str(text), on_error=gm_fail)
+                used_eleven = True
+            except Exception as exc:
+                print("gemini speak error:", exc)
         mvid = minimax_voice_id(app)
-        if mm_speaker is not None and app.minimax_key and mvid and str(text).strip():
+        if not used_eleven and mm_speaker is not None and app.minimax_key and mvid and str(text).strip():
             def mm_fail(msg, _t=text):
                 def fallback(dt):
                     toast(str(msg) + ". Phone ki awaaz se bol raha hoon")
@@ -3172,6 +3252,8 @@ def build_jarvis_ui(app):
                 speaker.stop()
             if mm_speaker is not None:
                 mm_speaker.stop()
+            if gm_speaker is not None:
+                gm_speaker.stop()
         except Exception:
             pass
         try:
