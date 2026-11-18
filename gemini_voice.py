@@ -1,7 +1,7 @@
 """JARVIS: Gemini awaaz (free tier). Aapki Gemini key se hi chalti hai, alag account/paise nahi.
 
 speaker = minimax.MiniMaxSpeaker(cache_dir, synth=gemini_voice.synthesize, prefix="jarvis_gemini_")
-synthesize(keys, voice_name, text, path): keys me kai keys ho sakti hain (jo AIza se shuru hon wahi chalti hain).
+synthesize(keys, voice_name, text, path): keys me kai keys ho sakti hain (gsk_/csk- wali Groq/Cerebras keys chhod di jati hain).
 Gemini PCM deta hai; yahan usse WAV banakar `path` par likhte hain.
 """
 import base64
@@ -31,7 +31,7 @@ def gemini_keys(raw):
     out = []
     for k in re.split(r"[\s,;]+", str(raw or "")):
         k = k.strip()
-        if k.startswith("AIza") and k not in out:
+        if len(k) >= 8 and not k.startswith(("gsk_", "csk-", "sk-")) and k not in out:
             out.append(k)
     return out
 
@@ -152,7 +152,7 @@ def synthesize(keys, voice_name, text, path, poster=None):
     """voice_name: 'Charon' jaisa Gemini naam (ya 'Gemini Charon')."""
     ks = gemini_keys(keys)
     if not ks:
-        raise GeminiVoiceError("Gemini key nahi hai (AIza se shuru hone wali key chahiye)")
+        raise GeminiVoiceError("Gemini key nahi hai (AI card me Gemini key daaliye)")
     voice = voice_of(voice_name) or str(voice_name).replace("Gemini ", "").strip()
     if not voice:
         raise GeminiVoiceError("Voice nahi chuni")
