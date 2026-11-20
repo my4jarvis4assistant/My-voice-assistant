@@ -161,23 +161,67 @@ def synthesize(key, voice_id, text, path, poster=None):
     raise MiniMaxError(last)
 
 
+LEVEL_HOOK = [None]            # jarvis_ui yahan orb.feed rakhta hai: Jarvis ki awaaz ka level orb tak
+
+
+def _level_probe(mp):
+    """Bajte hue audio ka level (0..1) dene wala function, na ban sake to None. Android 9+ (RECORD_AUDIO chahiye)."""
+    try:
+        from jnius import autoclass
+        Visualizer = autoclass("android.media.audiofx.Visualizer")
+        vis = Visualizer(mp.getAudioSessionId())
+        vis.setEnabled(False)
+        vis.setMeasurementMode(Visualizer.MEASUREMENT_MODE_PEAK_RMS)
+        vis.setEnabled(True)
+        meas = autoclass("android.media.audiofx.Visualizer$MeasurementPeakRms")()
+
+        def read():
+            vis.getMeasurementPeakRms(meas)
+            db = float(meas.mRms) / 100.0
+            return max(0.0, min(1.0, (db + 50.0) / 30.0))
+
+        def close():
+            try:
+                vis.setEnabled(False)
+                vis.release()
+            except Exception:
+                pass
+
+        return read, close
+    except Exception as exc:
+        print("level probe nahi bana:", exc)
+        return None, None
+
+
 def _android_play(path, flag):
     """MediaPlayer se bajao aur khatam hone tak ruko (ya flag['stop'] aane tak)."""
     from jnius import autoclass
     MediaPlayer = autoclass("android.media.MediaPlayer")
     mp = MediaPlayer()
+    read = close = None
     try:
         mp.setDataSource(path)
         mp.prepare()
         mp.start()
         started = time.time()
+        read, close = _level_probe(mp)
         while not flag["stop"]:
-            time.sleep(0.1)
+            time.sleep(0.05)
+            if read is not None and LEVEL_HOOK[0] is not None:
+                try:
+                    LEVEL_HOOK[0](read())
+                except Exception:
+                    pass
             if not mp.isPlaying() and time.time() - started > 0.4:
                 break
             if time.time() - started > 120:
                 break
     finally:
+        try:
+            if close is not None:
+                close()
+        except Exception:
+            pass
         try:
             mp.stop()
         except Exception:
