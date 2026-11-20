@@ -857,6 +857,12 @@ class OrbHost(FloatLayout):
     def _ticks(self):
         return getattr(self.orb, "_ticks", 0) if self.orb is not None else 0
 
+    def feed(self, level):
+        """Asli awaaz ka level 0..1 (aapki ya Jarvis ki awaaz). Orb usi hisaab se bikharta hai."""
+        o = self.orb
+        if o is not None and hasattr(o, "feed"):
+            o.feed(level)
+
     def set_style(self, style):
         """Orb ka rang/roop badlo (blue red gold green purple water); abhi ke abhi badal jata hai."""
         ORB_STYLE[0] = style
@@ -1569,6 +1575,42 @@ def build_jarvis_ui(app):
     bar.add_widget(Widget())
     bar.add_widget(chat_btn)
     home.add_widget(bar)
+
+    # Neeche ki bar kabhi neeche na khiske: window ka asli size Android se milakar bar ko hamesha dikhne
+    # wali jagah par rakho (app dobara kholne / resume par kabhi kabhi Kivy ka size purana reh jata hai).
+    bar_fix = {"extra": 0.0}
+
+    def relayout_home(*_):
+        try:
+            ex = bar_fix["extra"]
+            bar.y = home.y + dp(24) + ex
+            caption.y = home.y + dp(122) + ex
+        except Exception as exc:
+            print("relayout error:", exc)
+
+    def check_window(dt):
+        try:
+            v = app.activity.findViewById(16908290)          # android.R.id.content
+            h = int(v.getHeight()) if v is not None else 0
+            ex = float(Window.height - h) if (h > 200 and Window.height > h + 3) else 0.0
+            if abs(ex - bar_fix["extra"]) > 1.0:
+                bar_fix["extra"] = ex
+                relayout_home()
+        except Exception:
+            pass
+
+    def kick_relayout(*_):
+        for d in (0.05, 0.4, 1.2, 2.5):
+            Clock.schedule_once(check_window, d)
+            Clock.schedule_once(relayout_home, d)
+
+    home.bind(pos=relayout_home, size=relayout_home)
+    try:
+        Window.bind(on_resize=kick_relayout, on_restore=kick_relayout, on_resume=kick_relayout)
+    except Exception as exc:
+        print("window bind error:", exc)
+    Clock.schedule_interval(check_window, 0.7)
+    kick_relayout()
 
     # ------------------------------------------------------------ SETTINGS --
     sheader = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(44),
@@ -3235,6 +3277,58 @@ def build_jarvis_ui(app):
 
         app.listen_again = listen_again
     app.speak = speak
+
+    # ---- asli awaaz ka level orb tak: aapka mic (SpeechRecognizer) aur Jarvis ki awaaz ----
+    mic_gate = {"v": 0.0}
+
+    def feed_mic(rms):
+        if not mic["on"] or cm["on"]:
+            return
+        raw = max(0.0, min(1.0, (float(rms) - 2.0) / 7.0))       # shor ke neeche = chup
+        mic_gate["v"] += (raw - mic_gate["v"]) * (0.7 if raw > mic_gate["v"] else 0.35)
+        orb.feed(mic_gate["v"])
+
+    def install_rms_hook():
+        import sys
+        cls = None
+        for mname in ("__main__", "main"):
+            cls = getattr(sys.modules.get(mname), "RecognitionListener", None)
+            if cls is not None:
+                break
+        if cls is None or getattr(cls, "_jarvis_rms_patched", False):
+            return
+        from jnius import java_method
+        orig = cls.onRmsChanged
+
+        def onRmsChanged(self, rmsdB):
+            try:
+                orig(self, rmsdB)
+            except Exception:
+                pass
+            try:
+                feed_mic(rmsdB)
+            except Exception:
+                pass
+
+        cls.onRmsChanged = java_method("(F)V")(onRmsChanged)
+        cls._jarvis_rms_patched = True
+        old = getattr(app, "listener", None)
+        rec = getattr(app, "speech_recognizer", None)
+        if old is not None and rec is not None:                 # listener pehle ban chuka ho to naya laga do
+            fresh = cls(app)
+            app.listener = fresh
+            app.run_on_android_thread(lambda: rec.setRecognitionListener(fresh))
+
+    try:
+        install_rms_hook()
+    except Exception as exc:
+        print("rms hook error:", exc)
+    for _m in (gemini_mod, minimax_mod):
+        try:
+            if _m is not None:
+                _m.LEVEL_HOOK[0] = lambda lv: orb.feed(lv)
+        except Exception as exc:
+            print("level hook error:", exc)
     if original_process is not None:
         app.process_command = process_command
 
