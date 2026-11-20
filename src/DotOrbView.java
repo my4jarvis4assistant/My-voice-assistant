@@ -120,15 +120,13 @@ public class DotOrbView extends View {
         last = now;
         float t = (now - t0) / 1e9f;
         float target = active ? Math.min(1f, level) : 0f;
-        lvl += (target - lvl) * Math.min(1f, dt * 6f);
-        float tm;
-        if (lvl > 0.04f) {
-            float wave = 0.5f + 0.5f * (float) Math.sin(t * 2.6f);
-            tm = Math.min(1f, lvl * 1.25f) * (0.15f + 0.85f * wave * wave * (3 - 2 * wave));
-        } else {
-            tm = 0f;
+        lvl += (target - lvl) * Math.min(1f, dt * (target > lvl ? 16f : 5.5f));
+        if (lvl < 0.003f && target == 0f) {
+            lvl = 0f;
         }
-        m += (tm - m) * Math.min(1f, dt * 9f);
+        // bikhrav seedha awaaz ke level ke hisaab se: zor se bolo to zyada, dheere bolo to kam, chup to gol
+        float tm = Math.min(1f, lvl * 1.30f);
+        m += (tm - m) * Math.min(1f, dt * (tm > m ? 14f : 5f));
         float mm = m > 0.006f ? m : 0f;
         float yaw = (float) (0.75 * Math.sin(t * 0.55) + 0.25 * Math.sin(t * 0.21 + 1.0));
         float tilt = (float) (0.20 + 0.05 * Math.sin(t * 0.37));
