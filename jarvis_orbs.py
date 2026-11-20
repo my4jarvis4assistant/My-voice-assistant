@@ -4,9 +4,10 @@ isliye phone par kabhi nahi atkta. Interface SimpleOrb jaisa hi hai: mode, speak
 
 import math
 import random
+import time
 
 from kivy.clock import Clock
-from kivy.graphics import Color, Ellipse, Line, Mesh, Point
+from kivy.graphics import Color, Ellipse, Line, Mesh, Point, Rectangle, RenderContext
 from kivy.metrics import dp
 from kivy.uix.behaviors import ButtonBehavior
 from kivy.uix.widget import Widget
@@ -42,6 +43,18 @@ class _OrbBase(ButtonBehavior, Widget):
         self._ticks = 0
         self._t = 0.0
         self._lvl = 0.0
+        self._ext = 0.0          # asli awaaz ka level (mic ya Jarvis ki awaaz se)
+        self._ext_t = 0.0
+        self._ext_seen = False
+
+    def feed(self, level):
+        """Asli awaaz ka level 0..1 (kisi bhi thread se bulao). Bolte waqt har ~50ms me bhejo."""
+        try:
+            self._ext = max(0.0, min(1.0, float(level)))
+            self._ext_t = time.time()
+            self._ext_seen = True
+        except Exception:
+            pass
 
     def _start(self):
         self.bind(pos=self._tick, size=self._tick)
@@ -54,20 +67,28 @@ class _OrbBase(ButtonBehavior, Widget):
             pass
 
     def _advance(self, dt):
-        """Samay aage badhao aur 'level' (0 shaant ... 1 josh) nikalo."""
+        """Samay aage badhao aur 'level' (0 shaant ... 1 zor se bolna) nikalo.
+        Asli awaaz ka level mile to wahi; na mile to bolne ka natural utaar-chadhav."""
         self._t += dt
         if dt > 0:
             self._ticks += 1
         t = self._t
-        if self.speaking:
-            target = 0.6 + 0.4 * abs(math.sin(t * 4.3))
-        elif self.mode == "listening":
-            target = 0.5 + 0.15 * math.sin(t * 2.2)
+        if time.time() - self._ext_t < 0.4:
+            target = self._ext                           # asli awaaz: zor se bolo to zyada
+        elif self.speaking:
+            burst = abs(math.sin(t * 5.3)) * (0.55 + 0.45 * math.sin(t * 1.3 + 0.7))
+            target = 0.25 + 0.55 * burst + 0.12 * math.sin(t * 9.1)
+        elif self.mode == "listening" and not self._ext_seen:
+            target = 0.0 if isinstance(self, ParticleOrb) else 0.35 + 0.1 * math.sin(t * 2.2)
         elif self.mode == "thinking":
-            target = 0.0 if isinstance(self, ParticleOrb) else 0.45 + 0.15 * math.sin(t * 4.2)
+            target = 0.0 if isinstance(self, ParticleOrb) else 0.30 + 0.10 * math.sin(t * 4.2)
         else:
             target = 0.0
-        self._lvl += (target - self._lvl) * min(1.0, dt * 6.0)
+        target = max(0.0, min(1.0, target))
+        k = 16.0 if target > self._lvl else 5.5          # tezi se bikhro, araam se simto
+        self._lvl += (target - self._lvl) * min(1.0, dt * k)
+        if self._lvl < 0.003 and target == 0.0:
+            self._lvl = 0.0
         return t
 
 
@@ -158,18 +179,15 @@ class ParticleOrb(_OrbBase):
             return
         t = self._advance(dt)
         lvl = self._lvl
-        # bikhrav ka target: bolte/sunte waqt lehar (bikhro-simto), warna bilkul 0
-        if lvl > 0.04:
-            wave = 0.5 + 0.5 * math.sin(t * 2.6)
-            target = min(1.0, lvl * 1.25) * (0.15 + 0.85 * wave * wave * (3 - 2 * wave))
-        else:
-            target = 0.0
-        self._m += (target - self._m) * min(1.0, dt * 9.0)
+        # bikhrav seedha awaaz ke level ke hisaab se: zor se bolo to zyada, dheere bolo to kam, chup to bilkul nahi
+        target = min(1.0, lvl * 1.30)
+        k = 14.0 if target > self._m else 5.0
+        self._m += (target - self._m) * min(1.0, dt * k)
         m = self._m if self._m > 0.006 else 0.0
         yaw = 0.75 * math.sin(t * 0.55) + 0.25 * math.sin(t * 0.21 + 1.0)
         tilt = 0.20 + 0.05 * math.sin(t * 0.37)
         cx, cy = self.center
-        R = min(self.width, self.height) * 0.36 * (1.0 + 0.012 * math.sin(t * 1.3) + 0.10 * min(1.0, lvl))
+        R = min(self.width, self.height) * 0.36 * (1.0 + 0.012 * math.sin(t * 1.3) + 0.12 * min(1.0, lvl))
         ps = max(0.9, R * 0.0062)
         cy_a, sy_a = math.cos(yaw), math.sin(yaw)
         ct, st = math.cos(tilt), math.sin(tilt)
@@ -293,7 +311,120 @@ class WaterOrb(_OrbBase):
         self._glow2_c.a = 0.06 + 0.05 * lvl
 
 
+WATER_FRAG = """$HEADER$
+uniform float time;
+uniform float lvl;
+
+float hf(vec2 u, float cy, float sy, float ct, float st, float ca, float sna,
+         float t, float spd, float sa) {
+    float z = sqrt(max(0.0, 1.0 - dot(u, u)));
+    float x1 = u.x * cy + z * sy;
+    float z1 = -u.x * sy + z * cy;
+    float y2 = u.y * ct - z1 * st;
+    float z2 = u.y * st + z1 * ct;
+    float ph = 9.0 * (y2 * ca + x1 * sna) + 2.4 * sin(2.3 * x1 + t * 0.9)
+             + 1.8 * sin(2.0 * z2 - t * 0.7) + spd;
+    return sa * (0.5 + 0.5 * sin(ph));
+}
+
+void main(void) {
+    vec2 uv = tex_coord0 * 2.0 - 1.0;
+    float t = time;
+    float ang = atan(uv.y, uv.x + 0.00001);
+    float amp = 0.6 + 1.3 * lvl;
+    float lump = 1.0 + amp * (0.040 * sin(3.0 * ang + t * 0.9)
+                            + 0.030 * sin(2.0 * ang - t * 0.7 + 1.0)
+                            + 0.022 * sin(5.0 * ang + t * 1.4));
+    float R = 0.74 * lump * (1.0 + 0.05 * lvl);
+    vec2 u = uv / R;
+    float ru = length(u);
+    if (ru > 1.08) {
+        gl_FragColor = vec4(0.0, 0.0, 0.0, 0.0);
+        return;
+    }
+    float yaw = 0.9 * sin(t * 0.45) + 0.15 * t;
+    float tilt = 0.35 + 0.25 * sin(t * 0.31);
+    float a = 0.55 + 0.6 * sin(t * 0.37);
+    float sa = (0.55 + 0.45 * (0.5 + 0.5 * sin(t * 0.62 - 1.3))) * (0.9 + 0.6 * lvl);
+    float cy = cos(yaw);
+    float sy = sin(yaw);
+    float ct = cos(tilt);
+    float st = sin(tilt);
+    float ca = cos(a);
+    float sna = sin(a);
+    float spd = t * (1.0 + 1.2 * lvl);
+    float e = 0.012;
+    float hx = (hf(u + vec2(e, 0.0), cy, sy, ct, st, ca, sna, t, spd, sa)
+              - hf(u - vec2(e, 0.0), cy, sy, ct, st, ca, sna, t, spd, sa)) / (2.0 * e);
+    float hy = (hf(u + vec2(0.0, e), cy, sy, ct, st, ca, sna, t, spd, sa)
+              - hf(u - vec2(0.0, e), cy, sy, ct, st, ca, sna, t, spd, sa)) / (2.0 * e);
+    float h = hf(u, cy, sy, ct, st, ca, sna, t, spd, sa);
+    float z = sqrt(clamp(1.0 - ru * ru, 0.0, 1.0));
+    vec3 n = normalize(vec3(u.x - 0.42 * hx, u.y - 0.42 * hy, z + 0.0001));
+    vec3 L = normalize(vec3(-0.45, 0.62, 0.64));
+    vec3 Hh = normalize(L + vec3(0.0, 0.0, 1.0));
+    float diff = clamp(dot(n, L), 0.0, 1.0);
+    float spec = pow(clamp(dot(n, Hh), 0.0, 1.0), 40.0);
+    float fres = pow(1.0 - clamp(n.z, 0.0, 1.0), 2.2);
+    vec3 navy = vec3(0.01, 0.04, 0.62);
+    vec3 royal = vec3(0.14, 0.26, 0.93);
+    vec3 lite = vec3(0.52, 0.66, 1.0);
+    vec3 col = mix(navy, royal, diff);
+    col += lite * pow(clamp(diff - 0.55, 0.0, 1.0), 1.5) * 0.9;
+    float val = 1.0 - h;
+    col = col * (0.72 + 0.28 * (1.0 - val)) + vec3(0.30, 0.08, 0.55) * (val * 0.10 * (1.0 - diff));
+    col += vec3(spec * 0.55) + fres * lite * 0.25;
+    float alpha = clamp((1.0 - ru) / 0.05, 0.0, 1.0);
+    gl_FragColor = vec4(clamp(col, 0.0, 1.0), alpha);
+}
+"""
+
+
+class WaterGLOrb(_OrbBase):
+    """Paani/chamakdaar neela gola (reference jaisa): ubhri hui ghumti lakeeren, lehrata kinara.
+    GPU shader se banta hai. Shader na chale to make_orb_for purana WaterOrb de deta hai."""
+
+    def __init__(self, **kwargs):
+        try:
+            self.canvas = RenderContext(use_parent_projection=True, use_parent_modelview=True,
+                                        use_parent_frag_modelview=True)
+        except TypeError:
+            self.canvas = RenderContext(use_parent_projection=True, use_parent_modelview=True)
+        self.canvas.shader.fs = WATER_FRAG
+        if hasattr(self.canvas.shader, "success") and not self.canvas.shader.success:
+            raise RuntimeError("water shader compile nahi hua")
+        super().__init__(**kwargs)
+        self._time = 0.0
+        with self.canvas:
+            Color(1, 1, 1, 1)
+            self._quad = Rectangle(pos=self.pos, size=self.size)
+        self.canvas["time"] = 0.0
+        self.canvas["lvl"] = 0.0
+        self._start()
+
+    def _tick(self, dt=0, *_):
+        if not isinstance(dt, (int, float)):
+            dt = 0
+        elif self.paused:
+            return
+        self._advance(dt)
+        lvl = self._lvl
+        self._time += dt * (1.0 + 0.6 * lvl)
+        if self._time > 3000.0:
+            self._time -= 3000.0
+        q = min(self.width, self.height) * 0.98
+        cx, cy = self.center
+        self._quad.size = (q, q)
+        self._quad.pos = (cx - q / 2, cy - q / 2)
+        self.canvas["time"] = float(self._time)
+        self.canvas["lvl"] = float(lvl)
+
+
 def make_orb_for(style, **kwargs):
     if style == "water":
+        try:
+            return WaterGLOrb(**kwargs)
+        except Exception as exc:
+            print("WaterGLOrb nahi chala, purana paani wala orb:", exc)
         return WaterOrb(**kwargs)
     return ParticleOrb(style if style in PALETTE else "blue", **kwargs)
