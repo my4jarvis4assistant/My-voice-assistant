@@ -712,14 +712,21 @@ public class JarvisOverlayService extends Service {
             }
             level += (target - level) * 0.18f;
             float scale = 1f + 0.03f * (float) Math.sin(clock * 1.3) + 0.12f * level;
+            // asli awaaz ka level: Jarvis bole to bolne jaisa utaar-chadhav, aap bolo to mic ki awaaz (shor ke neeche = 0)
+            float burst = (float) (Math.abs(Math.sin(clock * 5.3)) * (0.55 + 0.45 * Math.sin(clock * 1.3 + 0.7)));
+            float voice;
+            if (speaking) {
+                voice = Math.max(0f, Math.min(1f, 0.25f + 0.55f * burst + 0.12f * (float) Math.sin(clock * 9.1)));
+            } else if (mode == MODE_LISTEN) {
+                voice = Math.max(0f, Math.min(1f, (targetLevel - 0.33f) / 0.58f));
+            } else {
+                voice = 0f;
+            }
             if (waterOrb != null) {
-                waterOrb.setLevel(level);
+                waterOrb.setLevel(!speaking && mode == MODE_THINK ? 0.30f + 0.10f * (float) Math.sin(clock * 4.2) : voice);
             }
             if (dotOrb != null) {
-                // bikharna sirf tab: Jarvis bole ya aap bolo (mic ki awaaz); intezaar/sochte waqt sirf ghoomna
-                float dl = speaking ? level
-                        : (mode == MODE_LISTEN && targetLevel > 0.12f ? Math.max(0.5f, targetLevel) : 0f);
-                dotOrb.setLevel(dl);
+                dotOrb.setLevel(voice);
                 scale = 1f;                              // dots orb apna bada hona khud sambhalta hai
             }
             orbView.setScaleX(scale);
