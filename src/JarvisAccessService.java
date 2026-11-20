@@ -3,14 +3,22 @@ package org.myassistant.myvoiceassistant;
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.GestureDescription;
 import android.content.SharedPreferences;
+import android.graphics.Color;
 import android.graphics.Path;
+import android.graphics.PixelFormat;
 import android.graphics.Rect;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.view.Gravity;
+import android.view.View;
+import android.view.WindowManager;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
+
+import android.widget.LinearLayout;
+import android.widget.TextView;
 
 import org.json.JSONObject;
 
@@ -1279,6 +1287,86 @@ public class JarvisAccessService extends AccessibilityService {
      * -1=panel nahi khula, 3=dabaya par jaanch nahi ho saki, 4=dabaya par badla nahi.
      */
     public int quickTile(String[] labels, int want, Probe probe) {
+        showCover();
+        try {
+            return quickTileInner(labels, want, probe);
+        } finally {
+            hideCover();
+        }
+    }
+
+    // ---- Quick Settings ka panel dikhe hi nahi: upar se JARVIS ki screen dhak deti hai ----
+    public volatile String coverText = "Kar raha hoon...";
+    private View cover = null;
+
+    private void showCover() {
+        final String text = coverText;
+        final java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(1);
+        handler.post(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    if (cover != null) {
+                        done.countDown();
+                        return;
+                    }
+                    WindowManager wm = (WindowManager) getSystemService(WINDOW_SERVICE);
+                    float d = getResources().getDisplayMetrics().density;
+                    LinearLayout box = new LinearLayout(JarvisAccessService.this);
+                    box.setOrientation(LinearLayout.VERTICAL);
+                    box.setGravity(Gravity.CENTER);
+                    box.setBackgroundColor(Color.rgb(6, 12, 22));
+                    WaterOrbView orb = new WaterOrbView(JarvisAccessService.this);
+                    orb.setActive(true);
+                    orb.setLevel(0.45f);
+                    box.addView(orb, new LinearLayout.LayoutParams((int) (150 * d), (int) (150 * d)));
+                    TextView tv = new TextView(JarvisAccessService.this);
+                    tv.setText(text);
+                    tv.setTextColor(Color.rgb(150, 170, 200));
+                    tv.setTextSize(17f);
+                    tv.setGravity(Gravity.CENTER);
+                    tv.setPadding((int) (24 * d), (int) (18 * d), (int) (24 * d), 0);
+                    box.addView(tv);
+                    int type = Build.VERSION.SDK_INT >= 22 ? WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
+                            : WindowManager.LayoutParams.TYPE_SYSTEM_ALERT;
+                    WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
+                            WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT, type,
+                            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                                    | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                                    | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                            PixelFormat.OPAQUE);
+                    lp.gravity = Gravity.TOP | Gravity.START;
+                    wm.addView(box, lp);
+                    cover = box;
+                } catch (Throwable t) {
+                    cover = null;                                  // dhakna na chale to panel dikhega, kaam phir bhi hoga
+                }
+                done.countDown();
+            }
+        });
+        try {
+            done.await(600, java.util.concurrent.TimeUnit.MILLISECONDS);
+            Thread.sleep(120);                                       // pehla frame ban jaye, tab panel kholo
+        } catch (InterruptedException ignored) {
+        }
+    }
+
+    private void hideCover() {
+        handler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    if (cover != null) {
+                        ((WindowManager) getSystemService(WINDOW_SERVICE)).removeView(cover);
+                    }
+                } catch (Throwable ignored) {
+                }
+                cover = null;
+            }
+        }, 350);
+    }
+
+    private int quickTileInner(String[] labels, int want, Probe probe) {
         if (Looper.myLooper() == Looper.getMainLooper()) {
             return -1;
         }
