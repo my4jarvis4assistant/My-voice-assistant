@@ -482,6 +482,7 @@ public final class JarvisDevice {
                             return stateOf(ctx, key);
                         }
                     };
+                    svc.coverText = c.name + (c.on == 1 ? " on" : c.on == 0 ? " off" : "") + " kar raha hoon...";
                     int res = svc.quickTile(c.labels, c.on, probe);
                     String st = c.on == 1 ? "on" : c.on == 0 ? "off" : "";
                     int now = probe == null ? -1 : stateOf(ctx, key);
@@ -532,6 +533,9 @@ public final class JarvisDevice {
                 String r;
                 try {
                     JarvisAccessService s = JarvisAccessService.instance;
+                    if (s != null) {
+                        s.coverText = "Torch " + (cc.on == 1 ? "on" : cc.on == 0 ? "off" : "") + " kar raha hoon...";
+                    }
                     int res = s == null ? -1 : s.quickTile(new String[]{"flashlight", "torch", "flash"}, cc.on,
                             new JarvisAccessService.Probe() {
                                 @Override
