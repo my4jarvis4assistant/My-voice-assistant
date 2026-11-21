@@ -1388,6 +1388,8 @@ def build_jarvis_ui(app):
     # ---- saved settings ----
     state = _load_state(app)
     ORB_STYLE[0] = str(state.get("orb_style", "blue") or "blue")
+    if ORB_STYLE[0] == "water":                       # paani wala orb hata diya
+        ORB_STYLE[0] = "blue"
     try:                                    # bubble ko pehli baar se hi chuna hua orb mile
         app.activity.getSharedPreferences("jarvis_prefs", 0).edit().putString("orb_style", ORB_STYLE[0]).apply()
     except Exception:
