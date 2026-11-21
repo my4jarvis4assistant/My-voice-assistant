@@ -1793,7 +1793,8 @@ public class JarvisOverlayService extends Service {
             agEnd("Ye paise ya bank ka app hai. Isme main khud kaam nahi karta, aap khud kar lijiye.");
             return;
         }
-        final String screen = svc.screenText(3500);
+        String scr = svc.agentScreen(3800);
+        final String screen = scr.length() > 0 ? scr : svc.screenText(3500);
         final SharedPreferences p = prefs();
         final String key = p.getString("gemini_key", "");
         final String mem = JarvisMemory.block(this);
@@ -1873,6 +1874,56 @@ public class JarvisOverlayService extends Service {
         agPerform(st);
     }
 
+    private void agPollDevice(final JarvisAgent.Step st, final int n) {
+        if (!agActive) {
+            return;
+        }
+        if (JarvisDevice.working() && n < 36) {
+            main.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    agPollDevice(st, n + 1);
+                }
+            }, 500);
+            return;
+        }
+        String r = JarvisDevice.pending();
+        agHist.add(agStep + ". " + JarvisAgent.describe(st) + " -> " + (r == null || r.length() == 0 ? "ho gaya" : r));
+        main.postDelayed(agRun, 700);
+    }
+
+    private String agIntent(String act, JarvisAgent.Step st) {
+        try {
+            Intent in;
+            if (act.equals("open_url")) {
+                String u = st.target.trim();
+                if (!(u.startsWith("https://") || u.startsWith("http://"))) {
+                    u = "https://" + u;
+                }
+                in = new Intent(Intent.ACTION_VIEW, android.net.Uri.parse(u));
+            } else if (act.equals("search_web")) {
+                String q = st.text.length() > 0 ? st.text : st.target;
+                in = new Intent(Intent.ACTION_VIEW, android.net.Uri.parse(
+                        "https://www.google.com/search?q=" + java.net.URLEncoder.encode(q, "UTF-8")));
+            } else if (act.equals("maps")) {
+                String q = st.text.length() > 0 ? st.text : st.target;
+                in = new Intent(Intent.ACTION_VIEW, android.net.Uri.parse(
+                        "https://www.google.com/maps/search/?api=1&query=" + java.net.URLEncoder.encode(q, "UTF-8")));
+            } else {
+                String num = st.target.replaceAll("[^0-9+*#]", "");
+                if (num.length() == 0) {
+                    return "number nahi mila";
+                }
+                in = new Intent(Intent.ACTION_DIAL, android.net.Uri.parse("tel:" + android.net.Uri.encode(num)));
+            }
+            in.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(in);
+            return "khul gaya";
+        } catch (Throwable t) {
+            return "ye khul nahi paya";
+        }
+    }
+
     private void agPerform(JarvisAgent.Step st) {
         JarvisAccessService svc = JarvisAccessService.instance;
         if (svc == null) {
@@ -1913,6 +1964,36 @@ public class JarvisOverlayService extends Service {
                 c.kind = JarvisControl.SEND;
                 res = svc.exec(c);
                 delay = 1800;
+            } else if (act.equals("tap") || act.equals("long_press")) {
+                if (st.id >= 0) {
+                    res = svc.agentTap(st.id, act.equals("long_press"));
+                } else {
+                    c.kind = JarvisControl.CLICK;
+                    c.target = st.target;
+                    res = svc.exec(c);
+                }
+                delay = 1200;
+            } else if (act.equals("swipe")) {
+                res = svc.agentSwipe(st.dir);
+                delay = 1200;
+            } else if (act.equals("notifications") || act.equals("quick_settings") || act.equals("recents")
+                    || act.equals("lock") || act.equals("screenshot")) {
+                res = svc.agentGlobal(act);
+                delay = 1400;
+            } else if (act.equals("open_url") || act.equals("search_web") || act.equals("maps") || act.equals("dial")) {
+                res = agIntent(act, st);
+                delay = 2600;
+            } else if (act.equals("device")) {
+                String r = JarvisDevice.handle(this, st.target.length() > 0 ? st.target : st.text);
+                if (r == null) {
+                    res = "ye phone-command samajh nahi aayi";
+                } else if ("@wait".equals(r)) {
+                    agPollDevice(st, 0);
+                    return;
+                } else {
+                    res = r;
+                }
+                delay = 1500;
             } else {
                 delay = 2000;                        // wait
             }
