@@ -1521,6 +1521,136 @@ public class JarvisAccessService extends AccessibilityService {
         }
     }
 
+    // ---------------------------------------------------------------- Agent: ginti wali screen + gestures --
+    private volatile int[][] agBounds = new int[0][];
+
+    private void agCollect(AccessibilityNodeInfo n, List<String> lines, List<int[]> bounds, int depth) {
+        if (n == null || depth > 45 || lines.size() >= 140) {
+            return;
+        }
+        if (n.isVisibleToUser()) {
+            CharSequence t = n.getText();
+            CharSequence d = n.getContentDescription();
+            String label = t != null && t.length() > 0 ? t.toString() : (d != null ? d.toString() : "");
+            label = label.replace('\n', ' ').trim();
+            boolean click = n.isClickable() || n.isLongClickable();
+            boolean edit = n.isEditable();
+            boolean scroll = n.isScrollable();
+            if (label.length() == 0 && click) {
+                String rid = n.getViewIdResourceName();
+                if (rid != null && rid.indexOf('/') >= 0) {
+                    label = "(" + rid.substring(rid.indexOf('/') + 1) + ")";
+                }
+            }
+            if (label.length() > 0 || edit || scroll) {
+                Rect r = new Rect();
+                n.getBoundsInScreen(r);
+                if (r.width() > 2 && r.height() > 2) {
+                    if (label.length() > 70) {
+                        label = label.substring(0, 70);
+                    }
+                    String kind = edit ? " [input]" : click ? " [button]" : scroll ? " [scroll]" : "";
+                    if (label.length() > 0 || edit || scroll) {
+                        lines.add("[" + lines.size() + "] " + (label.length() > 0 ? label : "(khali)") + kind);
+                        bounds.add(new int[]{r.centerX(), r.centerY()});
+                    }
+                }
+            }
+        }
+        for (int i = 0; i < n.getChildCount(); i++) {
+            agCollect(n.getChild(i), lines, bounds, depth + 1);
+        }
+    }
+
+    /** Screen ke dikhne wale hisse: har cheez ka number. Agent isi number se tap karta hai. */
+    public String agentScreen(int cap) {
+        try {
+            AccessibilityNodeInfo r = activeRoot();
+            if (r == null) {
+                return "";
+            }
+            List<String> lines = new java.util.ArrayList<String>();
+            List<int[]> bounds = new java.util.ArrayList<int[]>();
+            agCollect(r, lines, bounds, 0);
+            agBounds = bounds.toArray(new int[0][]);
+            StringBuilder sb = new StringBuilder();
+            for (String l : lines) {
+                if (sb.length() + l.length() + 1 > cap) {
+                    break;
+                }
+                sb.append(l).append('\n');
+            }
+            return sb.toString().trim();
+        } catch (Throwable t) {
+            return "";
+        }
+    }
+
+    private boolean pressAt(float x, float y, long ms) {
+        if (Build.VERSION.SDK_INT < 24) {
+            return false;
+        }
+        try {
+            Path p = new Path();
+            p.moveTo(x, y);
+            GestureDescription.Builder b = new GestureDescription.Builder();
+            b.addStroke(new GestureDescription.StrokeDescription(p, 0, ms));
+            return dispatchGesture(b.build(), null, null);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** Ginti (agentScreen wali) se tap ya long-press. */
+    public String agentTap(int id, boolean longPress) {
+        int[][] b = agBounds;
+        if (id < 0 || id >= b.length) {
+            return "ye number screen par nahi hai";
+        }
+        boolean ok = pressAt(b[id][0], b[id][1], longPress ? 800 : 70);
+        return ok ? "ho gaya" : "tap nahi lag paya";
+    }
+
+    public String agentSwipe(String dir) {
+        android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
+        float w = dm.widthPixels, h = dm.heightPixels;
+        boolean ok;
+        if ("left".equals(dir)) {
+            ok = swipe(w * 0.85f, h * 0.5f, w * 0.15f, h * 0.5f);
+        } else if ("right".equals(dir)) {
+            ok = swipe(w * 0.15f, h * 0.5f, w * 0.85f, h * 0.5f);
+        } else if ("up".equals(dir)) {
+            ok = swipe(w * 0.5f, h * 0.30f, w * 0.5f, h * 0.75f);
+        } else {
+            ok = swipe(w * 0.5f, h * 0.75f, w * 0.5f, h * 0.30f);
+        }
+        return ok ? "ho gaya" : "swipe nahi ho paya";
+    }
+
+    public String agentGlobal(String what) {
+        int a;
+        if ("notifications".equals(what)) {
+            a = GLOBAL_ACTION_NOTIFICATIONS;
+        } else if ("quick_settings".equals(what)) {
+            a = GLOBAL_ACTION_QUICK_SETTINGS;
+        } else if ("recents".equals(what)) {
+            a = GLOBAL_ACTION_RECENTS;
+        } else if ("lock".equals(what)) {
+            if (Build.VERSION.SDK_INT < 28) {
+                return "ye Android 9 se neeche nahi chalta";
+            }
+            a = GLOBAL_ACTION_LOCK_SCREEN;
+        } else if ("screenshot".equals(what)) {
+            if (Build.VERSION.SDK_INT < 28) {
+                return "ye Android 9 se neeche nahi chalta";
+            }
+            a = 9;                                           // GLOBAL_ACTION_TAKE_SCREENSHOT
+        } else {
+            return "ye kaam pata nahi";
+        }
+        return performGlobalAction(a) ? "ho gaya" : "nahi ho paya";
+    }
+
     @Override
     public void onInterrupt() {
     }
