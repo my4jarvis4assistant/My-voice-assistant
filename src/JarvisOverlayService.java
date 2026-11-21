@@ -570,8 +570,8 @@ public class JarvisOverlayService extends Service {
     /** Settings me chuna hua orb (dots ke 5 rang ya paani) bubble me lagao. */
     private void installOrb() {
         String st = prefs().getString("orb_style", "blue");
-        if (st == null || st.length() == 0) {
-            st = "blue";
+        if (st == null || st.length() == 0 || "water".equals(st)) {
+            st = "blue";                                   // paani wala orb hata diya
         }
         orbStyleShown = st;
         if (orbView != null && panel != null) {
@@ -735,6 +735,9 @@ public class JarvisOverlayService extends Service {
                 orbCheck = 0;
                 try {
                     String st = prefs().getString("orb_style", "blue");
+                    if ("water".equals(st)) {
+                        st = "blue";
+                    }
                     if (st != null && st.length() > 0 && !st.equals(orbStyleShown) && panel != null) {
                         installOrb();
                         if (dotOrb != null) {
