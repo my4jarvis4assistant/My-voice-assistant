@@ -249,7 +249,14 @@ public final class JarvisMiniMax {
                             }
                         }
                         if (cb != null) {
-                            cb.onDone(ok, err);
+                            final boolean fok = ok;
+                            final String ferr = err;
+                            new android.os.Handler(android.os.Looper.getMainLooper()).post(new Runnable() {
+                                @Override
+                                public void run() {
+                                    cb.onDone(fok, ferr);       // SpeechRecognizer/UI sirf main thread par chalte hain
+                                }
+                            });
                         }
                     }
                 }
