@@ -14,7 +14,7 @@ from kivy.uix.widget import Widget
 
 # (naam jo settings me dikhega, style)
 ORB_CHOICES = [("Neela", "blue"), ("Laal", "red"), ("Sunehra", "gold"),
-               ("Hara", "green"), ("Jamuni", "purple"), ("Paani", "water")]
+               ("Hara", "green"), ("Jamuni", "purple")]
 
 PALETTE = {
     "blue": (0.30, 0.42, 1.00),
@@ -421,10 +421,4 @@ class WaterGLOrb(_OrbBase):
 
 
 def make_orb_for(style, **kwargs):
-    if style == "water":
-        try:
-            return WaterGLOrb(**kwargs)
-        except Exception as exc:
-            print("WaterGLOrb nahi chala, purana paani wala orb:", exc)
-        return WaterOrb(**kwargs)
     return ParticleOrb(style if style in PALETTE else "blue", **kwargs)
