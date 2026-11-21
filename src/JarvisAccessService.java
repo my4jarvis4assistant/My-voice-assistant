@@ -1287,12 +1287,7 @@ public class JarvisAccessService extends AccessibilityService {
      * -1=panel nahi khula, 3=dabaya par jaanch nahi ho saki, 4=dabaya par badla nahi.
      */
     public int quickTile(String[] labels, int want, Probe probe) {
-        showCover();
-        try {
-            return quickTileInner(labels, want, probe);
-        } finally {
-            hideCover();
-        }
+        return quickTileInner(labels, want, probe);
     }
 
     // ---- Quick Settings ka panel dikhe hi nahi: upar se JARVIS ki screen dhak deti hai ----
