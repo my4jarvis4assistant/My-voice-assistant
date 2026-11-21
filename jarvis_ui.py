@@ -386,8 +386,18 @@ class BarButton(ButtonBehavior, Widget):
         super().__init__(**kwargs)
         self.kind = kind
         self.on = False
+        self._shown = None
         self.bind(pos=self._draw, size=self._draw, state=self._draw)
         self._draw()
+        # Kabhi kabhi Kivy position badalne ki khabar nahi deta aur button purani jagah par bana reh jata hai.
+        # Isliye har 0.2 sec me jaanch: jagah badli ho to dobara bana do.
+        Clock.schedule_interval(self._guard, 0.2)
+
+    def _guard(self, dt):
+        key = (round(self.center_x), round(self.center_y), round(self.width), round(self.height),
+               self.state, self.on)
+        if key != self._shown:
+            self._draw()
 
     def set_on(self, flag):
         self.on = bool(flag)
@@ -396,6 +406,8 @@ class BarButton(ButtonBehavior, Widget):
     def _draw(self, *_):
         self.canvas.clear()
         x, y = self.center
+        self._shown = (round(self.center_x), round(self.center_y), round(self.width), round(self.height),
+                       self.state, self.on)
         side = min(self.width, self.height)
         down = self.state == "down"
         u = side * 0.17
@@ -1147,7 +1159,7 @@ except Exception as _exc:
 _CARD_INFO = {
     "Voice Selection": ("Voice", "Jarvis ki awaaz chuno"),
     "ElevenLabs Voices": ("ElevenLabs Voices", "Natural Hindi/English awaazein"),
-    "Gemini Voice (free)": ("Gemini Voice", "Free natural male awaaz (aapki Gemini key se)"),
+    "Gemini Voice (free)": ("Gemini Voice", "Free natural awaaz, ladka/ladki (aapki Gemini key se)"),
     "MiniMax Voice": ("MiniMax Voice", "Natural awaaz (MiniMax key + Voice ID)"),
     "History": ("History", "Pichhli baatein"),
     "Wake Word Customization": ("Wake Word", "Jarvis ko bulane ke shabd"),
@@ -1982,9 +1994,10 @@ def build_jarvis_ui(app):
             gm_box.add_widget(_row)
 
     gm_card = make_card("Gemini Voice (free)")
-    gm_info = make_label("Upar Voice Selection me 'Gemini ...' naam wali awaaz chuniye (Charon, Orus, Iapetus, "
-                         "Puck... sab male). Ye aapki Gemini key se free chalti hai; free limit khatam ho to "
-                         "phone ki awaaz se bolega.", 12, MUTED, height=dp(76), lines=5)
+    gm_info = make_label("Upar Voice Selection me 'Gemini ...' naam wali awaaz chuniye. Ladke: Charon, Orus, "
+                         "Iapetus, Puck, Fenrir, Algenib, Umbriel, Achird. Ladki: Kore, Zephyr, Leda, Aoede, "
+                         "Autonoe, Callirrhoe, Despina, Sulafat. Aapki Gemini key se free chalti hai; limit khatam "
+                         "ho to phone ki awaaz se bolega.", 12, MUTED, height=dp(96), lines=6)
     gm_card.add_widget(gm_info)
 
     def test_gm(*_):
@@ -3058,10 +3071,12 @@ def build_jarvis_ui(app):
         if gm_speaker is not None and str(app.selected_voice).startswith("Gemini ") and str(text).strip() \
                 and gemini_mod.gemini_keys(getattr(app, "gemini_key", "")):
             def gm_fail(msg, _t=text):
+                rest = str(getattr(gm_speaker, "fail_rest", "") or "").strip() or _t
+
                 def fallback(dt):
                     toast(str(msg) + ". Phone ki awaaz se bol raha hoon")
                     if original_speak is not None:
-                        original_speak(_t)
+                        original_speak(rest)
                 Clock.schedule_once(fallback, 0)
             try:
                 try:
