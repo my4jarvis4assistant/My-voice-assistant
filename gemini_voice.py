@@ -15,12 +15,16 @@ import time
 MODELS = ("gemini-3.1-flash-tts-preview", "gemini-2.5-flash-preview-tts")
 URL = "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent"
 MAX_CHARS = 700
-STYLE = "Say in a calm, natural, clear Indian accent: "
+STYLE = "Say naturally with a clear Indian accent: "
 
 # (dikhne wala naam, Gemini voice, andaaz)
 VOICES = [("Gemini Charon", "Charon"), ("Gemini Orus", "Orus"), ("Gemini Iapetus", "Iapetus"),
           ("Gemini Puck", "Puck"), ("Gemini Fenrir", "Fenrir"), ("Gemini Algenib", "Algenib"),
-          ("Gemini Umbriel", "Umbriel"), ("Gemini Achird", "Achird")]
+          ("Gemini Umbriel", "Umbriel"), ("Gemini Achird", "Achird"),
+          # ladki ki awaazein
+          ("Gemini Kore", "Kore"), ("Gemini Zephyr", "Zephyr"), ("Gemini Leda", "Leda"),
+          ("Gemini Aoede", "Aoede"), ("Gemini Autonoe", "Autonoe"), ("Gemini Callirrhoe", "Callirrhoe"),
+          ("Gemini Despina", "Despina"), ("Gemini Sulafat", "Sulafat")]
 
 
 class GeminiVoiceError(Exception):
@@ -148,6 +152,39 @@ def _extract(resp):
     return None, 0
 
 
+def split_chunks(text, first_max=130, rest_max=220):
+    """Pehla tukda chhota (jaldi bolna shuru), baaki ~220 akshar ke tukde."""
+    sentences, cur = [], ""
+    n = len(text)
+    for i, ch in enumerate(text):
+        cur += ch
+        if ch in ".?!\u0964\n" and (i + 1 >= n or text[i + 1] == " " or ch == "\n"):
+            if cur.strip():
+                sentences.append(cur.strip())
+            cur = ""
+    if cur.strip():
+        sentences.append(cur.strip())
+    out, acc = [], ""
+    for sent in sentences:
+        if not out and not acc:
+            if len(sent) > first_max:
+                cut = max(sent.rfind(", ", 0, 110), sent.rfind(" ", 0, 100))
+                if cut < 40:
+                    cut = min(len(sent), 100)
+                out.append(sent[:cut + 1].strip())
+                acc = sent[cut + 1:].strip()
+            else:
+                out.append(sent)
+            continue
+        if acc and len(acc) + len(sent) + 1 > rest_max:
+            out.append(acc.strip())
+            acc = ""
+        acc = (acc + " " + sent).strip()
+    if acc.strip():
+        out.append(acc.strip())
+    return out
+
+
 def synthesize(keys, voice_name, text, path, poster=None):
     """voice_name: 'Charon' jaisa Gemini naam (ya 'Gemini Charon')."""
     ks = gemini_keys(keys)
@@ -159,6 +196,8 @@ def synthesize(keys, voice_name, text, path, poster=None):
     text = trim_text(text)
     if not text:
         raise GeminiVoiceError("khali text")
+    if len(text) > MAX_CHARS:
+        text = text[:MAX_CHARS]
     poster = poster or _post_auto
     body = build_body(voice, text)
     last = "Gemini se awaaz nahi aayi"
@@ -265,7 +304,8 @@ def _android_play(path, flag):
 
 
 class GeminiSpeaker:
-    """speak(keys, voice_name, text, on_error) -> thread me awaaz banao aur bajao. busy(), stop()."""
+    """speak(keys, voice_name, text, on_error) -> tukdon me awaaz banao aur bajao (pehla tukda banate hi bolna shuru).
+    busy(), stop(). Beech ke tukde me galti ho to fail_rest me bacha hua text rehta hai."""
 
     def __init__(self, cache_dir):
         self.cache_dir = cache_dir
@@ -273,6 +313,7 @@ class GeminiSpeaker:
         self._busy = False
         self._lock = threading.Lock()
         self._flag = {"stop": False}
+        self.fail_rest = ""
 
     def busy(self):
         return self._busy
@@ -291,14 +332,43 @@ class GeminiSpeaker:
             self._flag["stop"] = True
             self._flag = flag
             self._busy = True
+            self.fail_rest = ""
+        chunks = split_chunks(trim_text(text)) or [str(text)]
+        n = len(chunks)
+        paths = [os.path.join(self.cache_dir, "jarvis_gemini_%d_%d.wav" % (gen, i)) for i in range(n)]
+        events = [threading.Event() for _ in range(n)]
+        errors = [None] * n
+        nxt = {"i": 0}
+        nlock = threading.Lock()
+
+        def fetcher():
+            while True:
+                with nlock:
+                    i = nxt["i"]
+                    if i >= n or gen != self._gen or flag["stop"]:
+                        return
+                    nxt["i"] += 1
+                try:
+                    synthesize(keys, voice_name, chunks[i], paths[i])
+                except Exception as exc:
+                    errors[i] = str(exc) or exc.__class__.__name__
+                events[i].set()
 
         def work():
-            path = os.path.join(self.cache_dir, "jarvis_gemini_%d.wav" % gen)
             ok = False
             try:
-                synthesize(keys, voice_name, text, path)
-                if gen == self._gen and not flag["stop"]:
-                    _android_play(path, flag)
+                for _ in range(min(2, n)):
+                    threading.Thread(target=fetcher, daemon=True).start()
+                for i in range(n):
+                    while not events[i].wait(0.2):
+                        if gen != self._gen or flag["stop"]:
+                            return
+                    if gen != self._gen or flag["stop"]:
+                        return
+                    if errors[i]:
+                        self.fail_rest = " ".join(chunks[i:])
+                        raise GeminiVoiceError(errors[i])
+                    _android_play(paths[i], flag)
                 ok = True
             except Exception as exc:
                 msg = str(exc) or exc.__class__.__name__
@@ -309,10 +379,11 @@ class GeminiSpeaker:
                     except Exception as exc2:
                         print("gemini on_error failed:", exc2)
             finally:
-                try:
-                    os.remove(path)
-                except Exception:
-                    pass
+                for pth in paths:
+                    try:
+                        os.remove(pth)
+                    except Exception:
+                        pass
                 if gen == self._gen:
                     self._busy = False
                     if ok and on_done is not None and not flag["stop"]:
